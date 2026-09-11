@@ -1,0 +1,71 @@
+From fac78dc96d187a455f6a369067b46421b7f0ab50 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 00:40:26 +0200
+Subject: [PATCH] SMOUK-0.0.25-exclude-first-frame-of-next-shot
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py |  3 ++-
+ src/windows/views/timeline.py  | 12 +++++++++---
+ 3 files changed, 12 insertions(+), 5 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 2ae4b7f54..3b0d60727 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.24"
++SMOUK_VERSION = "0.0.25"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 9d7510870..314ca85eb 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -634,7 +634,8 @@ class VerticalizationDockContent(QWidget):
+         for cut in sorted(valid_cuts, reverse=True):
+             window.timeline.Slice_Triggered(
+                 MenuSlice.KEEP_BOTH, [clip.id], [],
+-                clip_position + (cut - clip_start), snap_to_project_frames=False)
++                clip_position + (cut - clip_start), snap_to_project_frames=False,
++                left_end_frame_offset=(1.0 / source_fps if source_fps > 0.0 else 0.0))
+         return len(valid_cuts)
+ 
+     def _on_detect_and_slice_timeline(self):
+diff --git a/src/windows/views/timeline.py b/src/windows/views/timeline.py
+index 147e5f283..4536b3608 100644
+--- a/src/windows/views/timeline.py
++++ b/src/windows/views/timeline.py
+@@ -4102,7 +4102,7 @@ class TimelineView(updates.UpdateInterface, ViewClass):
+             QTimer.singleShot(0, partial(self.Slice_Triggered, slice_mode, [], [trans_id], cursor_position))
+ 
+     def Slice_Triggered(self, action, clip_ids, trans_ids, playhead_position=0, ripple=False,
+-                        snap_to_project_frames=True):
++                        snap_to_project_frames=True, left_end_frame_offset=0.0):
+         """Callback for slice context menus"""
+         # Get FPS from project
+         fps = get_app().project.get("fps")
+@@ -4170,8 +4170,14 @@ class TimelineView(updates.UpdateInterface, ViewClass):
+                 elif action == MenuSlice.KEEP_BOTH:
+                     # Update clip data for the left clip
+                     new_end = start_of_clip + (playhead_position - original_position)
+-                    clip.data["end"] = new_end
+-                    clip.data["duration"] = max(0.0, new_end - start_of_clip)
++                    # FFmpeg scene timestamps identify the first frame of the
++                    # new shot. Clip end is inclusive in libopenshot, so an
++                    # automated native-source cut must place the left end one
++                    # source frame earlier or it visibly retains that frame.
++                    left_end = max(start_of_clip, new_end - max(
++                        0.0, float(left_end_frame_offset)))
++                    clip.data["end"] = left_end
++                    clip.data["duration"] = max(0.0, left_end - start_of_clip)
+ 
+                     # Split into two clips (left and right side)
+                     right_clip = Clip.get(id=clip_id)
+-- 
+2.55.0.windows.3
+

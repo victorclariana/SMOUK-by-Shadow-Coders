@@ -232,6 +232,13 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - El renderizador aplica el mismo límite en la geometría final de Crop como
   salvaguarda adicional, incluso para proyectos con keyframes antiguos.
 
+### 0.0.25
+
+- Se corrige un frame residual al separar planos. FFmpeg informa el primer
+  frame del plano nuevo, mientras que OpenShot trata el final del clip
+  izquierdo como inclusivo; el corte automático deja ahora ese final un frame
+  nativo antes y mantiene el plano derecho en el timestamp detectado.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

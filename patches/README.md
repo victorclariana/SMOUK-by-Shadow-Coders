@@ -31,6 +31,7 @@ corresponding repository.
 | `0023-SMOUK-0.0.22-persist-ui-layout-checkpoints.patch` | **openshot-qt** | Persists the window geometry and dock layout on close and via debounced, periodic checkpoints to survive native crashes. |
 | `0024-SMOUK-0.0.23-conservative-auto-reframing.patch` | **openshot-qt** | Makes automatic reframing prefer a fixed median crop and only create slow linear keyframes for a clear sustained one-way pan. |
 | `0025-SMOUK-0.0.24-clamp-vertical-crop-bounds.patch` | **openshot-qt** | Clamps timeline reframing and the final crop-render coordinates to prevent black edge strips. |
+| `0026-SMOUK-0.0.25-exclude-first-frame-of-next-shot.patch` | **openshot-qt** | Treats FFmpeg's detected frame as the right-shot start and excludes it from OpenShot's inclusive left clip end. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply
