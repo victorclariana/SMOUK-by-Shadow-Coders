@@ -76,6 +76,13 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   horizontales para que el resultado coincida con la guía blanca del visor.
 - El proyecto de edición 16:9 no se modifica durante la exportación.
 
+### 0.0.5
+
+- Se añadió el botón `Export vertical video` dentro de la sección `Export` del
+  dock `Verticalization`.
+- Este botón envía el preset seleccionado directamente al renderizador SMOUK,
+  evitando que la exportación normal vuelva a usar el lienzo 16:9.
+
 ### 0.0.2
 
 - Se añadió el botón **Proyecto vertical 9:16 (1080x1920)** en el dock, que

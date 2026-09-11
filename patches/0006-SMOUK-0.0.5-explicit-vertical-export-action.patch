@@ -1,0 +1,101 @@
+From 12f2c1a1fc3760013e4c0e9687f9b330f52b36fd Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 06:28:13 +0200
+Subject: [PATCH] SMOUK-0.0.5-explicit-vertical-export-action
+
+---
+ src/windows/export.py          |  8 ++++++--
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 21 ++++++++++++++++++++-
+ 3 files changed, 27 insertions(+), 4 deletions(-)
+
+diff --git a/src/windows/export.py b/src/windows/export.py
+index 91a41a7fe..b1f098429 100644
+--- a/src/windows/export.py
++++ b/src/windows/export.py
+@@ -82,6 +82,9 @@ class Export(QDialog):
+     ExportEnded = pyqtSignal(str)
+ 
+     def __init__(self, *args, **kwargs):
++        # This argument is supplied only by Verticalization's explicit export
++        # button. Pop it before Qt sees the constructor arguments.
++        self.smouk_output_profile = kwargs.pop("smouk_output_profile", None)
+         super().__init__(*args, **kwargs)
+ 
+         # Load UI from designer & init
+@@ -152,8 +155,9 @@ class Export(QDialog):
+         # A SMOUK render is a separate vertical timeline. It keeps the source
+         # project unchanged while turning 16:9 clips into Crop/fill clips and
+         # translating their horizontal framing values to the target canvas.
+-        self.smouk_output_profile = get_app().get_settings().get(
+-            "smouk_vertical_output_profile")
++        self.smouk_output_profile = (
++            self.smouk_output_profile
++            or get_app().get_settings().get("smouk_vertical_output_profile"))
+         self.smouk_output = SMOUK_OUTPUT_PROFILES.get(self.smouk_output_profile)
+         if self.smouk_output:
+             width, height, fps_num = self.smouk_output
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index fde9d71cc..e2efb5337 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.4"
++SMOUK_VERSION = "0.0.5"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index defb43a2c..3d0647c09 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -20,7 +20,7 @@
+ 
+ from qt_api import (
+     Qt, QWidget, QFrame, QLabel, QScrollArea, QToolButton, QVBoxLayout,
+-    QCheckBox, QComboBox, QSlider,
++    QCheckBox, QComboBox, QPushButton, QSlider,
+ )
+ 
+ import openshot
+@@ -138,8 +138,19 @@ class VerticalizationDockContent(QWidget):
+             self.sections[key] = section
+             layout.addWidget(section)
+ 
++        self._build_export_button(_)
++
+         layout.addStretch(1)
+ 
++    def _build_export_button(self, _):
++        """Add the explicit SMOUK renderer action to the Export section."""
++        self.btn_export_vertical = QPushButton(_("Export vertical video"), self)
++        self.btn_export_vertical.setObjectName("verticalizationExportVideo")
++        self.btn_export_vertical.setToolTip(
++            _("Render the selected SMOUK crop, not the 16:9 edit canvas."))
++        self.btn_export_vertical.clicked.connect(self._on_export_vertical)
++        self.sections["export"].add_widget(self.btn_export_vertical)
++
+     def _build_controls(self, layout, _):
+         """Build the verticalization control area (project output + guide)."""
+         controls = QFrame(self.scroll_content)
+@@ -265,6 +276,14 @@ class VerticalizationDockContent(QWidget):
+         clip.save()
+         window.refreshFrameSignal.emit()
+ 
++    def _on_export_vertical(self):
++        """Open Export with an explicit SMOUK crop-render configuration."""
++        from windows.export import Export
++
++        profile_id = self.output_profile.currentData()
++        dialog = Export(smouk_output_profile=profile_id)
++        dialog.exec_()
++
+     def _on_toggle_overlay(self, enabled):
+         """Enable/disable the 9:16 guide overlay on the video preview."""
+         preview = getattr(get_app().window, "videoPreview", None)
+-- 
+2.55.0.windows.3
+
