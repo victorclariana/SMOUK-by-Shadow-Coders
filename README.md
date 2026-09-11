@@ -51,6 +51,25 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
 ### 0.0.2
 
+- Se añadió la guía visual de encuadre vertical sobre el visor, con zonas
+  exteriores atenuadas y guías de tercios.
+- La guía se dibuja únicamente en la interfaz y no forma parte del vídeo
+  exportado.
+
+### 0.0.3
+
+- El proyecto continúa editándose en 16:9; ya no se cambia a vertical desde
+  el dock.
+- Se añadieron los perfiles de salida SMOUK disponibles: 1080×1350 (4:5) y
+  1080×1920 (9:16), ambos a 25 o 30 fps.
+- Se añadió un deslizador de encuadre horizontal para el clip seleccionado.
+  Sin `Keyframes`, fija la posición en todo el plano; con `Keyframes`, la
+  guarda en el fotograma actual.
+- La guía del visor cambia automáticamente entre 4:5 y 9:16 según el perfil
+  de salida seleccionado.
+
+### 0.0.2
+
 - Se añadió el botón **Proyecto vertical 9:16 (1080x1920)** en el dock, que
   aplica el perfil integrado `FHD Vertical 1080p 30 fps`.
 - Se añadió la **guía 9:16** sobre el visor: rectángulo blanco con la zona

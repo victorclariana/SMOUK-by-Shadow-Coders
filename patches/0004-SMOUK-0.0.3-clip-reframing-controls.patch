@@ -1,0 +1,261 @@
+From 35642a0be5b57f0fbe84f65ba402bfd2af02f633 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 05:55:42 +0200
+Subject: [PATCH] SMOUK-0.0.3-clip-reframing-controls
+
+---
+ src/windows/main_window.py     |   2 +-
+ src/windows/verticalization.py | 140 +++++++++++++++++++++++++++------
+ src/windows/video_widget.py    |  14 +++-
+ 3 files changed, 128 insertions(+), 28 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index d9c28d685..e6f5726db 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.2"
++SMOUK_VERSION = "0.0.3"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 0f98e908b..82df64fd1 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -18,23 +18,27 @@
+  A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+ """
+ 
+-import os
+-
+ from qt_api import (
+     Qt, QWidget, QFrame, QLabel, QScrollArea, QToolButton, QVBoxLayout,
+-    QPushButton, QCheckBox,
++    QCheckBox, QComboBox, QSlider,
+ )
+ 
+ import openshot
+-from classes import info
+ from classes.app import get_app
+ from classes.logger import log
++from classes.query import Clip
+ 
+ 
+ VERTICALIZATION_DOCK_MIN_WIDTH = 320
+ 
+-# Built-in 9:16 profile shipped with OpenShot (FHD Vertical 1080p 30 fps).
+-VERTICAL_PROFILE_FILE = "01080x1920p0030_09-16"
++# OpenShot ships these profiles. SMOUK exposes the supported output choices
++# without changing the 16:9 editing project.
++OUTPUT_PROFILES = (
++    ("1080 x 1350 (4:5) - 25 fps", "01080x1350p0025_04-05", 4.0 / 5.0),
++    ("1080 x 1350 (4:5) - 30 fps", "01080x1350p0030_04-05", 4.0 / 5.0),
++    ("1080 x 1920 (9:16) - 25 fps", "01080x1920p0025_09-16", 9.0 / 16.0),
++    ("1080 x 1920 (9:16) - 30 fps", "01080x1920p0030_09-16", 9.0 / 16.0),
++)
+ 
+ 
+ class CollapsibleSection(QFrame):
+@@ -121,7 +125,7 @@ class VerticalizationDockContent(QWidget):
+         layout.setContentsMargins(8, 8, 8, 8)
+         layout.setSpacing(6)
+ 
+-        # Verticalization controls (project output + viewer guide)
++        # Verticalization controls (output + viewer guide + clip reframing)
+         self._build_controls(layout, _)
+ 
+         self.sections = {}
+@@ -144,11 +148,20 @@ class VerticalizationDockContent(QWidget):
+         cbox.setContentsMargins(8, 8, 8, 8)
+         cbox.setSpacing(6)
+ 
+-        self.btn_vertical_project = QPushButton(
+-            _("Vertical project 9:16 (1080x1920)"), controls)
+-        self.btn_vertical_project.setObjectName("verticalizationVerticalProject")
+-        self.btn_vertical_project.clicked.connect(self._on_set_vertical_project)
+-        cbox.addWidget(self.btn_vertical_project)
++        output_label = QLabel(_("Vertical output profile"), controls)
++        output_label.setObjectName("verticalizationOutputProfileLabel")
++        cbox.addWidget(output_label)
++
++        self.output_profile = QComboBox(controls)
++        self.output_profile.setObjectName("verticalizationOutputProfile")
++        for title, profile_id, _ratio in OUTPUT_PROFILES:
++            self.output_profile.addItem(_(title), profile_id)
++        saved_profile = get_app().get_settings().get("smouk_vertical_output_profile")
++        saved_index = self.output_profile.findData(saved_profile)
++        if saved_index >= 0:
++            self.output_profile.setCurrentIndex(saved_index)
++        self.output_profile.currentIndexChanged.connect(self._on_output_profile_changed)
++        cbox.addWidget(self.output_profile)
+ 
+         self.chk_overlay = QCheckBox(
+             _("Show the 9:16 guide in the viewer"), controls)
+@@ -156,23 +169,104 @@ class VerticalizationDockContent(QWidget):
+         self.chk_overlay.toggled.connect(self._on_toggle_overlay)
+         cbox.addWidget(self.chk_overlay)
+ 
++        self.reframe_label = QLabel(_("Horizontal framing (selected clip)"), controls)
++        self.reframe_label.setObjectName("verticalizationReframeLabel")
++        cbox.addWidget(self.reframe_label)
++
++        self.reframe_slider = QSlider(Qt.Horizontal, controls)
++        self.reframe_slider.setObjectName("verticalizationReframeSlider")
++        self.reframe_slider.setRange(-1000, 1000)
++        self.reframe_slider.setValue(0)
++        self.reframe_slider.setToolTip(
++            _("Move the selected 16:9 clip beneath the vertical guide."))
++        self.reframe_slider.sliderReleased.connect(self._on_reframe_changed)
++        cbox.addWidget(self.reframe_slider)
++
++        self.chk_keyframes = QCheckBox(_("Keyframes"), controls)
++        self.chk_keyframes.setObjectName("verticalizationReframeKeyframes")
++        self.chk_keyframes.setToolTip(
++            _("Store this position only at the current playhead frame."))
++        cbox.addWidget(self.chk_keyframes)
++
+         layout.addWidget(controls)
+ 
+-    def _on_set_vertical_project(self):
+-        """Switch the current project to the built-in 9:16 vertical profile."""
+-        profile_path = os.path.join(info.PROFILES_PATH, VERTICAL_PROFILE_FILE)
+-        try:
+-            profile = openshot.Profile(profile_path)
+-        except Exception as ex:
+-            log.warning("SMOUK: unable to load vertical profile '%s': %s",
+-                        profile_path, ex)
+-            return
++    def _on_output_profile_changed(self, _index):
++        """Persist the selected SMOUK output profile without changing the edit canvas."""
++        profile_id = self.output_profile.currentData()
++        settings = get_app().get_settings()
++        settings.set("smouk_vertical_output_profile", profile_id)
++        if hasattr(settings, "save"):
++            settings.save()
++        self._apply_output_ratio_to_preview()
++
++    def _output_ratio(self):
++        return OUTPUT_PROFILES[self.output_profile.currentIndex()][2]
++
++    def _apply_output_ratio_to_preview(self):
++        preview = getattr(get_app().window, "videoPreview", None)
++        if preview is not None and hasattr(preview, "set_verticalization_overlay_ratio"):
++            preview.set_verticalization_overlay_ratio(self._output_ratio())
++
++    def _selected_clip(self):
++        """Return the one timeline clip currently being reframed, if any."""
++        window = get_app().window
++        clip_ids = getattr(window, "selected_clips", []) if window else []
++        if callable(clip_ids):
++            clip_ids = clip_ids()
++        if not clip_ids:
++            return None
++        return Clip.get(id=clip_ids[0])
++
++    @staticmethod
++    def _clip_frame(clip, window):
++        """Return the selected clip's current one-based source frame."""
++        fps = get_app().project.get("fps")
++        fps_value = float(fps["num"]) / float(fps["den"])
++        playhead = float(getattr(window.preview_thread, "current_frame", 1))
++        position = float(clip.data.get("position", 0.0)) * fps_value
++        clip_start = float(clip.data.get("start", 0.0)) * fps_value
++        return max(1, int(round(playhead - position + clip_start)))
++
++    @staticmethod
++    def _clip_end_frame(clip, fps_value, start_frame):
++        end = clip.data.get("end")
++        if end is None:
++            return start_frame
++        return max(start_frame, int(round(float(end) * fps_value)))
++
++    def _on_reframe_changed(self):
++        """Store a fixed reframe, or a keyframe at the current playhead position."""
+         window = get_app().window
+-        if window is not None and hasattr(window, "actionProfile_trigger"):
+-            window.actionProfile_trigger(profile)
++        clip = self._selected_clip()
++        if window is None or clip is None:
++            log.info("SMOUK: select one timeline clip before reframing")
++            return
++
++        # Keep the selected output crop entirely inside a 16:9 source frame.
++        max_offset = (1.0 - (self._output_ratio() / (16.0 / 9.0))) / 2.0
++        value = (self.reframe_slider.value() / 1000.0) * max_offset
++        fps = get_app().project.get("fps")
++        fps_value = float(fps["num"]) / float(fps["den"])
++        frame = self._clip_frame(clip, window)
++
++        if self.chk_keyframes.isChecked():
++            window.videoPreview.updateClipProperty(clip.id, frame, "location_x", value)
++            return
++
++        start_frame = max(1, int(round(float(clip.data.get("start", 0.0)) * fps_value)) + 1)
++        end_frame = self._clip_end_frame(clip, fps_value, start_frame)
++        clip.data["location_x"] = {
++            "Points": [
++                {"co": {"X": start_frame, "Y": value}, "interpolation": openshot.BEZIER},
++                {"co": {"X": end_frame, "Y": value}, "interpolation": openshot.BEZIER},
++            ]
++        }
++        clip.save()
++        window.refreshFrameSignal.emit()
+ 
+     def _on_toggle_overlay(self, enabled):
+         """Enable/disable the 9:16 guide overlay on the video preview."""
+         preview = getattr(get_app().window, "videoPreview", None)
+         if preview is not None and hasattr(preview, "set_verticalization_overlay"):
++            self._apply_output_ratio_to_preview()
+             preview.set_verticalization_overlay(enabled)
+diff --git a/src/windows/video_widget.py b/src/windows/video_widget.py
+index ad1d495ea..14a8bdf8e 100644
+--- a/src/windows/video_widget.py
++++ b/src/windows/video_widget.py
+@@ -538,15 +538,20 @@ class VideoWidget(QWidget, updates.UpdateInterface):
+         return pix_size
+ 
+     def set_verticalization_overlay(self, enabled):
+-        """Enable/disable the SMOUK 9:16 verticalization guide overlay."""
++        """Enable/disable the SMOUK vertical-output guide overlay."""
+         self.verticalization_overlay = bool(enabled)
+         self.update()
+ 
++    def set_verticalization_overlay_ratio(self, ratio):
++        """Set the width/height ratio displayed by the SMOUK crop guide."""
++        self.verticalization_overlay_ratio = max(0.01, float(ratio))
++        self.update()
++
+     def _paint_verticalization_overlay(self, painter, viewport):
+-        """Draw the SMOUK 9:16 guide over the preview.
++        """Draw the SMOUK vertical-output guide over the preview.
+ 
+         The guide is purely visual and is never part of the exported video. It
+-        represents the 9:16 region that will be exported from the current
++        represents the selected vertical region that will be exported from the current
+         project frame: full visible height, centred horizontally, with the
+         width derived from the 9:16 ratio. Geometry is computed from the
+         already letterboxed viewport, so it adapts to resizing, zoom and DPI.
+@@ -556,7 +561,7 @@ class VideoWidget(QWidget, updates.UpdateInterface):
+         if viewport is None or viewport.isEmpty():
+             return
+ 
+-        target_ratio = 9.0 / 16.0
++        target_ratio = getattr(self, "verticalization_overlay_ratio", 9.0 / 16.0)
+         vx = float(viewport.x())
+         vy = float(viewport.y())
+         vw = float(viewport.width())
+@@ -3126,6 +3131,7 @@ class VideoWidget(QWidget, updates.UpdateInterface):
+         self.curr_frame_size = None # Frame size
+         # SMOUK: 9:16 verticalization guide overlay (visual only, never exported)
+         self.verticalization_overlay = False
++        self.verticalization_overlay_ratio = 9.0 / 16.0
+         self.verticalization_overlay_dim = True
+         self.verticalization_overlay_guides = True
+         self.zoom = 1.0  # Zoom of widget (does not affect video, only workspace)
+-- 
+2.55.0.windows.3
+
