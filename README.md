@@ -122,14 +122,18 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   salida (dimensiones, FPS y relación de aspecto) a la timeline temporal antes
   de aplicar el recorte de clips 16:9.
 
-### 0.0.2
+### 0.0.11
 
-- Se añadió el botón **Proyecto vertical 9:16 (1080x1920)** en el dock, que
-  aplica el perfil integrado `FHD Vertical 1080p 30 fps`.
-- Se añadió la **guía 9:16** sobre el visor: rectángulo blanco con la zona
-  exterior atenuada y guías de tercios, activable desde el dock. La guía es
-  puramente visual y nunca forma parte del vídeo exportado; se adapta al
-  escalado, al zoom, a DPI altos y a las barras de letterboxing.
+- Se corrigió la exportación vertical para localizar las dimensiones del medio
+  en la tabla de archivos del proyecto cuando el clip solo contiene `file_id`.
+  Así, los clips 16:9 reciben realmente `Scale Crop` y el resultado contiene
+  el encuadre de la guía blanca, sin la imagen horizontal completa.
+- El reconocimiento de clips 16:9 usa su relación de visualización, por lo que
+  también se recortan correctamente fuentes anamórficas 1440×1080 marcadas
+  como 16:9.
+- La exportación iniciada desde el dock fuerza un códec de audio compatible
+  con MP4 (AAC cuando está disponible), evitando que un códec heredado del
+  preset bloquee la ventana de renderizado.
 
 ## Desarrollo local
 

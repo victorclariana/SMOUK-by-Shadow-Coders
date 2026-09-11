@@ -17,6 +17,7 @@ corresponding repository.
 | `0009-SMOUK-0.0.8-one-click-timeline-shot-slicing.patch` | **openshot-qt** | Replaces manual source selection with one-click detection and Keep Both Sides slicing for all timeline videos. |
 | `0010-SMOUK-0.0.9-live-reframing-slider.patch` | **openshot-qt** | Synchronizes per-clip reframing, updates it live while dragging, and enlarges the slider handle. |
 | `0011-SMOUK-0.0.10-apply-vertical-render-profile.patch` | **openshot-qt** | Applies the complete SMOUK profile to the temporary render timeline before cropping. |
+| `0012-SMOUK-0.0.11-fix-crop-and-audio.patch` | **openshot-qt** | Resolves imported media metadata before applying crop and selects an MP4-compatible audio codec for SMOUK exports. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

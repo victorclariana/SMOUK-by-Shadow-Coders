@@ -1,0 +1,92 @@
+From 1eb279abb983f69709d6ae886c227d82d5678fc7 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 15:36:22 +0200
+Subject: [PATCH] SMOUK-0.0.11-fix-crop-and-audio
+
+---
+ src/windows/export.py      | 37 ++++++++++++++++++++++++++++++++++++-
+ src/windows/main_window.py |  2 +-
+ 2 files changed, 37 insertions(+), 2 deletions(-)
+
+diff --git a/src/windows/export.py b/src/windows/export.py
+index 8a3e10e77..d5ae2ee7c 100644
+--- a/src/windows/export.py
++++ b/src/windows/export.py
+@@ -327,6 +327,7 @@ class Export(QDialog):
+         # Load previous settings (if any)
+         self.load_settings()
+         self._select_smouk_output_profile()
++        self._configure_smouk_audio_codec()
+ 
+         self.exportTabs.currentChanged.connect(self._apply_tab_order)
+         self.toolBox.currentChanged.connect(self._apply_tab_order)
+@@ -353,11 +354,32 @@ class Export(QDialog):
+         crop_location_basis = (float(width) + source_output_width) / 2.0
+         location_factor = source_output_width / crop_location_basis
+ 
++        files = {file_data.get("id"): file_data
++                 for file_data in data.get("files", [])}
++
+         for clip in data.get("clips", []):
++            # A serialized clip may contain only its file_id.  In that case,
++            # its media dimensions live in the project's files table, not in
++            # clip["reader"].  Falling back is essential: without it Scale
++            # Crop was never enabled for normal imported clips.
+             reader = clip.get("reader", {})
++            if not reader.get("width") or not reader.get("height"):
++                reader = files.get(clip.get("file_id"), reader)
+             source_width = float(reader.get("width") or 0)
+             source_height = float(reader.get("height") or 0)
+-            if source_height <= 0 or abs((source_width / source_height) - (16.0 / 9.0)) > 0.02:
++            display_ratio = reader.get("display_ratio", {})
++            display_num = float(display_ratio.get("num") or 0)
++            display_den = float(display_ratio.get("den") or 0)
++            if display_num > 0 and display_den > 0:
++                source_ratio = display_num / display_den
++            else:
++                pixel_ratio = reader.get("pixel_ratio", {})
++                pixel_num = float(pixel_ratio.get("num") or 1)
++                pixel_den = float(pixel_ratio.get("den") or 1)
++                source_ratio = ((source_width / source_height) *
++                                (pixel_num / pixel_den)
++                                if source_height > 0 and pixel_den > 0 else 0)
++            if abs(source_ratio - (16.0 / 9.0)) > 0.02:
+                 continue
+ 
+             clip["scale"] = openshot.SCALE_CROP
+@@ -375,6 +397,19 @@ class Export(QDialog):
+         if profile_index >= 0:
+             self.cboSimpleVideoProfile.setCurrentIndex(profile_index)
+ 
++    def _configure_smouk_audio_codec(self):
++        """Use an MP4-compatible audio encoder for an explicit SMOUK export."""
++        if not self.smouk_output:
++            return
++
++        # The normal preset can leave a stale or unavailable codec in the
++        # dialog.  Native AAC is the preferred encoder; the fallbacks keep
++        # audio enabled on older FFmpeg builds.
++        for codec in ("aac", "libfdk_aac", "libvo_aacenc", "libfaac", "libmp3lame"):
++            if openshot.FFmpegWriter.IsValidCodec(codec):
++                self.txtAudioCodec.setText(codec)
++                return
++
+     def _apply_tab_order(self):
+         current_tab = self.exportTabs.currentWidget()
+         if current_tab is None:
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 2954b3caa..6db1b551f 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.10"
++SMOUK_VERSION = "0.0.11"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+-- 
+2.55.0.windows.3
+
