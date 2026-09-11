@@ -160,6 +160,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - Al ocultar o cerrar el dock `Verticalization`, se desactiva la guía 9:16 y
   desaparece del visor.
 
+### 0.0.16
+
+- Se añadió `Auto reframe timeline clips`: detecta la cara principal de cada
+  plano con YuNet (OpenCV DNN), la sigue con CSRT y crea keyframes horizontales
+  suavizados y editables. El análisis se ejecuta localmente y sin red.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
