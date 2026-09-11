@@ -116,6 +116,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - El vídeo se desplaza en tiempo real mientras se arrastra el control.
 - Se amplió el handle del deslizador para facilitar su agarre.
 
+### 0.0.10
+
+- Se corrigió el renderizador vertical para aplicar el perfil completo de
+  salida (dimensiones, FPS y relación de aspecto) a la timeline temporal antes
+  de aplicar el recorte de clips 16:9.
+
 ### 0.0.2
 
 - Se añadió el botón **Proyecto vertical 9:16 (1080x1920)** en el dock, que

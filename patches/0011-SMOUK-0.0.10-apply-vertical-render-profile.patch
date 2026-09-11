@@ -1,0 +1,47 @@
+From a0dafd6a35a9ffb7e6793e27279894da3fcd1853 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 15:12:07 +0200
+Subject: [PATCH] SMOUK-0.0.10-apply-vertical-render-profile
+
+---
+ src/windows/export.py      | 9 ++++++---
+ src/windows/main_window.py | 2 +-
+ 2 files changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/src/windows/export.py b/src/windows/export.py
+index b1f098429..8a3e10e77 100644
+--- a/src/windows/export.py
++++ b/src/windows/export.py
+@@ -341,10 +341,13 @@ class Export(QDialog):
+         to libopenshot's Crop location basis for the vertical canvas. The
+         original project model and preview timeline are never modified.
+         """
++        # Set all profile metadata (including the profile description and DAR),
++        # not only width/height. Timeline.SetJson resolves its effective canvas
++        # from this complete profile representation.
++        profile_path = os.path.join(info.PROFILES_PATH, self.smouk_output_profile)
++        profile = openshot.Profile(profile_path)
++        self.project.apply_profile(profile)
+         data = self.project._data
+-        data["width"] = int(width)
+-        data["height"] = int(height)
+-        data["fps"] = {"num": int(fps), "den": 1}
+ 
+         source_output_width = float(height) * (16.0 / 9.0)
+         crop_location_basis = (float(width) + source_output_width) / 2.0
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index d41054b1f..2954b3caa 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.9"
++SMOUK_VERSION = "0.0.10"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+-- 
+2.55.0.windows.3
+
