@@ -214,6 +214,16 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   menos cada cinco segundos. Así se recuperan la posición y tamaño del visor,
   timeline y paneles tras un cierre inesperado.
 
+### 0.0.23
+
+- El reencuadre automático es ahora deliberadamente conservador. Para cada
+  plano aplica como norma un encuadre fijo basado en la posición mediana del
+  sujeto; solo crea dos keyframes lineales y lentos cuando detecta un paneo
+  sostenido, amplio y casi unidireccional.
+- Reduce el muestreo a dos veces por segundo, suaviza más la detección y
+  conserva la cara ya adquirida en lugar de saltar a otra. Los cambios de lado
+  u oscilaciones del detector quedan bloqueados en un encuadre estable.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

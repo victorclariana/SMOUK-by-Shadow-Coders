@@ -1,0 +1,172 @@
+From ff746f8b386e325d01bce80328267332100f9151 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 00:10:56 +0200
+Subject: [PATCH] SMOUK-0.0.23-conservative-auto-reframing
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 81 +++++++++++++++++++++++++++-------
+ 2 files changed, 67 insertions(+), 16 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 519113e78..23e643789 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.22"
++SMOUK_VERSION = "0.0.23"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index a57d43543..019b226c8 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -24,6 +24,7 @@ import shutil
+ import subprocess
+ import sys
+ import json
++import statistics
+ 
+ from qt_api import (
+     Qt, QWidget, QFrame, QLabel, QScrollArea, QToolButton, QVBoxLayout,
+@@ -361,7 +362,7 @@ class VerticalizationDockContent(QWidget):
+             return None, None
+ 
+     def _auto_reframe_clip(self, clip, cv2, mediapipe=None):
+-        """Track the largest face, with MediaPipe face/pose as a fallback."""
++        """Find a stable framing, following a subject only when it is warranted."""
+         path = str(clip.data.get("reader", {}).get("path", ""))
+         capture = cv2.VideoCapture(path)
+         if not capture.isOpened():
+@@ -381,10 +382,13 @@ class VerticalizationDockContent(QWidget):
+             end = float(clip.data.get("end") or (start + float(clip.data.get("duration", 0.0))))
+             if end <= start:
+                 return []
+-            sample_step = max(1, int(round(fps / 4.0)))  # four samples per second
++            # Two samples per second are enough to identify a sustained pan,
++            # while avoiding fast, nervous reactions to detector noise.
++            sample_step = max(1, int(round(fps / 2.0)))
+             redetect_step = max(sample_step, int(round(fps)))
+             tracker = None
+             smoothed_x = None
++            last_subject_center = None
+             samples = []
+             frame_number = int(round(start * fps))
+             end_number = int(round(end * fps))
+@@ -398,7 +402,17 @@ class VerticalizationDockContent(QWidget):
+                 if frame_number % redetect_step == 0 or tracker is None:
+                     _ok, faces = detector.detect(frame)
+                     if faces is not None and len(faces):
+-                        face = max(faces, key=lambda candidate: candidate[2] * candidate[3])
++                        # Once a subject has been acquired, keep that subject
++                        # rather than jumping to whichever face is largest in
++                        # a later sample. This is crucial for interviews and
++                        # shots with people crossing each other.
++                        def face_center(candidate):
++                            return (candidate[0] + candidate[2] / 2.0) / width
++
++                        face = (max(faces, key=lambda candidate: candidate[2] * candidate[3])
++                                if last_subject_center is None else
++                                min(faces, key=lambda candidate: abs(
++                                    face_center(candidate) - last_subject_center)))
+                         box = tuple(float(value) for value in face[:4])
+                         tracker = cv2.TrackerCSRT_create()
+                         # OpenCV 5 requires an integer Rect, while YuNet
+@@ -425,10 +439,13 @@ class VerticalizationDockContent(QWidget):
+                             frame, mp_face, mp_pose, cv2)
+ 
+                 if face_center is not None:
++                    last_subject_center = face_center
+                     target = max(-self._reframe_max_offset(), min(
+                         self._reframe_max_offset(),
+                         -(face_center - 0.5) * 2.0 * self._reframe_max_offset()))
+-                    smoothed_x = target if smoothed_x is None else (0.65 * smoothed_x + 0.35 * target)
++                    # A low-pass filter removes the small frame-to-frame
++                    # changes from face boxes and CSRT tracking.
++                    smoothed_x = target if smoothed_x is None else (0.85 * smoothed_x + 0.15 * target)
+                     samples.append((frame_number + 1, smoothed_x))
+ 
+                 for _unused in range(sample_step - 1):
+@@ -438,22 +455,56 @@ class VerticalizationDockContent(QWidget):
+ 
+             if not samples:
+                 return []
+-            # Keep sparse keyframes; values under 1% of the permitted travel
+-            # are visually indistinguishable and only create jitter.
+-            points = [samples[0]]
+-            threshold = self._reframe_max_offset() * 0.02
+-            for sample in samples[1:-1]:
+-                if abs(sample[1] - points[-1][1]) >= threshold:
+-                    points.append(sample)
+-            if samples[-1][0] != points[-1][0]:
+-                points.append(samples[-1])
+-            return points
++            return self._conservative_reframe_points(samples, fps)
+         finally:
+             capture.release()
+             for detector_instance in (locals().get("mp_face"), locals().get("mp_pose")):
+                 if detector_instance is not None and hasattr(detector_instance, "close"):
+                     detector_instance.close()
+ 
++    def _conservative_reframe_points(self, samples, fps):
++        """Return a fixed framing unless a long, one-direction pan is clear.
++
++        Detection is deliberately advisory: the default is the median subject
++        position for the whole shot. A camera move must be substantial,
++        sustained and predominantly one-directional before SMOUK writes two
++        slow linear keyframes. This prevents a face detector swapping subjects
++        from producing left-right camera movement.
++        """
++        if not samples:
++            return []
++        first_frame, last_frame = samples[0][0], samples[-1][0]
++        values = [value for _frame, value in samples]
++        fixed = float(statistics.median(values))
++        fixed_points = [(first_frame, fixed), (last_frame, fixed)]
++        duration = (last_frame - first_frame) / max(float(fps), 1.0)
++        if len(values) < 7 or duration < 3.0:
++            return fixed_points
++
++        window_size = min(3, len(values))
++        initial = float(statistics.median(values[:window_size]))
++        final = float(statistics.median(values[-window_size:]))
++        net_shift = final - initial
++        minimum_shift = self._reframe_max_offset() * 0.35
++        if abs(net_shift) < minimum_shift:
++            return fixed_points
++
++        noise_floor = self._reframe_max_offset() * 0.04
++        deltas = [right - left for left, right in zip(values, values[1:])]
++        significant = [delta for delta in deltas if abs(delta) >= noise_floor]
++        if not significant:
++            return fixed_points
++        expected_direction = 1 if net_shift > 0 else -1
++        aligned = sum(1 for delta in significant if delta * expected_direction > 0)
++        total_variation = sum(abs(delta) for delta in deltas)
++        # A true pan has a clear direction. Reversals or oscillation are a
++        # sign of detector/tracker uncertainty, so keep a fixed median crop.
++        if (aligned / len(significant) < 0.75 or
++                total_variation > abs(net_shift) * 1.45):
++            return fixed_points
++
++        return [(first_frame, initial), (last_frame, final)]
++
+     def _on_auto_reframe_timeline(self):
+         """Apply YuNet, YOLO and optional MediaPipe framing to timeline clips."""
+         _ = get_app()._tr
+@@ -491,7 +542,7 @@ class VerticalizationDockContent(QWidget):
+                     points = self._auto_reframe_clip(clip, cv2, mediapipe)
+                     if points:
+                         clip.data["location_x"] = {"Points": [
+-                            {"co": {"X": frame, "Y": value}, "interpolation": openshot.BEZIER}
++                            {"co": {"X": frame, "Y": value}, "interpolation": openshot.LINEAR}
+                             for frame, value in points]}
+                         ui_data = clip.data.get("ui")
+                         if not isinstance(ui_data, dict):
+-- 
+2.55.0.windows.3
+
