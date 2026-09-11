@@ -68,6 +68,14 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - La guía del visor cambia automáticamente entre 4:5 y 9:16 según el perfil
   de salida seleccionado.
 
+### 0.0.4
+
+- Se añadió el renderizador vertical SMOUK al flujo de exportación.
+- El renderizador crea una timeline temporal con el perfil seleccionado,
+  convierte los clips 16:9 a relleno por recorte y transforma sus posiciones
+  horizontales para que el resultado coincida con la guía blanca del visor.
+- El proyecto de edición 16:9 no se modifica durante la exportación.
+
 ### 0.0.2
 
 - Se añadió el botón **Proyecto vertical 9:16 (1080x1920)** en el dock, que

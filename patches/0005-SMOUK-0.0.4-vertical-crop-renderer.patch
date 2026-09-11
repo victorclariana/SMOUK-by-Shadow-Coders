@@ -1,0 +1,130 @@
+From 2f2ef1911f348fa714a19a6514744bea1c0049e6 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 06:13:18 +0200
+Subject: [PATCH] SMOUK-0.0.4-vertical-crop-renderer
+
+---
+ src/windows/export.py          | 60 ++++++++++++++++++++++++++++++++++
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py |  1 +
+ 3 files changed, 62 insertions(+), 1 deletion(-)
+
+diff --git a/src/windows/export.py b/src/windows/export.py
+index bb88177d3..91a41a7fe 100644
+--- a/src/windows/export.py
++++ b/src/windows/export.py
+@@ -61,6 +61,15 @@ import json
+ 
+ MAX_FPS_SPINBOX_VALUE = 2147483647
+ 
++# SMOUK output profiles. The editing project remains 16:9; these settings are
++# applied only to the isolated Timeline created by this export dialog.
++SMOUK_OUTPUT_PROFILES = {
++    "01080x1350p0025_04-05": (1080, 1350, 25),
++    "01080x1350p0030_04-05": (1080, 1350, 30),
++    "01080x1920p0025_09-16": (1080, 1920, 25),
++    "01080x1920p0030_09-16": (1080, 1920, 30),
++}
++
+ 
+ class Export(QDialog):
+     """ Export Dialog """
+@@ -140,6 +149,17 @@ class Export(QDialog):
+         channels = int(project_timeline.info.channels)
+         channel_layout = int(project_timeline.info.channel_layout)
+ 
++        # A SMOUK render is a separate vertical timeline. It keeps the source
++        # project unchanged while turning 16:9 clips into Crop/fill clips and
++        # translating their horizontal framing values to the target canvas.
++        self.smouk_output_profile = get_app().get_settings().get(
++            "smouk_vertical_output_profile")
++        self.smouk_output = SMOUK_OUTPUT_PROFILES.get(self.smouk_output_profile)
++        if self.smouk_output:
++            width, height, fps_num = self.smouk_output
++            fps = openshot.Fraction(fps_num, 1)
++            self._prepare_smouk_export_project(width, height, fps_num)
++
+         # Create new "export" openshot.Timeline object
+         self.timeline = openshot.Timeline(
+             width, height, openshot.Fraction(fps.num, fps.den),
+@@ -302,12 +322,52 @@ class Export(QDialog):
+ 
+         # Load previous settings (if any)
+         self.load_settings()
++        self._select_smouk_output_profile()
+ 
+         self.exportTabs.currentChanged.connect(self._apply_tab_order)
+         self.toolBox.currentChanged.connect(self._apply_tab_order)
+         self._apply_tab_order()
+         self.txtFileName.setFocus()
+ 
++    def _prepare_smouk_export_project(self, width, height, fps):
++        """Convert the copied 16:9 project data into a vertical crop render.
++
++        Horizontal clips are expanded to fill the output height. Their stored
++        SMOUK `location_x` values come from a 16:9 canvas, so they are mapped
++        to libopenshot's Crop location basis for the vertical canvas. The
++        original project model and preview timeline are never modified.
++        """
++        data = self.project._data
++        data["width"] = int(width)
++        data["height"] = int(height)
++        data["fps"] = {"num": int(fps), "den": 1}
++
++        source_output_width = float(height) * (16.0 / 9.0)
++        crop_location_basis = (float(width) + source_output_width) / 2.0
++        location_factor = source_output_width / crop_location_basis
++
++        for clip in data.get("clips", []):
++            reader = clip.get("reader", {})
++            source_width = float(reader.get("width") or 0)
++            source_height = float(reader.get("height") or 0)
++            if source_height <= 0 or abs((source_width / source_height) - (16.0 / 9.0)) > 0.02:
++                continue
++
++            clip["scale"] = openshot.SCALE_CROP
++            for point in clip.get("location_x", {}).get("Points", []):
++                coordinate = point.get("co", {})
++                if "Y" in coordinate:
++                    coordinate["Y"] = float(coordinate["Y"]) * location_factor
++
++    def _select_smouk_output_profile(self):
++        """Preselect the dock's output profile in the normal Export dialog."""
++        if not self.smouk_output_profile:
++            return
++        profile_index = self.getVideoProfileIndex(
++            profile_key=self.smouk_output_profile)
++        if profile_index >= 0:
++            self.cboSimpleVideoProfile.setCurrentIndex(profile_index)
++
+     def _apply_tab_order(self):
+         current_tab = self.exportTabs.currentWidget()
+         if current_tab is None:
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index e6f5726db..fde9d71cc 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.3"
++SMOUK_VERSION = "0.0.4"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 82df64fd1..defb43a2c 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -161,6 +161,7 @@ class VerticalizationDockContent(QWidget):
+         if saved_index >= 0:
+             self.output_profile.setCurrentIndex(saved_index)
+         self.output_profile.currentIndexChanged.connect(self._on_output_profile_changed)
++        self._on_output_profile_changed(self.output_profile.currentIndex())
+         cbox.addWidget(self.output_profile)
+ 
+         self.chk_overlay = QCheckBox(
+-- 
+2.55.0.windows.3
+
