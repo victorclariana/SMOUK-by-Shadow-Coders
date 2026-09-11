@@ -98,6 +98,16 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - Se añadió `Slice selected timeline clip (keep both sides)`, que inserta los
   cortes detectados en el clip seleccionado conservando ambos lados.
 
+### 0.0.8
+
+- La sección Shot Detection se simplificó a un único botón:
+  `Detect and slice timeline videos`.
+- Analiza todos los clips de vídeo de la timeline con FFmpeg y aplica los
+  cortes automáticamente con `Keep Both Sides`, sin cargar archivos ni
+  seleccionar clips manualmente.
+- Añade una barra de progreso por clips procesados y un resumen final de
+  cortes insertados o errores encontrados.
+
 ### 0.0.2
 
 - Se añadió el botón **Proyecto vertical 9:16 (1080x1920)** en el dock, que

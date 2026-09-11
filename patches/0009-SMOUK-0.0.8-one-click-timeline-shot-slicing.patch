@@ -1,0 +1,267 @@
+From 4015a3a80be5bb4981b1f68790df6a3062022b49 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 07:13:49 +0200
+Subject: [PATCH] SMOUK-0.0.8-one-click-timeline-shot-slicing
+
+---
+ src/windows/main_window.py     |   2 +-
+ src/windows/verticalization.py | 192 +++++++++++++++------------------
+ 2 files changed, 89 insertions(+), 105 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 13846922f..40eacd895 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.7"
++SMOUK_VERSION = "0.0.8"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index a666ed9d6..cb8aa4b7f 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -26,8 +26,7 @@ import sys
+ 
+ from qt_api import (
+     Qt, QWidget, QFrame, QLabel, QScrollArea, QToolButton, QVBoxLayout,
+-    QCheckBox, QComboBox, QPushButton, QSlider, QFileDialog, QLineEdit,
+-    QMessageBox,
++    QCheckBox, QComboBox, QPushButton, QProgressBar, QSlider, QMessageBox,
+ )
+ 
+ import openshot
+@@ -161,27 +160,21 @@ class VerticalizationDockContent(QWidget):
+         self.sections["export"].add_widget(self.btn_export_vertical)
+ 
+     def _build_shot_detection_controls(self, _):
+-        """Add the initial FFmpeg scene detector without importing the file."""
+-        self.shot_source_path = QLineEdit(self)
+-        self.shot_source_path.setObjectName("verticalizationShotSource")
+-        self.shot_source_path.setPlaceholderText(_("Video file to analyse (not imported)"))
+-        self.sections["shot_detection"].add_widget(self.shot_source_path)
+-
+-        self.btn_select_shot_source = QPushButton(_("Choose video"), self)
+-        self.btn_select_shot_source.clicked.connect(self._on_choose_shot_source)
+-        self.sections["shot_detection"].add_widget(self.btn_select_shot_source)
+-
+-        self.btn_detect_shots = QPushButton(_("Detect cuts with FFmpeg"), self)
+-        self.btn_detect_shots.setObjectName("verticalizationDetectShots")
+-        self.btn_detect_shots.clicked.connect(self._on_detect_shots)
++        """Add the one-click FFmpeg detection-and-slice workflow."""
++        self.btn_detect_shots = QPushButton(
++            _("Detect and slice timeline videos"), self)
++        self.btn_detect_shots.setObjectName("verticalizationDetectAndSliceShots")
++        self.btn_detect_shots.setToolTip(
++            _("Analyse every video clip in the timeline and keep both sides of each cut."))
++        self.btn_detect_shots.clicked.connect(self._on_detect_and_slice_timeline)
+         self.sections["shot_detection"].add_widget(self.btn_detect_shots)
+ 
+-        self.btn_slice_shots = QPushButton(
+-            _("Slice selected timeline clip (keep both sides)"), self)
+-        self.btn_slice_shots.setObjectName("verticalizationSliceShots")
+-        self.btn_slice_shots.setEnabled(False)
+-        self.btn_slice_shots.clicked.connect(self._on_slice_detected_shots)
+-        self.sections["shot_detection"].add_widget(self.btn_slice_shots)
++        self.shot_progress = QProgressBar(self)
++        self.shot_progress.setObjectName("verticalizationShotProgress")
++        self.shot_progress.setRange(0, 1)
++        self.shot_progress.setValue(0)
++        self.shot_progress.setVisible(False)
++        self.sections["shot_detection"].add_widget(self.shot_progress)
+ 
+         self.shot_results = QLabel(_("No analysis has been run."), self)
+         self.shot_results.setObjectName("verticalizationShotResults")
+@@ -189,111 +182,102 @@ class VerticalizationDockContent(QWidget):
+         self.sections["shot_detection"].add_widget(self.shot_results)
+         self.detected_cuts = []
+ 
+-    def _on_choose_shot_source(self):
+-        """Choose an analysis source only; it is not added to the project."""
+-        path, _selected_filter = QFileDialog.getOpenFileName(
+-            self, get_app()._tr("Analyse video"), "",
+-            get_app()._tr("Video files (*.mp4 *.mov *.mkv *.avi);;All files (*)"))
+-        if path:
+-            self.shot_source_path.setText(path)
+-
+     @staticmethod
+     def _format_timecode(seconds):
+         minutes, seconds = divmod(float(seconds), 60.0)
+         hours, minutes = divmod(int(minutes), 60)
+         return "%02d:%02d:%06.3f" % (hours, minutes, seconds)
+ 
+-    def _on_detect_shots(self):
+-        """Detect hard cuts with FFmpeg's scene score without touching the timeline."""
+-        _ = get_app()._tr
+-        source_path = self.shot_source_path.text().strip()
+-        if not source_path or not os.path.isfile(source_path):
+-            QMessageBox.warning(self, _("Shot Detection"),
+-                                _("Choose an existing video file first."))
+-            return
+-
+-        ffmpeg = (shutil.which("ffmpeg") or shutil.which("ffmpeg.exe") or
+-                  os.path.join(os.path.dirname(sys.executable), "ffmpeg.exe"))
+-        if not os.path.isfile(ffmpeg):
+-            ffmpeg = None
+-        if not ffmpeg:
+-            QMessageBox.warning(self, _("Shot Detection"),
+-                                _("FFmpeg was not found in PATH."))
+-            return
++    @staticmethod
++    def _timeline_video_clips():
++        """Return timeline clips backed by an existing common video file."""
++        video_extensions = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".webm"}
++        clips = []
++        for clip in Clip.filter():
++            path = str(clip.data.get("reader", {}).get("path", ""))
++            if path and os.path.isfile(path) and os.path.splitext(path)[1].lower() in video_extensions:
++                clips.append(clip)
++        return clips
+ 
+-        self.btn_detect_shots.setEnabled(False)
+-        self.shot_results.setText(_("Detecting cuts…"))
+-        get_app().processEvents()
+-        try:
+-            result = subprocess.run(  # nosec B603 -- fixed executable and argv list
+-                [ffmpeg, "-hide_banner", "-i", source_path,
+-                 "-vf", "select='gt(scene,0.20)',showinfo",
+-                 "-an", "-f", "null", "-"],
+-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+-                text=True, check=False, timeout=600)
+-        except (OSError, subprocess.TimeoutExpired) as ex:
+-            QMessageBox.warning(self, _("Shot Detection"), str(ex))
+-            self.shot_results.setText(_("Detection failed."))
+-            return
+-        finally:
+-            self.btn_detect_shots.setEnabled(True)
++    @staticmethod
++    def _ffmpeg_path():
++        path = (shutil.which("ffmpeg") or shutil.which("ffmpeg.exe") or
++                os.path.join(os.path.dirname(sys.executable), "ffmpeg.exe"))
++        return path if os.path.isfile(path) else None
+ 
++    @staticmethod
++    def _detect_cuts_with_ffmpeg(ffmpeg, source_path):
++        """Return hard-cut source timecodes from FFmpeg's scene detector."""
++        result = subprocess.run(  # nosec B603 -- fixed executable and argv list
++            [ffmpeg, "-hide_banner", "-i", source_path,
++             "-vf", "select='gt(scene,0.20)',showinfo",
++             "-an", "-f", "null", "-"],
++            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
++            text=True, check=False, timeout=600)
+         if result.returncode != 0:
+-            log.warning("SMOUK FFmpeg shot detection failed: %s", result.stderr[-2000:])
+-            QMessageBox.warning(self, _("Shot Detection"),
+-                                _("FFmpeg could not analyse this video."))
+-            self.shot_results.setText(_("Detection failed."))
+-            return
+-
+-        self.detected_cuts = [float(value) for value in re.findall(
++            raise RuntimeError(result.stderr[-2000:])
++        return [float(value) for value in re.findall(
+             r"pts_time:([0-9]+(?:\.[0-9]+)?)", result.stderr)]
+-        if not self.detected_cuts:
+-            self.btn_slice_shots.setEnabled(False)
+-            self.shot_results.setText(_("No cuts detected at sensitivity 0.20."))
+-            return
+ 
+-        timecodes = ", ".join(self._format_timecode(value)
+-                              for value in self.detected_cuts)
+-        self.shot_results.setText(
+-            _("%s cuts detected (sensitivity 0.20): %s") %
+-            (len(self.detected_cuts), timecodes))
+-        self.btn_slice_shots.setEnabled(True)
++    @staticmethod
++    def _slice_clip_at_cuts(window, clip, cuts):
++        """Slice one clip right-to-left so every split keeps both resulting sides."""
++        clip_start = float(clip.data.get("start", 0.0))
++        clip_end_value = clip.data.get("end")
++        clip_end = (float(clip_end_value) if clip_end_value is not None else
++                    clip_start + float(clip.data.get("duration", 0.0)))
++        clip_position = float(clip.data.get("position", 0.0))
++        valid_cuts = [cut for cut in cuts if clip_start < cut < clip_end]
++        for cut in sorted(valid_cuts, reverse=True):
++            window.timeline.Slice_Triggered(
++                MenuSlice.KEEP_BOTH, [clip.id], [],
++                clip_position + (cut - clip_start))
++        return len(valid_cuts)
+ 
+-    def _on_slice_detected_shots(self):
+-        """Slice the selected instance of the analysed file, keeping both sides."""
++    def _on_detect_and_slice_timeline(self):
++        """Analyse all timeline videos then immediately slice them at each cut."""
+         _ = get_app()._tr
+         window = get_app().window
+-        clip = self._selected_clip()
+-        if window is None or clip is None:
++        clips = self._timeline_video_clips()
++        if window is None or not clips:
+             QMessageBox.warning(self, _("Shot Detection"),
+-                                _("Select one matching clip in the timeline first."))
++                                _("Add one or more video clips to the timeline first."))
+             return
+ 
+-        source_path = self.shot_source_path.text().strip()
+-        clip_path = str(clip.data.get("reader", {}).get("path", ""))
+-        if os.path.normcase(os.path.abspath(source_path)) != os.path.normcase(os.path.abspath(clip_path)):
++        ffmpeg = self._ffmpeg_path()
++        if not ffmpeg:
+             QMessageBox.warning(self, _("Shot Detection"),
+-                                _("The selected timeline clip is not the analysed video."))
+-            return
+-
+-        clip_start = float(clip.data.get("start", 0.0))
+-        clip_end = float(clip.data.get("end", clip_start))
+-        clip_position = float(clip.data.get("position", 0.0))
+-        cuts = [cut for cut in self.detected_cuts if clip_start < cut < clip_end]
+-        if not cuts:
+-            QMessageBox.information(self, _("Shot Detection"),
+-                                    _("No detected cuts fall inside this clip."))
++                                _("FFmpeg was not found in PATH."))
+             return
+ 
+-        # Slice from right to left: the original clip stays the left segment,
+-        # so each earlier cut can safely target its same ID.
+-        for cut in sorted(cuts, reverse=True):
+-            timeline_position = clip_position + (cut - clip_start)
+-            window.timeline.Slice_Triggered(
+-                MenuSlice.KEEP_BOTH, [clip.id], [], timeline_position)
++        self.btn_detect_shots.setEnabled(False)
++        self.shot_progress.setVisible(True)
++        self.shot_progress.setRange(0, len(clips))
++        self.shot_progress.setValue(0)
++        self.shot_results.setText(_("Analysing timeline videos…"))
++        get_app().processEvents()
++        total_cuts = 0
++        failed = 0
++        try:
++            for index, clip in enumerate(clips, start=1):
++                source_path = str(clip.data.get("reader", {}).get("path", ""))
++                self.shot_results.setText(
++                    _("Analysing clip %s of %s…") % (index, len(clips)))
++                get_app().processEvents()
++                try:
++                    cuts = self._detect_cuts_with_ffmpeg(ffmpeg, source_path)
++                    total_cuts += self._slice_clip_at_cuts(window, clip, cuts)
++                except (OSError, RuntimeError, subprocess.TimeoutExpired) as ex:
++                    failed += 1
++                    log.warning("SMOUK shot detection failed for %s: %s", source_path, ex)
++                self.shot_progress.setValue(index)
++                get_app().processEvents()
++        finally:
++            self.btn_detect_shots.setEnabled(True)
+ 
+         self.shot_results.setText(
+-            _("%s cuts inserted into the selected timeline clip.") % len(cuts))
++            _("Finished: %s cuts inserted in %s clips%s.") %
++            (total_cuts, len(clips), _("; %s failed") % failed if failed else ""))
+ 
+     def _build_controls(self, layout, _):
+         """Build the verticalization control area (project output + guide)."""
+-- 
+2.55.0.windows.3
+
