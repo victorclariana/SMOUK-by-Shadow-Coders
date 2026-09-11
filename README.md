@@ -224,6 +224,14 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   conserva la cara ya adquirida en lugar de saltar a otra. Los cambios de lado
   u oscilaciones del detector quedan bloqueados en un encuadre estable.
 
+### 0.0.24
+
+- El encuadre horizontal queda limitado al recorrido físico posible del crop.
+  Si se cambia el preset vertical, los keyframes existentes se ajustan al nuevo
+  límite para impedir que entre una franja negra por cualquier lateral.
+- El renderizador aplica el mismo límite en la geometría final de Crop como
+  salvaguarda adicional, incluso para proyectos con keyframes antiguos.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

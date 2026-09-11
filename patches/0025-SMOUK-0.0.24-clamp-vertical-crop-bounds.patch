@@ -1,0 +1,117 @@
+From 785786e914c7ccd0c0fd866f8d42654f9ca30786 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 00:21:17 +0200
+Subject: [PATCH] SMOUK-0.0.24-clamp-vertical-crop-bounds
+
+---
+ src/windows/export.py          |  9 +++++++-
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 38 +++++++++++++++++++++++++++++++++-
+ 3 files changed, 46 insertions(+), 3 deletions(-)
+
+diff --git a/src/windows/export.py b/src/windows/export.py
+index fb1a56762..abb1f4a3d 100644
+--- a/src/windows/export.py
++++ b/src/windows/export.py
+@@ -354,6 +354,11 @@ class Export(QDialog):
+         source_output_width = float(height) * (16.0 / 9.0)
+         crop_location_basis = (float(width) + source_output_width) / 2.0
+         location_factor = source_output_width / crop_location_basis
++        # Crop's location basis is the average of the expanded source width
++        # and target width. This is its exact safe range: anything farther
++        # would reveal a vertical black strip at one edge of the output.
++        max_crop_location = ((source_output_width - float(width)) /
++                             (source_output_width + float(width)))
+ 
+         files = {file_data.get("id"): file_data
+                  for file_data in data.get("files", [])}
+@@ -387,7 +392,9 @@ class Export(QDialog):
+             for point in clip.get("location_x", {}).get("Points", []):
+                 coordinate = point.get("co", {})
+                 if "Y" in coordinate:
+-                    coordinate["Y"] = float(coordinate["Y"]) * location_factor
++                    translated = float(coordinate["Y"]) * location_factor
++                    coordinate["Y"] = max(-max_crop_location, min(
++                        max_crop_location, translated))
+ 
+     def _select_smouk_output_profile(self):
+         """Preselect the dock's output profile in the normal Export dialog."""
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 23e643789..2ae4b7f54 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.23"
++SMOUK_VERSION = "0.0.24"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 019b226c8..9d7510870 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -744,6 +744,13 @@ class VerticalizationDockContent(QWidget):
+         settings.set("smouk_vertical_output_profile", profile_id)
+         if hasattr(settings, "save"):
+             settings.save()
++        # A 4:5 crop has less horizontal travel than a 9:16 crop. Old
++        # keyframes (or keyframes made with another output preset) must never
++        # be allowed to expose the canvas background inside the guide.
++        if self._clamp_timeline_reframes():
++            window = get_app().window
++            if window is not None:
++                window.refreshFrameSignal.emit()
+         self._apply_output_ratio_to_preview()
+ 
+     def _output_ratio(self):
+@@ -782,6 +789,34 @@ class VerticalizationDockContent(QWidget):
+     def _reframe_max_offset(self):
+         return (1.0 - (self._output_ratio() / (16.0 / 9.0))) / 2.0
+ 
++    def _clamp_reframe_value(self, value):
++        """Keep the selected crop entirely within a 16:9 source frame."""
++        maximum = self._reframe_max_offset()
++        return max(-maximum, min(maximum, float(value)))
++
++    def _clamp_timeline_reframes(self):
++        """Repair stored framing values that are invalid for the active crop."""
++        changed = False
++        for clip in self._timeline_video_clips():
++            points = clip.data.get("location_x", {}).get("Points", [])
++            clip_changed = False
++            for point in points:
++                coordinate = point.get("co", {})
++                if "Y" not in coordinate:
++                    continue
++                try:
++                    original = float(coordinate["Y"])
++                except (TypeError, ValueError):
++                    continue
++                bounded = self._clamp_reframe_value(original)
++                if bounded != original:
++                    coordinate["Y"] = bounded
++                    clip_changed = True
++            if clip_changed:
++                clip.save()
++                changed = True
++        return changed
++
+     def _reframe_value_at_frame(self, clip, frame):
+         """Evaluate the clip's existing location_x keyframe at a source frame."""
+         keyframe_data = clip.data.get("location_x")
+@@ -835,7 +870,8 @@ class VerticalizationDockContent(QWidget):
+             return
+ 
+         # Keep the selected output crop entirely inside a 16:9 source frame.
+-        value = (self.reframe_slider.value() / 1000.0) * self._reframe_max_offset()
++        value = self._clamp_reframe_value(
++            (self.reframe_slider.value() / 1000.0) * self._reframe_max_offset())
+         fps = get_app().project.get("fps")
+         fps_value = float(fps["num"]) / float(fps["den"])
+         frame = self._clip_frame(clip, window)
+-- 
+2.55.0.windows.3
+
