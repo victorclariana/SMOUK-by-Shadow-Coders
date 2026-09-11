@@ -1,0 +1,70 @@
+From 0c63782ab0553fcb9bf0b59b86591c6db779b012 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 04:53:00 +0200
+Subject: [PATCH] "Brand-SMOUK-window-title-and-move-Verticalization-dock^"
+
+---
+ src/windows/main_window.py | 24 +++++++++++-------------
+ 1 file changed, 11 insertions(+), 13 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index ee693bf82..c7146fd1e 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -100,6 +100,11 @@ from windows.views.transitions_treeview import TransitionsTreeView
+ from windows.views.tutorial import TutorialManager
+ 
+ 
++# SMOUK application version. Increment this patch number for every SMOUK UI
++# or workflow change released from this codebase.
++SMOUK_VERSION = "0.0.1"
++
++
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+     """ This class contains the logic for the main window widget """
+ 
+@@ -3779,7 +3784,8 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         if not app.project.current_filepath:
+             # Not saved yet (use singleShot since this method can be invoked by our preview thread)
+             QTimer.singleShot(0, functools.partial(self.setWindowTitle,
+-                "%s %s [%s] - %s" % (save_indicator, _("Untitled Project"), profile, "OpenShot Video Editor")))
++                "%s %s [%s] - SMOUK by Shadow Coders %s" % (
++                    save_indicator, _("Untitled Project"), profile, SMOUK_VERSION)))
+         else:
+             # Yes, project is saved
+             # Get just the filename
+@@ -3787,7 +3793,8 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+             filename = os.path.splitext(filename)[0]
+             # Use singleShot since this method can be invoked by our preview thread
+             QTimer.singleShot(0, functools.partial(self.setWindowTitle,
+-                "%s %s [%s] - %s" % (save_indicator, filename, profile, "OpenShot Video Editor")))
++                "%s %s [%s] - SMOUK by Shadow Coders %s" % (
++                    save_indicator, filename, profile, SMOUK_VERSION)))
+ 
+     # Update undo and redo buttons enabled/disabled to available changes
+     def updateStatusChanged(self, undo_status, redo_status):
+@@ -5473,19 +5480,10 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         self.dockVerticalization.hide()
+         self.addDockWidget(Qt.RightDockWidgetArea, self.dockVerticalization)
+ 
+-        # Add Docks submenu to View menu
++        # Add Docks submenu to View menu. Verticalization is included
++        # automatically with the other non-scope docks.
+         self.addViewDocksMenu()
+ 
+-        # Add a top-level SMOUK menu (placed before Help) with the
+-        # Verticalization dock toggle and room for future SMOUK actions.
+-        self.menuSmouk = QMenu(_("SMOUK"), self.menuBar())
+-        self.menuSmouk.setObjectName("menuSmouk")
+-        if hasattr(self, "menuHelp"):
+-            self.menuBar().insertMenu(self.menuHelp.menuAction(), self.menuSmouk)
+-        else:
+-            self.menuBar().addMenu(self.menuSmouk)
+-        self.menuSmouk.addAction(self.dockVerticalization.toggleViewAction())
+-
+         # Set up status bar
+         self.statusBar = QStatusBar()
+         self.setStatusBar(self.statusBar)
+-- 
+2.55.0.windows.3
+

@@ -6,7 +6,8 @@ corresponding repository.
 
 | Patch | Target repository | Purpose |
 |---|---|---|
-| `0001-Add-SMOUK-Verticalization-dock-and-top-level-SMOUK-m.patch` | **openshot-qt** | Adds the `Verticalization` dock (`src/windows/verticalization.py`) and registers it in `MainWindow` with a top-level `SMOUK` menu. |
+| `0001-Add-SMOUK-Verticalization-dock-and-top-level-SMOUK-m.patch` | **openshot-qt** | Adds the `Verticalization` dock (`src/windows/verticalization.py`) and registers it in `MainWindow`. |
+| `0002-Brand-SMOUK-window-title-and-move-Verticalization-dock.patch` | **openshot-qt** | Sets the window title to `SMOUK by Shadow Coders 0.0.1` and exposes `Verticalization` through `View` → `Docks`. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply
