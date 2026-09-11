@@ -150,6 +150,11 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   `libopus`, que sí acepta el formato de muestra actual y evita bloquear la
   exportación con audio.
 
+### 0.0.14
+
+- Al mostrarse el dock `Verticalization`, se activa por defecto `Show the
+  9:16 guide in the viewer` para que el encuadre de exportación sea visible.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

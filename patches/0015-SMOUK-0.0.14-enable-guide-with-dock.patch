@@ -1,0 +1,49 @@
+From e9c18ef0fa7d4dc4dbfc3b371dbf9260c72d516c Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 16:35:22 +0200
+Subject: [PATCH] SMOUK-0.0.14-enable-guide-with-dock
+
+---
+ src/windows/main_window.py | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index ce48c165e..5022b1e07 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.13"
++SMOUK_VERSION = "0.0.14"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+@@ -1595,6 +1595,11 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         elif getattr(self, "audio_recording_content", None):
+             self.audio_recording_content.deactivate_if_hidden()
+ 
++    def _on_verticalization_visibility_changed(self, visible):
++        """Show the framing guide whenever the Verticalization dock is active."""
++        if visible and not self.verticalization_content.chk_overlay.isChecked():
++            self.verticalization_content.chk_overlay.setChecked(True)
++
+     def _anchor_and_show_properties_dock(self):
+         """Reattach Properties when needed without replacing a view's layout."""
+         files_dock = getattr(self, "dockFiles", None)
+@@ -5682,6 +5687,11 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+             # Re-style siblings when any dock is shown/hidden (tab group may shrink to 1)
+             dock_widget.visibilityChanged.connect(self._schedule_dock_style_update)
+ 
++        self.dockVerticalization.visibilityChanged.connect(
++            self._on_verticalization_visibility_changed)
++        if self.dockVerticalization.isVisible():
++            self._on_verticalization_visibility_changed(True)
++
+         # Re-anchor scope docks when manually enabled after a view switch removed them
+         for _dock in [self.dockLumaWaveform, self.dockHistogram, self.dockVectorscope, self.dockAudio]:
+             _dock.toggleViewAction().triggered.connect(
+-- 
+2.55.0.windows.3
+
