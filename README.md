@@ -197,6 +197,16 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - Se corrigió el inicializador de YOLO: el nombre interno del dock impedía
   crear el detector y hacía fallar todos los clips antes del análisis.
 
+### 0.0.21
+
+- Los cortes detectados por FFmpeg se ajustan al FPS nativo de cada vídeo y no
+  al FPS del proyecto SMOUK. Así, un vídeo de 25 fps en una timeline de 30 fps
+  se corta en su límite real de fotograma, sin arrastrar un frame del plano
+  siguiente al clip anterior.
+- La timeline 16:9 y el preset vertical de exportación siguen siendo
+  independientes: no se cambia el FPS creativo del proyecto al detectar o
+  cortar planos.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

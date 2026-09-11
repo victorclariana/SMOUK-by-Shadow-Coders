@@ -1,0 +1,103 @@
+From 1b3f02164e237a749fc573ed11b609a4cbefff11 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 19:15:06 +0200
+Subject: [PATCH] SMOUK-0.0.21-source-FPS-accurate-shot-slicing
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 28 +++++++++++++++++++++++++---
+ src/windows/views/timeline.py  | 11 ++++++++---
+ 3 files changed, 34 insertions(+), 7 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index f1cf87f12..a13f0f24f 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.20"
++SMOUK_VERSION = "0.0.21"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 1e02be2bd..a57d43543 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -551,17 +551,39 @@ class VerticalizationDockContent(QWidget):
+ 
+     @staticmethod
+     def _slice_clip_at_cuts(window, clip, cuts):
+-        """Slice one clip right-to-left so every split keeps both resulting sides."""
++        """Slice one clip on its native source-frame boundaries.
++
++        FFmpeg reports the presentation timestamp of the first frame in the
++        next shot.  A 25 fps source placed in a 30 fps project cannot represent
++        every source boundary on the project frame grid.  Preserve the native
++        time here and bypass the generic timeline snap, otherwise a single
++        frame from the next shot can remain in the left clip.
++        """
+         clip_start = float(clip.data.get("start", 0.0))
+         clip_end_value = clip.data.get("end")
+         clip_end = (float(clip_end_value) if clip_end_value is not None else
+                     clip_start + float(clip.data.get("duration", 0.0)))
+         clip_position = float(clip.data.get("position", 0.0))
+-        valid_cuts = [cut for cut in cuts if clip_start < cut < clip_end]
++        reader = clip.data.get("reader", {})
++        source_fps = reader.get("fps", {}) if isinstance(reader, dict) else {}
++        try:
++            source_fps = float(source_fps.get("num", 0)) / float(source_fps.get("den", 1))
++        except (AttributeError, TypeError, ValueError, ZeroDivisionError):
++            source_fps = 0.0
++
++        def source_frame_boundary(cut):
++            if source_fps <= 0.0:
++                return float(cut)
++            # The scene filter's pts_time belongs to the source stream. Snap
++            # it to that stream's frame grid, never to the project grid.
++            return round(float(cut) * source_fps) / source_fps
++
++        valid_cuts = [source_frame_boundary(cut) for cut in cuts if clip_start < cut < clip_end]
++        valid_cuts = sorted(set(cut for cut in valid_cuts if clip_start < cut < clip_end))
+         for cut in sorted(valid_cuts, reverse=True):
+             window.timeline.Slice_Triggered(
+                 MenuSlice.KEEP_BOTH, [clip.id], [],
+-                clip_position + (cut - clip_start))
++                clip_position + (cut - clip_start), snap_to_project_frames=False)
+         return len(valid_cuts)
+ 
+     def _on_detect_and_slice_timeline(self):
+diff --git a/src/windows/views/timeline.py b/src/windows/views/timeline.py
+index 3308c3fb3..147e5f283 100644
+--- a/src/windows/views/timeline.py
++++ b/src/windows/views/timeline.py
+@@ -4101,7 +4101,8 @@ class TimelineView(updates.UpdateInterface, ViewClass):
+             # Slice transitions
+             QTimer.singleShot(0, partial(self.Slice_Triggered, slice_mode, [], [trans_id], cursor_position))
+ 
+-    def Slice_Triggered(self, action, clip_ids, trans_ids, playhead_position=0, ripple=False):
++    def Slice_Triggered(self, action, clip_ids, trans_ids, playhead_position=0, ripple=False,
++                        snap_to_project_frames=True):
+         """Callback for slice context menus"""
+         # Get FPS from project
+         fps = get_app().project.get("fps")
+@@ -4120,8 +4121,12 @@ class TimelineView(updates.UpdateInterface, ViewClass):
+         new_starting_frame = -1
+ 
+         try:
+-            # Get the nearest starting frame position to the playhead (snap to frame boundaries)
+-            playhead_position = float(round((playhead_position * fps_num) / fps_den) * fps_den) / fps_num
++            # User-driven cuts follow the project frame grid. Automated source
++            # analysis may deliberately pass a native-source boundary (e.g. a
++            # 25 fps clip in a 30 fps project), which must not be moved to the
++            # nearest project frame or it can leak one source frame across cuts.
++            if snap_to_project_frames:
++                playhead_position = float(round((playhead_position * fps_num) / fps_den) * fps_den) / fps_num
+             if action == MenuSlice.KEEP_LEFT: playhead_position += fps_den / fps_num
+ 
+             # Loop through each clip (using the list of ids)
+-- 
+2.55.0.windows.3
+
