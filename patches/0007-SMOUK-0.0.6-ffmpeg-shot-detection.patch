@@ -1,0 +1,153 @@
+From 188ffc234caee003ce9833621d5d56589cfabc54 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 06:41:30 +0200
+Subject: [PATCH] SMOUK-0.0.6-ffmpeg-shot-detection
+
+---
+ src/windows/main_window.py     |   2 +-
+ src/windows/verticalization.py | 100 ++++++++++++++++++++++++++++++++-
+ 2 files changed, 100 insertions(+), 2 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index e2efb5337..98a567bdb 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.5"
++SMOUK_VERSION = "0.0.6"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 3d0647c09..d94e49413 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -18,9 +18,16 @@
+  A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+ """
+ 
++import os
++import re
++import shutil
++import subprocess
++import sys
++
+ from qt_api import (
+     Qt, QWidget, QFrame, QLabel, QScrollArea, QToolButton, QVBoxLayout,
+-    QCheckBox, QComboBox, QPushButton, QSlider,
++    QCheckBox, QComboBox, QPushButton, QSlider, QFileDialog, QLineEdit,
++    QMessageBox,
+ )
+ 
+ import openshot
+@@ -139,6 +146,7 @@ class VerticalizationDockContent(QWidget):
+             layout.addWidget(section)
+ 
+         self._build_export_button(_)
++        self._build_shot_detection_controls(_)
+ 
+         layout.addStretch(1)
+ 
+@@ -151,6 +159,96 @@ class VerticalizationDockContent(QWidget):
+         self.btn_export_vertical.clicked.connect(self._on_export_vertical)
+         self.sections["export"].add_widget(self.btn_export_vertical)
+ 
++    def _build_shot_detection_controls(self, _):
++        """Add the initial FFmpeg scene detector without importing the file."""
++        self.shot_source_path = QLineEdit(self)
++        self.shot_source_path.setObjectName("verticalizationShotSource")
++        self.shot_source_path.setPlaceholderText(_("Video file to analyse (not imported)"))
++        self.sections["shot_detection"].add_widget(self.shot_source_path)
++
++        self.btn_select_shot_source = QPushButton(_("Choose video"), self)
++        self.btn_select_shot_source.clicked.connect(self._on_choose_shot_source)
++        self.sections["shot_detection"].add_widget(self.btn_select_shot_source)
++
++        self.btn_detect_shots = QPushButton(_("Detect cuts with FFmpeg"), self)
++        self.btn_detect_shots.setObjectName("verticalizationDetectShots")
++        self.btn_detect_shots.clicked.connect(self._on_detect_shots)
++        self.sections["shot_detection"].add_widget(self.btn_detect_shots)
++
++        self.shot_results = QLabel(_("No analysis has been run."), self)
++        self.shot_results.setObjectName("verticalizationShotResults")
++        self.shot_results.setWordWrap(True)
++        self.sections["shot_detection"].add_widget(self.shot_results)
++        self.detected_cuts = []
++
++    def _on_choose_shot_source(self):
++        """Choose an analysis source only; it is not added to the project."""
++        path, _selected_filter = QFileDialog.getOpenFileName(
++            self, get_app()._tr("Analyse video"), "",
++            get_app()._tr("Video files (*.mp4 *.mov *.mkv *.avi);;All files (*)"))
++        if path:
++            self.shot_source_path.setText(path)
++
++    @staticmethod
++    def _format_timecode(seconds):
++        minutes, seconds = divmod(float(seconds), 60.0)
++        hours, minutes = divmod(int(minutes), 60)
++        return "%02d:%02d:%06.3f" % (hours, minutes, seconds)
++
++    def _on_detect_shots(self):
++        """Detect hard cuts with FFmpeg's scene score without touching the timeline."""
++        _ = get_app()._tr
++        source_path = self.shot_source_path.text().strip()
++        if not source_path or not os.path.isfile(source_path):
++            QMessageBox.warning(self, _("Shot Detection"),
++                                _("Choose an existing video file first."))
++            return
++
++        ffmpeg = (shutil.which("ffmpeg") or shutil.which("ffmpeg.exe") or
++                  os.path.join(os.path.dirname(sys.executable), "ffmpeg.exe"))
++        if not os.path.isfile(ffmpeg):
++            ffmpeg = None
++        if not ffmpeg:
++            QMessageBox.warning(self, _("Shot Detection"),
++                                _("FFmpeg was not found in PATH."))
++            return
++
++        self.btn_detect_shots.setEnabled(False)
++        self.shot_results.setText(_("Detecting cuts…"))
++        get_app().processEvents()
++        try:
++            result = subprocess.run(  # nosec B603 -- fixed executable and argv list
++                [ffmpeg, "-hide_banner", "-i", source_path,
++                 "-vf", "select='gt(scene,0.30)',showinfo",
++                 "-an", "-f", "null", "-"],
++                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
++                text=True, check=False, timeout=600)
++        except (OSError, subprocess.TimeoutExpired) as ex:
++            QMessageBox.warning(self, _("Shot Detection"), str(ex))
++            self.shot_results.setText(_("Detection failed."))
++            return
++        finally:
++            self.btn_detect_shots.setEnabled(True)
++
++        if result.returncode != 0:
++            log.warning("SMOUK FFmpeg shot detection failed: %s", result.stderr[-2000:])
++            QMessageBox.warning(self, _("Shot Detection"),
++                                _("FFmpeg could not analyse this video."))
++            self.shot_results.setText(_("Detection failed."))
++            return
++
++        self.detected_cuts = [float(value) for value in re.findall(
++            r"pts_time:([0-9]+(?:\.[0-9]+)?)", result.stderr)]
++        if not self.detected_cuts:
++            self.shot_results.setText(_("No cuts detected at sensitivity 0.30."))
++            return
++
++        timecodes = ", ".join(self._format_timecode(value)
++                              for value in self.detected_cuts)
++        self.shot_results.setText(
++            _("%s cuts detected (sensitivity 0.30): %s") %
++            (len(self.detected_cuts), timecodes))
++
+     def _build_controls(self, layout, _):
+         """Build the verticalization control area (project output + guide)."""
+         controls = QFrame(self.scroll_content)
+-- 
+2.55.0.windows.3
+

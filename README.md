@@ -83,6 +83,13 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - Este botón envía el preset seleccionado directamente al renderizador SMOUK,
   evitando que la exportación normal vuelva a usar el lienzo 16:9.
 
+### 0.0.6
+
+- Se añadió una primera detección de cambios de plano con el filtro `scene` de
+  FFmpeg, usando un umbral inicial de 0.30.
+- El análisis permite elegir un archivo externo, muestra los timecodes de los
+  cortes detectados y no importa ni modifica todavía la timeline.
+
 ### 0.0.2
 
 - Se añadió el botón **Proyecto vertical 9:16 (1080x1920)** en el dock, que
