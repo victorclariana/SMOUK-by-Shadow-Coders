@@ -1,0 +1,211 @@
+From d7e977bbd8ed3fd93ff248f76a78ab60ce175852 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 05:10:12 +0200
+Subject: [PATCH] SMOUK-0.0.2-vertical-project-and-viewer-guide
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 53 ++++++++++++++++++++++++
+ src/windows/video_widget.py    | 75 ++++++++++++++++++++++++++++++++++
+ 3 files changed, 129 insertions(+), 1 deletion(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index c7146fd1e..d9c28d685 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.1"
++SMOUK_VERSION = "0.0.2"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 0f4bcd250..0f98e908b 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -18,15 +18,24 @@
+  A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+ """
+ 
++import os
++
+ from qt_api import (
+     Qt, QWidget, QFrame, QLabel, QScrollArea, QToolButton, QVBoxLayout,
++    QPushButton, QCheckBox,
+ )
+ 
++import openshot
++from classes import info
+ from classes.app import get_app
++from classes.logger import log
+ 
+ 
+ VERTICALIZATION_DOCK_MIN_WIDTH = 320
+ 
++# Built-in 9:16 profile shipped with OpenShot (FHD Vertical 1080p 30 fps).
++VERTICAL_PROFILE_FILE = "01080x1920p0030_09-16"
++
+ 
+ class CollapsibleSection(QFrame):
+     """A collapsible panel with a header toggle and a content area."""
+@@ -112,6 +121,9 @@ class VerticalizationDockContent(QWidget):
+         layout.setContentsMargins(8, 8, 8, 8)
+         layout.setSpacing(6)
+ 
++        # Verticalization controls (project output + viewer guide)
++        self._build_controls(layout, _)
++
+         self.sections = {}
+         for key, title, description in self.SECTIONS:
+             section = CollapsibleSection(_(title))
+@@ -123,3 +135,44 @@ class VerticalizationDockContent(QWidget):
+             layout.addWidget(section)
+ 
+         layout.addStretch(1)
++
++    def _build_controls(self, layout, _):
++        """Build the verticalization control area (project output + guide)."""
++        controls = QFrame(self.scroll_content)
++        controls.setObjectName("verticalizationControls")
++        cbox = QVBoxLayout(controls)
++        cbox.setContentsMargins(8, 8, 8, 8)
++        cbox.setSpacing(6)
++
++        self.btn_vertical_project = QPushButton(
++            _("Vertical project 9:16 (1080x1920)"), controls)
++        self.btn_vertical_project.setObjectName("verticalizationVerticalProject")
++        self.btn_vertical_project.clicked.connect(self._on_set_vertical_project)
++        cbox.addWidget(self.btn_vertical_project)
++
++        self.chk_overlay = QCheckBox(
++            _("Show the 9:16 guide in the viewer"), controls)
++        self.chk_overlay.setObjectName("verticalizationOverlayToggle")
++        self.chk_overlay.toggled.connect(self._on_toggle_overlay)
++        cbox.addWidget(self.chk_overlay)
++
++        layout.addWidget(controls)
++
++    def _on_set_vertical_project(self):
++        """Switch the current project to the built-in 9:16 vertical profile."""
++        profile_path = os.path.join(info.PROFILES_PATH, VERTICAL_PROFILE_FILE)
++        try:
++            profile = openshot.Profile(profile_path)
++        except Exception as ex:
++            log.warning("SMOUK: unable to load vertical profile '%s': %s",
++                        profile_path, ex)
++            return
++        window = get_app().window
++        if window is not None and hasattr(window, "actionProfile_trigger"):
++            window.actionProfile_trigger(profile)
++
++    def _on_toggle_overlay(self, enabled):
++        """Enable/disable the 9:16 guide overlay on the video preview."""
++        preview = getattr(get_app().window, "videoPreview", None)
++        if preview is not None and hasattr(preview, "set_verticalization_overlay"):
++            preview.set_verticalization_overlay(enabled)
+diff --git a/src/windows/video_widget.py b/src/windows/video_widget.py
+index ce8f4f207..ad1d495ea 100644
+--- a/src/windows/video_widget.py
++++ b/src/windows/video_widget.py
+@@ -537,6 +537,74 @@ class VideoWidget(QWidget, updates.UpdateInterface):
+         pix_size.scale(widget_size, Qt.KeepAspectRatio)
+         return pix_size
+ 
++    def set_verticalization_overlay(self, enabled):
++        """Enable/disable the SMOUK 9:16 verticalization guide overlay."""
++        self.verticalization_overlay = bool(enabled)
++        self.update()
++
++    def _paint_verticalization_overlay(self, painter, viewport):
++        """Draw the SMOUK 9:16 guide over the preview.
++
++        The guide is purely visual and is never part of the exported video. It
++        represents the 9:16 region that will be exported from the current
++        project frame: full visible height, centred horizontally, with the
++        width derived from the 9:16 ratio. Geometry is computed from the
++        already letterboxed viewport, so it adapts to resizing, zoom and DPI.
++        """
++        if not getattr(self, "verticalization_overlay", False):
++            return
++        if viewport is None or viewport.isEmpty():
++            return
++
++        target_ratio = 9.0 / 16.0
++        vx = float(viewport.x())
++        vy = float(viewport.y())
++        vw = float(viewport.width())
++        vh = float(viewport.height())
++        if vw <= 0.0 or vh <= 0.0:
++            return
++
++        # Full-height crop by default; fall back to full-width if the viewport
++        # is already narrower than 9:16.
++        crop_w = vh * target_ratio
++        crop_h = vh
++        if crop_w > vw:
++            crop_w = vw
++            crop_h = vw / target_ratio
++        crop_x = vx + (vw - crop_w) / 2.0
++        crop_y = vy + (vh - crop_h) / 2.0
++        crop_rect = QRectF(crop_x, crop_y, crop_w, crop_h)
++
++        painter.save()
++
++        # Dim everything outside the guide
++        if getattr(self, "verticalization_overlay_dim", True):
++            dim = QColor(0, 0, 0, 110)
++            painter.fillRect(QRectF(vx, vy, crop_x - vx, vh), dim)
++            painter.fillRect(QRectF(crop_x + crop_w, vy, (vx + vw) - (crop_x + crop_w), vh), dim)
++            painter.fillRect(QRectF(vx, vy, vw, crop_y - vy), dim)
++            painter.fillRect(QRectF(vx, crop_y + crop_h, vw, (vy + vh) - (crop_y + crop_h)), dim)
++
++        # White border of the guide
++        border = QPen(QColor(255, 255, 255, 235), 2)
++        border.setCosmetic(True)
++        painter.setPen(border)
++        painter.setBrush(Qt.NoBrush)
++        painter.drawRect(crop_rect)
++
++        # Optional centre + rule-of-thirds guides
++        if getattr(self, "verticalization_overlay_guides", True):
++            guide = QPen(QColor(255, 255, 255, 90), 1, Qt.DashLine)
++            guide.setCosmetic(True)
++            painter.setPen(guide)
++            for frac in (1.0 / 3.0, 2.0 / 3.0):
++                gx = crop_x + crop_w * frac
++                painter.drawLine(QPointF(gx, crop_y), QPointF(gx, crop_y + crop_h))
++                gy = crop_y + crop_h * frac
++                painter.drawLine(QPointF(crop_x, gy), QPointF(crop_x + crop_w, gy))
++
++        painter.restore()
++
+     def paintEvent(self, event, *args):
+         """ Custom paint event """
+         event.accept()
+@@ -585,6 +653,9 @@ class VideoWidget(QWidget, updates.UpdateInterface):
+                 )
+                 painter.drawImage(viewport, scaled_img)
+ 
++                # SMOUK: 9:16 verticalization guide (overlay only; never exported)
++                self._paint_verticalization_overlay(painter, viewport)
++
+             # Prep for transform UI
+             fps = get_app().project.get("fps")
+             fps_float = float(fps["num"]) / float(fps["den"])
+@@ -3053,6 +3124,10 @@ class VideoWidget(QWidget, updates.UpdateInterface):
+         self.regionTopLeftHandle = None
+         self.regionBottomRightHandle = None
+         self.curr_frame_size = None # Frame size
++        # SMOUK: 9:16 verticalization guide overlay (visual only, never exported)
++        self.verticalization_overlay = False
++        self.verticalization_overlay_dim = True
++        self.verticalization_overlay_guides = True
+         self.zoom = 1.0  # Zoom of widget (does not affect video, only workspace)
+         self.pan_x = 0.0
+         self.pan_y = 0.0
+-- 
+2.55.0
+

@@ -49,6 +49,15 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - Se eliminó el menú superior `SMOUK`; el dock se abre desde
   `View` → `Docks` → `Verticalization`.
 
+### 0.0.2
+
+- Se añadió el botón **Proyecto vertical 9:16 (1080x1920)** en el dock, que
+  aplica el perfil integrado `FHD Vertical 1080p 30 fps`.
+- Se añadió la **guía 9:16** sobre el visor: rectángulo blanco con la zona
+  exterior atenuada y guías de tercios, activable desde el dock. La guía es
+  puramente visual y nunca forma parte del vídeo exportado; se adapta al
+  escalado, al zoom, a DPI altos y a las barras de letterboxing.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
