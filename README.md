@@ -192,6 +192,11 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - El objeto se selecciona por confianza, prioridad semántica y tamaño visible;
   su centro se transforma en los mismos keyframes horizontales editables.
 
+### 0.0.20
+
+- Se corrigió el inicializador de YOLO: el nombre interno del dock impedía
+  crear el detector y hacía fallar todos los clips antes del análisis.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

@@ -26,6 +26,7 @@ corresponding repository.
 | `0018-SMOUK-0.0.17-fix-yunet-tracker-box.patch` | **openshot-qt** | Converts YuNet boxes for OpenCV 5 CSRT tracking and preserves detection-only fallback. |
 | `0019-SMOUK-0.0.18-mediapipe-fallback-and-timeline-badge.patch` | **openshot-qt** | Adds MediaPipe face/pose fallback for automatic reframing and an `AI` badge on reframed timeline clips. |
 | `0020-SMOUK-0.0.19-yolo-onnx-object-reframing.patch` | **openshot-qt** | Bundles YOLO11n ONNX and uses OpenCV DNN object detections as an automatic reframing fallback. |
+| `0021-SMOUK-0.0.20-fix-yolo-dock-reference.patch` | **openshot-qt** | Fixes the YOLO loader's reference to the Verticalization dock class. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply
