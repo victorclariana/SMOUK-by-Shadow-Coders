@@ -1,0 +1,22 @@
+# SMOUK patches
+
+This directory contains the modifications SMOUK makes to the upstream OpenShot
+repositories. Each patch can be applied with `git am` inside a clean clone of the
+corresponding repository.
+
+| Patch | Target repository | Purpose |
+|---|---|---|
+| `0001-Add-SMOUK-Verticalization-dock-and-top-level-SMOUK-m.patch` | **openshot-qt** | Adds the `Verticalization` dock (`src/windows/verticalization.py`) and registers it in `MainWindow` with a top-level `SMOUK` menu. |
+| `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
+
+## Apply
+
+```sh
+# openshot-qt
+cd openshot-qt
+git am /path/to/patches/0001-Add-SMOUK-*.patch
+
+# libopenshot
+cd libopenshot
+git am /path/to/patches/0001-FFmpeg-9-*.patch
+```

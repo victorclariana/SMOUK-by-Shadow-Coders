@@ -1,0 +1,77 @@
+From d22d7dbf81ecc8df5844877307937b24098a9d01 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 04:19:56 +0200
+Subject: [PATCH] FFmpeg 9 compatibility: guard AVCodec capability fields
+ removed in FFmpeg 7+
+
+---
+ src/FFmpegWriter.cpp | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/src/FFmpegWriter.cpp b/src/FFmpegWriter.cpp
+index 4ae40ec5..27aa38e1 100644
+--- a/src/FFmpegWriter.cpp
++++ b/src/FFmpegWriter.cpp
+@@ -1142,6 +1142,7 @@ AVStream *FFmpegWriter::add_audio_stream() {
+ #endif
+ 
+ 	// Set valid sample rate (or throw error)
++#if LIBAVCODEC_VERSION_MAJOR < 61
+ 	if (codec->supported_samplerates) {
+ 		int i;
+ 		for (i = 0; codec->supported_samplerates[i] != 0; i++)
+@@ -1153,6 +1154,7 @@ AVStream *FFmpegWriter::add_audio_stream() {
+ 		if (codec->supported_samplerates[i] == 0)
+ 			throw InvalidSampleRate("An invalid sample rate was detected for this codec.", path);
+ 	} else
++#endif
+ 		// Set sample rate
+ 		c->sample_rate = info.sample_rate;
+ 
+@@ -1164,6 +1166,7 @@ AVStream *FFmpegWriter::add_audio_stream() {
+ 	// Set a valid number of channels (or throw error)
+ 	AVChannelLayout ch_layout;
+ 	av_channel_layout_from_mask(&ch_layout, info.channel_layout);
++#if LIBAVCODEC_VERSION_MAJOR < 61
+ 	if (codec->ch_layouts) {
+ 		int i;
+ 		for (i = 0; av_channel_layout_check(&codec->ch_layouts[i]); i++)
+@@ -1175,6 +1178,7 @@ AVStream *FFmpegWriter::add_audio_stream() {
+ 		if (!av_channel_layout_check(&codec->ch_layouts[i]))
+ 			throw InvalidChannels("An invalid channel layout was detected (i.e. MONO / STEREO).", path);
+ 	} else
++#endif
+ 		// Set valid channel layout
+ 		av_channel_layout_copy(&c->ch_layout, &ch_layout);
+ #else
+@@ -1195,6 +1199,7 @@ AVStream *FFmpegWriter::add_audio_stream() {
+ #endif
+ 
+ 	// Choose a valid sample_fmt
++#if LIBAVCODEC_VERSION_MAJOR < 61
+ 	if (codec->sample_fmts) {
+ 		for (int i = 0; codec->sample_fmts[i] != AV_SAMPLE_FMT_NONE; i++) {
+ 			// Set sample format to 1st valid format (and then exit loop)
+@@ -1202,6 +1207,7 @@ AVStream *FFmpegWriter::add_audio_stream() {
+ 			break;
+ 		}
+ 	}
++#endif
+ 	if (c->sample_fmt == AV_SAMPLE_FMT_NONE) {
+ 		// Default if no sample formats found
+ 		c->sample_fmt = AV_SAMPLE_FMT_S16;
+@@ -1401,7 +1407,11 @@ AVStream *FFmpegWriter::add_video_stream() {
+ #endif
+ 
+ 	// Find all supported pixel formats for this codec
++#if LIBAVCODEC_VERSION_MAJOR < 61
+ 	const PixelFormat *supported_pixel_formats = codec->pix_fmts;
++#else
++	const PixelFormat *supported_pixel_formats = NULL;
++#endif
+ 	while (supported_pixel_formats != NULL && *supported_pixel_formats != PIX_FMT_NONE) {
+ 		// Assign the 1st valid pixel format (if one is missing)
+ 		if (c->pix_fmt == PIX_FMT_NONE)
+-- 
+2.55.0
+

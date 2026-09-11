@@ -1,0 +1,188 @@
+From d6ae3bff711f8cf4410b580376805c198edd0733 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 04:19:22 +0200
+Subject: [PATCH] Add SMOUK Verticalization dock and top-level SMOUK menu
+
+---
+ src/windows/main_window.py     |  22 ++++++
+ src/windows/verticalization.py | 125 +++++++++++++++++++++++++++++++++
+ 2 files changed, 147 insertions(+)
+ create mode 100644 src/windows/verticalization.py
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 843715975..ee693bf82 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -83,6 +83,7 @@ from windows.models.files_model import FilesModel
+ from windows.views.optimized_preview_menu import populate_optimized_preview_menu
+ from windows.models.transition_model import TransitionsModel
+ from windows.audio_recording import AudioRecordingDockContent, RECORDING_DOCK_MIN_WIDTH
++from windows.verticalization import VerticalizationDockContent, VERTICALIZATION_DOCK_MIN_WIDTH
+ from windows.preview_thread import PreviewParent
+ from windows.scope_panel import WaveformDockContent, HistogramDockContent, VectorscopeDockContent, AudioMeterWidget
+ from windows.video_widget import VideoWidget
+@@ -5461,9 +5462,30 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         self.dockAudioRecording.hide()
+         self.addDockWidget(Qt.RightDockWidgetArea, self.dockAudioRecording)
+ 
++        # SMOUK verticalization dock
++        self.verticalization_content = VerticalizationDockContent(self)
++        self.dockVerticalization = QDockWidget(_("Verticalization"), self)
++        self.dockVerticalization.setObjectName("dockVerticalization")
++        self.dockVerticalization.setProperty("_skip_auto_tab_order", True)
++        self.dockVerticalization.setFocusPolicy(Qt.NoFocus)
++        self.dockVerticalization.setMinimumWidth(VERTICALIZATION_DOCK_MIN_WIDTH)
++        self.dockVerticalization.setWidget(self.verticalization_content)
++        self.dockVerticalization.hide()
++        self.addDockWidget(Qt.RightDockWidgetArea, self.dockVerticalization)
++
+         # Add Docks submenu to View menu
+         self.addViewDocksMenu()
+ 
++        # Add a top-level SMOUK menu (placed before Help) with the
++        # Verticalization dock toggle and room for future SMOUK actions.
++        self.menuSmouk = QMenu(_("SMOUK"), self.menuBar())
++        self.menuSmouk.setObjectName("menuSmouk")
++        if hasattr(self, "menuHelp"):
++            self.menuBar().insertMenu(self.menuHelp.menuAction(), self.menuSmouk)
++        else:
++            self.menuBar().addMenu(self.menuSmouk)
++        self.menuSmouk.addAction(self.dockVerticalization.toggleViewAction())
++
+         # Set up status bar
+         self.statusBar = QStatusBar()
+         self.setStatusBar(self.statusBar)
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+new file mode 100644
+index 000000000..0f4bcd250
+--- /dev/null
++++ b/src/windows/verticalization.py
+@@ -0,0 +1,125 @@
++"""
++ @file
++ @brief Verticalization dock for SMOUK (auto-verticalize 16:9 to 9:16).
++ @author Shadow Coders
++
++ @section LICENSE
++
++ Copyright (c) 2026 Shadow Coders. This file is part of SMOUK by Shadow Coders,
++ an OpenShot-derived project.
++
++ SMOUK is free software: you can redistribute it and/or modify it under the
++ terms of the GNU General Public License as published by the Free Software
++ Foundation, either version 3 of the License, or (at your option) any later
++ version.
++
++ SMOUK is distributed in the hope that it will be useful, but WITHOUT ANY
++ WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
++ A PARTICULAR PURPOSE. See the GNU General Public License for more details.
++"""
++
++from qt_api import (
++    Qt, QWidget, QFrame, QLabel, QScrollArea, QToolButton, QVBoxLayout,
++)
++
++from classes.app import get_app
++
++
++VERTICALIZATION_DOCK_MIN_WIDTH = 320
++
++
++class CollapsibleSection(QFrame):
++    """A collapsible panel with a header toggle and a content area."""
++
++    def __init__(self, title, parent=None):
++        super().__init__(parent)
++        self.setObjectName("verticalizationSection")
++
++        outer = QVBoxLayout(self)
++        outer.setContentsMargins(0, 0, 0, 0)
++        outer.setSpacing(0)
++
++        self.toggle_button = QToolButton(self)
++        self.toggle_button.setObjectName("verticalizationSectionHeader")
++        self.toggle_button.setText(title)
++        self.toggle_button.setCheckable(True)
++        self.toggle_button.setChecked(True)
++        self.toggle_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
++        self.toggle_button.setArrowType(Qt.DownArrow)
++        self.toggle_button.setCursor(Qt.PointingHandCursor)
++        self.toggle_button.toggled.connect(self._on_toggled)
++        outer.addWidget(self.toggle_button)
++
++        self.content = QWidget(self)
++        self.content.setObjectName("verticalizationSectionContent")
++        self.content_layout = QVBoxLayout(self.content)
++        self.content_layout.setContentsMargins(8, 6, 8, 8)
++        self.content_layout.setSpacing(4)
++        outer.addWidget(self.content)
++
++    def _on_toggled(self, checked):
++        """Show/hide the content area and update the arrow direction."""
++        self.content.setVisible(checked)
++        self.toggle_button.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
++
++    def add_widget(self, widget):
++        """Add a widget to the section's content area."""
++        self.content_layout.addWidget(widget)
++
++
++class VerticalizationDockContent(QWidget):
++    """SMOUK verticalization dock, organized as collapsible sections.
++
++    This is the first skeleton: the sections exist and are collapsible, but no
++    business logic is wired up yet.
++    """
++
++    # (object key, translated title, short description)
++    SECTIONS = [
++        ("source_video", "Source Video", "Select and import a horizontal MP4."),
++        ("shot_detection", "Shot Detection", "Detect and review scene cuts."),
++        ("automatic_reframing", "Automatic Reframing", "Auto reframe each shot to 9:16."),
++        ("titles", "Titles", "Add identifying titles."),
++        ("subtitles", "Subtitles", "Generate Catalan subtitles."),
++        ("logo", "Logo", "Add a company logo overlay."),
++        ("poster", "Poster", "Export a PNG poster from a frame."),
++        ("export", "Export", "Export the vertical video."),
++    ]
++
++    def __init__(self, window, parent=None):
++        super().__init__(parent)
++        self.window = window
++        _ = get_app()._tr
++
++        self.setFocusPolicy(Qt.NoFocus)
++        self.setMinimumWidth(VERTICALIZATION_DOCK_MIN_WIDTH)
++
++        outer = QVBoxLayout(self)
++        outer.setContentsMargins(0, 0, 0, 0)
++        outer.setSpacing(0)
++
++        self.scroll_area = QScrollArea(self)
++        self.scroll_area.setWidgetResizable(True)
++        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
++        self.scroll_area.setFrameShape(QScrollArea.NoFrame)
++        self.scroll_area.setStyleSheet(
++            "QScrollArea { border: none; background: transparent; }")
++        outer.addWidget(self.scroll_area)
++
++        self.scroll_content = QWidget()
++        self.scroll_area.setWidget(self.scroll_content)
++        layout = QVBoxLayout(self.scroll_content)
++        layout.setContentsMargins(8, 8, 8, 8)
++        layout.setSpacing(6)
++
++        self.sections = {}
++        for key, title, description in self.SECTIONS:
++            section = CollapsibleSection(_(title))
++            placeholder = QLabel(_(description), section.content)
++            placeholder.setObjectName("verticalizationPlaceholder")
++            placeholder.setWordWrap(True)
++            section.add_widget(placeholder)
++            self.sections[key] = section
++            layout.addWidget(section)
++
++        layout.addStretch(1)
+-- 
+2.55.0
+
