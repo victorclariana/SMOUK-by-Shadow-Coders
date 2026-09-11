@@ -1,0 +1,16 @@
+# Local clones of the upstream OpenShot repositories.
+# These are independent Git repositories (and are ignored so they are never
+# accidentally committed into this project repository).
+/openshot-qt/
+/libopenshot/
+/libopenshot-audio/
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Local build output
+/build/*
+!/build/.gitkeep
+/logs/*
+!/logs/.gitkeep

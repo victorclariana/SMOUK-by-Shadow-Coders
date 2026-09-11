@@ -1,0 +1,121 @@
+SMOUK by Shadow Coders - Nuevas especificaciones del proyecto
+
+Objetivo general
+Vamos a modificar el programa OpenShot y llamarlo SMOUK by Shadow Coders para usarlo para verticalizar videos horizontales de manera lo más automatica posible.
+
+Requisito principal
+No queremos reescribir OpenShot desde cero. Queremos conservar la arquitectura y el motor multimedia de OpenShot, y modificar progresivamente la interfaz y ciertos flujos de edición para adaptar la aplicación a la verticalización automatizada de vídeos horizontales.
+
+Idea funcional
+La aplicación deberá permitir convertir vídeos horizontales 16:9 en vídeos verticales 9:16 con una automatización fuerte, apoyada en detección de planos, recuadre inteligente, subtitulado automático, capas de branding y exportación orientada a vertical.
+
+Nuevo Dock a crear
+- Nombre: Verticalization
+- Debe actuar como un panel especializado dentro de OpenShot para administrar el proceso completo de verticalización.
+- Tendrá todos los menús y componentes necesarios para los procesos indicados.
+
+Componentes del Dock Verticalization
+
+1) Carga de vídeo de entrada
+- Buscar y cargar un vídeo MP4 16:9 para verticalizar.
+- Debe integrarse con la gestión de proyecto actual de OpenShot.
+- Debe permitir elegir el archivo de origen y cargarlo en la timeline o en una zona de trabajo específica del proceso.
+
+2) Detección y corte de cambios de plano
+- Detectar cada cambio de plano del vídeo original.
+- Cortar la secuencia en planos o segmentos detectados para poder reencuadrarlos.
+- Debe permitir revisar cada plano y decidir si aplica recorte automático o ajuste manual.
+
+3) Reencuadre automático por IA o detección visual
+- Detectar rostros, personas, elementos destacados o zonas de interés en cada plano.
+- Ajustar automáticamente el recorte de 16:9 a 9:16 para mantener el foco visual principal.
+- Debe permitir una postcorrección manual si el resultado no es aceptable.
+
+4) Capa de títulos identificativos
+- Añadir una capa de títulos encima del vídeo para identificar personas o lugares.
+- Los títulos deben ser configurables: texto + pastillas inferiores.
+- Deben actuar como un único elemento compositivo.
+- Alternativa: sustituir por videos en .mov con canal alpha, si el workflow lo requiere mejor.
+
+5) Capa de subtítulos sincronizados
+- Generar subtítulos para el audio completo del vídeo en catalán.
+- La transcripción debe producir pantallas con dos líneas y marcados de tiempo.
+- Debe generarse un fichero intermediario tipo SRT para incorporar los subtítulos sincronizados al vídeo.
+- La sincronización deberá alinearse con la voz y con los time codes del clip.
+
+6) Capa de logo de la compañía
+- Añadir un PNG con transparencia como logo corporativo.
+- Debe integrarse en una capa separada sobre el vídeo final.
+
+7) Generación de poster PNG desde frame seleccionado
+- Seleccionar un frame concreto desde el visor.
+- Con un botón, exportar un PNG con todas las capas fusionadas.
+- Este PNG servirá como poster del vídeo vertical final.
+
+8) Exportación final
+- Exportar el vídeo vertical final y el poster PNG en directorios locales configurables.
+- Debe permitir definir rutas de salida y formatos finales.
+
+Requisito visual del visor
+- El visor debe ser 16:9 con un rectángulo blanco 9:16 centrado como overlay sobre el visor.
+- El rectángulo debe estar centrado en el frame 16:9 y sus bordes superiores e inferiores deben coincidir con los bordes del frame 16:9 de referencia.
+- La idea es poder ver el frame 16:9 completo para modificar manualmente la posición del contenido en el resultado final 9:16.
+- El visor debe mostrar la composición final en perspectiva de verticalización, con un marco guía visual útil para ajuste manual.
+
+Objetivo de automatización
+La herramienta debe automatizar lo máximo posible:
+- detección de cambios de plano
+- recorte inteligente del frame
+- transcripción del audio en catalán
+- subtitulado sincronizado
+- capas gráficas finales
+- exportación de resultado y poster
+
+Investigación requerida
+Se investigará a fondo en GitHub y Hugging Face proyectos o modelos que puedan servir para:
+- detección de planos
+- detección de rostros o elementos destacados
+- recorte inteligente en vídeo
+- transcripción de audio en catalán
+- subtitulado sincronizado
+- generación de SRT
+- IA de visión para composición automática
+- modelos de apoyo para composición visual
+
+No se debe tocar el código todavía
+La presente especificación tiene carácter de análisis y planificación. No se modificará la base de código ni la aplicación en esta fase.
+
+Objetivo del informe
+Preparar documental y técnicamente una propuesta de implementación por fases para:
+- el nuevo Dock Verticalization
+- la modificación del visor
+- la exportación del vídeo y del poster PNG
+- la integración con posibles servicios o modelos IA
+- la preparación del desarrollo posterior
+
+Requisitos de entrega de la fase de análisis
+- Investigar herramientas, librerías, IA y proyectos relevantes en GitHub y Hugging Face.
+- Elaborar un plan por fases muy detallado.
+- Preparar documentación técnica suficiente para empezar el desarrollo real más adelante.
+- Identificar riesgos, dependencias, decisiones conceptuales y posibles caminos de implementación.
+- Una vez la investigación y el plan estén listos, se harán preguntas para afinar detalles del proyecto.
+
+Se aceptan varias rutas técnicas, siempre que se apoyen en soluciones reales y verificables del ecosistema actual.
+
+Notas de arquitectura provisional
+- La capa de interfaz se realizará en la parte Python/Qt de OpenShot.
+- La lógica de análisis de vídeo, recorte inteligente y transcripción se puede conectar como procesos auxiliares o servicios externos antes de integrarlos a la timeline.
+- El flujo final debe seguir las prácticas de OpenShot y respetar su sistema de clips, timeline y exportación.
+- La modificación del visor debe producir una superposición guía, sin romper la lógica base del editor.
+
+Lista de trabajo provisional
+- Investigación de IA y herramientas de apoyo.
+- Análisis de puntos de integración con OpenShot.
+- Diseño del Dock Verticalization.
+- Diseño del visor con overlay guía 9:16.
+- Definición del flujo de trabajo de verticalización.
+- Definición de exportación final y poster.
+- Planificación por fases con riesgos y validaciones.
+
+Estado actual
+La fase actual es de análisis y planificación; aún no se implementa ningún cambio en el código.
