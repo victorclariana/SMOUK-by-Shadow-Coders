@@ -141,6 +141,15 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   de exportación usada. Los ajustes guardados del proyecto ya no la sustituyen
   por una ruta antigua de la carpeta personal.
 
+### 0.0.13
+
+- Se corrigió el motor `libopenshot` para FFmpeg 7+: ahora consulta el formato
+  de muestra soportado por el códec de audio. Esto permite abrir AAC con su
+  formato `fltp` y exportar MP4 con audio.
+- Mientras se reconstruye el motor en desarrollo, el diálogo SMOUK utiliza
+  `libopus`, que sí acepta el formato de muestra actual y evita bloquear la
+  exportación con audio.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

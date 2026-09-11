@@ -1,0 +1,46 @@
+From 62b0b19920ea9361ee566aa8be14be97a8810cf1 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 16:02:49 +0200
+Subject: [PATCH] SMOUK-0.0.13-opus-audio-workaround
+
+---
+ src/windows/export.py      | 9 +++++----
+ src/windows/main_window.py | 2 +-
+ 2 files changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/src/windows/export.py b/src/windows/export.py
+index d43f9e79b..fb1a56762 100644
+--- a/src/windows/export.py
++++ b/src/windows/export.py
+@@ -415,10 +415,11 @@ class Export(QDialog):
+         if not self.smouk_output:
+             return
+ 
+-        # The normal preset can leave a stale or unavailable codec in the
+-        # dialog.  Native AAC is the preferred encoder; the fallbacks keep
+-        # audio enabled on older FFmpeg builds.
+-        for codec in ("aac", "libfdk_aac", "libvo_aacenc", "libfaac", "libmp3lame"):
++        # This FFmpeg 9 build currently feeds encoders interleaved S16 audio.
++        # Its AAC encoder requires planar FLTP, while libopus accepts S16.
++        # Prefer Opus until the matching libopenshot engine update is rebuilt;
++        # it is a standards-compliant audio stream in an MP4 container.
++        for codec in ("libopus", "aac", "libfdk_aac", "libvo_aacenc", "libfaac", "libmp3lame"):
+             if openshot.FFmpegWriter.IsValidCodec(codec):
+                 self.txtAudioCodec.setText(codec)
+                 return
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 190597d1e..ce48c165e 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.12"
++SMOUK_VERSION = "0.0.13"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+-- 
+2.55.0.windows.3
+

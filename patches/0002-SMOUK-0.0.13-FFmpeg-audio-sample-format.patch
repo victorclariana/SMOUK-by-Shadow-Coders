@@ -1,0 +1,37 @@
+From 00f59a662e164916322bc93bda4f99b7ce19a78b Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 16:02:50 +0200
+Subject: [PATCH] SMOUK-0.0.13-FFmpeg-audio-sample-format
+
+---
+ src/FFmpegWriter.cpp | 14 +++++++++++++-
+ 1 file changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/src/FFmpegWriter.cpp b/src/FFmpegWriter.cpp
+index 27aa38e1..7af4c123 100644
+--- a/src/FFmpegWriter.cpp
++++ b/src/FFmpegWriter.cpp
+@@ -1199,7 +1199,19 @@ AVStream *FFmpegWriter::add_audio_stream() {
+ #endif
+ 
+ 	// Choose a valid sample_fmt
+-#if LIBAVCODEC_VERSION_MAJOR < 61
++
++#if LIBAVCODEC_VERSION_MAJOR >= 61
++	// FFmpeg 7+ no longer exposes AVCodec::sample_fmts. Query the public
++	// capability API instead, otherwise the S16 fallback is rejected by AAC
++	// (which accepts FLTP) and opening the audio stream fails.
++	const void *sample_formats = NULL;
++	int sample_format_count = 0;
++	if (avcodec_get_supported_config(c, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT,
++			0, &sample_formats, &sample_format_count) >= 0 &&
++			sample_formats && sample_format_count > 0) {
++		c->sample_fmt = static_cast<const AVSampleFormat*>(sample_formats)[0];
++	}
++#else
+ 	if (codec->sample_fmts) {
+ 		for (int i = 0; codec->sample_fmts[i] != AV_SAMPLE_FMT_NONE; i++) {
+ 			// Set sample format to 1st valid format (and then exit loop)
+-- 
+2.55.0.windows.3
+
