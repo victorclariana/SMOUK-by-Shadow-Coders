@@ -23,6 +23,7 @@ corresponding repository.
 | `0015-SMOUK-0.0.14-enable-guide-with-dock.patch` | **openshot-qt** | Enables the vertical framing guide when the Verticalization dock is shown. |
 | `0016-SMOUK-0.0.15-hide-guide-with-dock.patch` | **openshot-qt** | Hides the vertical framing guide when the Verticalization dock is closed. |
 | `0017-SMOUK-0.0.16-yunet-auto-reframe.patch` | **openshot-qt** | Adds offline YuNet face detection and CSRT tracking to generate editable framing keyframes. |
+| `0018-SMOUK-0.0.17-fix-yunet-tracker-box.patch` | **openshot-qt** | Converts YuNet boxes for OpenCV 5 CSRT tracking and preserves detection-only fallback. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

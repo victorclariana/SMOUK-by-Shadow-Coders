@@ -166,6 +166,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   plano con YuNet (OpenCV DNN), la sigue con CSRT y crea keyframes horizontales
   suavizados y editables. El análisis se ejecuta localmente y sin red.
 
+### 0.0.17
+
+- Se corrigió el seguimiento CSRT de OpenCV 5: YuNet entrega coordenadas
+  flotantes y el tracker requiere píxeles enteros. Si el tracker no está
+  disponible, el reencuadre sigue usando las detecciones de cara.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
