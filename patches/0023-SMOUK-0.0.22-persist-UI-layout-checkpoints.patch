@@ -1,0 +1,134 @@
+From 16205dde5ed16befa2bf3939e763b75ca525d204 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 00:00:46 +0200
+Subject: [PATCH] SMOUK-0.0.22-persist-UI-layout-checkpoints
+
+---
+ src/windows/main_window.py | 61 +++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 60 insertions(+), 1 deletion(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index a13f0f24f..519113e78 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.21"
++SMOUK_VERSION = "0.0.22"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+@@ -210,6 +210,13 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+             return
+         self.shutting_down = True
+ 
++        # No layout checkpoint can be useful once the window starts its Qt
++        # teardown. Stop them before child widgets begin disappearing.
++        for timer_name in ("_layout_checkpoint_debounce", "_layout_checkpoint_timer"):
++            timer = getattr(self, timer_name, None)
++            if timer:
++                timer.stop()
++
+         # Log the exit routine
+         log.info('---------------- Shutting down -----------------')
+ 
+@@ -3949,6 +3956,39 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         video = getattr(self, "dockVideo", None)
+         if video:
+             s.set('video_dock_width', video.width())
++        # Write immediately on an orderly close, rather than relying on a
++        # later application-level settings save.
++        s.save()
++
++    def _save_layout_checkpoint(self, force=False):
++        """Persist the current UI layout without waiting for application exit.
++
++        A native Qt failure does not run closeEvent(), so dock dimensions and
++        window geometry must be checkpointed during normal interaction.  Avoid
++        rewriting the settings file unless the serialized state actually moved.
++        """
++        if not getattr(self, "initialized", False):
++            return
++        try:
++            state = qt_types.bytes_to_str(self.saveState())
++            geometry = qt_types.bytes_to_str(self.saveGeometry())
++            video = getattr(self, "dockVideo", None)
++            video_width = video.width() if video else 0
++            snapshot = (state, geometry, video_width)
++            if not force and snapshot == getattr(self, "_last_layout_snapshot", None):
++                return
++            self.save_settings()
++            self._last_layout_snapshot = snapshot
++            log.debug("Saved SMOUK UI layout checkpoint")
++        except Exception:
++            # Settings persistence must never interrupt timeline playback.
++            log.warning("Unable to save UI layout checkpoint", exc_info=True)
++
++    def _schedule_layout_checkpoint(self, *_args):
++        """Debounce geometry changes such as moving or docking a panel."""
++        timer = getattr(self, "_layout_checkpoint_debounce", None)
++        if timer is not None:
++            timer.start()
+ 
+     # Get window settings from setting store
+     def load_settings(self):
+@@ -4355,11 +4395,13 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         QMainWindow.moveEvent(self, event)
+         if self.tutorial_manager:
+             self.tutorial_manager.re_position_dialog()
++        self._schedule_layout_checkpoint()
+ 
+     def resizeEvent(self, event):
+         QMainWindow.resizeEvent(self, event)
+         if self.tutorial_manager:
+             self.tutorial_manager.re_position_dialog()
++        self._schedule_layout_checkpoint()
+ 
+     def showEvent(self, event):
+         """ Have any child windows follow main-window state """
+@@ -5589,6 +5631,18 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         if s.get("enable-auto-save"):
+             self.auto_save_timer.start()
+ 
++        # Keep the UI layout recoverable even when the Qt process aborts before
++        # closeEvent(). The debounce handles panel drags; the periodic timer
++        # also catches splitter-resize changes that have no Qt dock signal.
++        self._last_layout_snapshot = None
++        self._layout_checkpoint_debounce = QTimer(self)
++        self._layout_checkpoint_debounce.setSingleShot(True)
++        self._layout_checkpoint_debounce.setInterval(800)
++        self._layout_checkpoint_debounce.timeout.connect(self._save_layout_checkpoint)
++        self._layout_checkpoint_timer = QTimer(self)
++        self._layout_checkpoint_timer.setInterval(5000)
++        self._layout_checkpoint_timer.timeout.connect(self._save_layout_checkpoint)
++
+         lib_settings = openshot.Settings.Instance()
+ 
+         # Set encoding method
+@@ -5686,9 +5740,12 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         for dock_widget in self.getDocks():
+             dock_widget.dockLocationChanged.connect(self._schedule_dock_style_update)
+             dock_widget.dockLocationChanged.connect(self._mark_dock_interaction_active)
++            dock_widget.dockLocationChanged.connect(self._schedule_layout_checkpoint)
+             dock_widget.topLevelChanged.connect(self._on_dock_top_level_changed)
++            dock_widget.topLevelChanged.connect(self._schedule_layout_checkpoint)
+             # Re-style siblings when any dock is shown/hidden (tab group may shrink to 1)
+             dock_widget.visibilityChanged.connect(self._schedule_dock_style_update)
++            dock_widget.visibilityChanged.connect(self._schedule_layout_checkpoint)
+ 
+         self.dockVerticalization.visibilityChanged.connect(
+             self._on_verticalization_visibility_changed)
+@@ -5726,6 +5783,8 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+ 
+         # Main window is initialized
+         self.initialized = True
++        QTimer.singleShot(0, lambda: self._save_layout_checkpoint(force=True))
++        self._layout_checkpoint_timer.start()
+ 
+         # Init all Keyboard shortcuts
+         from windows.feedback import FeedbackController
+-- 
+2.55.0.windows.3
+

@@ -28,6 +28,7 @@ corresponding repository.
 | `0020-SMOUK-0.0.19-yolo-onnx-object-reframing.patch` | **openshot-qt** | Bundles YOLO11n ONNX and uses OpenCV DNN object detections as an automatic reframing fallback. |
 | `0021-SMOUK-0.0.20-fix-yolo-dock-reference.patch` | **openshot-qt** | Fixes the YOLO loader's reference to the Verticalization dock class. |
 | `0022-SMOUK-0.0.21-source-fps-accurate-shot-slicing.patch` | **openshot-qt** | Keeps FFmpeg shot cuts on each source video's native frame boundaries instead of rounding them to project FPS. |
+| `0023-SMOUK-0.0.22-persist-ui-layout-checkpoints.patch` | **openshot-qt** | Persists the window geometry and dock layout on close and via debounced, periodic checkpoints to survive native crashes. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

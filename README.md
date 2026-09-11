@@ -207,6 +207,13 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   independientes: no se cambia el FPS creativo del proyecto al detectar o
   cortar planos.
 
+### 0.0.22
+
+- La disposición de la interfaz se guarda al cerrar y también como checkpoint
+  durante el trabajo: tras mover o redimensionar la ventana o los docks, y al
+  menos cada cinco segundos. Así se recuperan la posición y tamaño del visor,
+  timeline y paneles tras un cierre inesperado.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
