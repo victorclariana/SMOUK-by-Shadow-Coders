@@ -90,6 +90,14 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - El análisis permite elegir un archivo externo, muestra los timecodes de los
   cortes detectados y no importa ni modifica todavía la timeline.
 
+### 0.0.7
+
+- Se redujo el umbral inicial de detección FFmpeg de 0.30 a 0.20 para capturar
+  cortes más sutiles, incluido el detectado alrededor de 00:19.8 en el vídeo
+  de validación.
+- Se añadió `Slice selected timeline clip (keep both sides)`, que inserta los
+  cortes detectados en el clip seleccionado conservando ambos lados.
+
 ### 0.0.2
 
 - Se añadió el botón **Proyecto vertical 9:16 (1080x1920)** en el dock, que
