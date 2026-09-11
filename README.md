@@ -172,6 +172,18 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   flotantes y el tracker requiere píxeles enteros. Si el tracker no está
   disponible, el reencuadre sigue usando las detecciones de cara.
 
+### 0.0.18
+
+- Se añadió la segunda capa de reencuadre automático: MediaPipe Face y Pose se
+  usan como respaldo de YuNet/CSRT cuando no hay una cara detectable. Prioriza
+  el centro de la cara y, si no existe, el punto medio de los hombros o la
+  nariz; todo se procesa localmente.
+- Los planos reencuadrados automáticamente se identifican en la timeline con
+  una insignia azul `AI`. Sus posiciones siguen siendo keyframes nativos y
+  editables de `location_x`.
+- MediaPipe se activa automáticamente cuando está instalado en un Python
+  compatible; si no lo está, YuNet/CSRT continúa funcionando sin interrupción.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

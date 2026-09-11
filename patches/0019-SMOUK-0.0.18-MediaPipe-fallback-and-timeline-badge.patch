@@ -1,0 +1,199 @@
+From f3b9e77e9a7c236d55d1cac54c97516eb24bd46b Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 17:33:54 +0200
+Subject: [PATCH] SMOUK-0.0.18-MediaPipe-fallback-and-timeline-badge
+
+---
+ src/windows/main_window.py                    |  2 +-
+ src/windows/verticalization.py                | 88 ++++++++++++++++++-
+ .../views/timeline_backend/paint/clip.py      | 21 +++++
+ 3 files changed, 107 insertions(+), 4 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 7256d9d4d..e5d359b88 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.17"
++SMOUK_VERSION = "0.0.18"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index e51bf6ad6..953f899f8 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -210,8 +210,70 @@ class VerticalizationDockContent(QWidget):
+         return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             "models", "face_detection_yunet_2023mar.onnx")
+ 
+-    def _auto_reframe_clip(self, clip, cv2):
+-        """Track the largest detected face and return sparse clip keyframes."""
++    @staticmethod
++    def _mediapipe_subject_center(frame, face_detector, pose_detector, cv2):
++        """Return MediaPipe's best subject centre, normalized to the frame width.
++
++        YuNet remains the primary detector.  This second layer is deliberately a
++        fallback: it keeps a presenter framed when the face is small, turned
++        away, or briefly hidden, using face landmarks first and shoulder/nose
++        pose landmarks second.
++        """
++        if face_detector is None and pose_detector is None:
++            return None
++        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
++        try:
++            if face_detector is not None:
++                faces = face_detector.process(rgb_frame)
++                detections = getattr(faces, "detections", None) or []
++                if detections:
++                    detection = max(
++                        detections,
++                        key=lambda item: float(item.location_data.relative_bounding_box.width) *
++                        float(item.location_data.relative_bounding_box.height))
++                    box = detection.location_data.relative_bounding_box
++                    return max(0.0, min(1.0, float(box.xmin) + float(box.width) / 2.0))
++
++            if pose_detector is not None:
++                pose = pose_detector.process(rgb_frame)
++                landmarks = getattr(getattr(pose, "pose_landmarks", None), "landmark", None)
++                if landmarks:
++                    # Shoulder midpoint follows a person more reliably than a
++                    # single nose landmark when a face is partly occluded.
++                    shoulders = [landmarks[index] for index in (11, 12)
++                                 if getattr(landmarks[index], "visibility", 0.0) >= 0.45]
++                    subject = (sum(point.x for point in shoulders) / len(shoulders)
++                               if shoulders else landmarks[0].x)
++                    return max(0.0, min(1.0, float(subject)))
++        except Exception as ex:
++            # MediaPipe is a secondary aid; a bad model frame must never abort
++            # a successful YuNet/CSRT run.
++            log.debug("SMOUK MediaPipe fallback skipped a frame: %s", ex)
++        return None
++
++    @staticmethod
++    def _create_mediapipe_detectors(mediapipe):
++        """Create legacy MediaPipe face and pose detectors when available."""
++        if mediapipe is None or not hasattr(mediapipe, "solutions"):
++            return None, None
++        try:
++            solutions = mediapipe.solutions
++            return (
++                solutions.face_detection.FaceDetection(
++                    model_selection=1, min_detection_confidence=0.55),
++                solutions.pose.Pose(
++                    static_image_mode=False,
++                    model_complexity=1,
++                    enable_segmentation=False,
++                    min_detection_confidence=0.55,
++                    min_tracking_confidence=0.55),
++            )
++        except Exception as ex:
++            log.warning("SMOUK MediaPipe fallback is unavailable: %s", ex)
++            return None, None
++
++    def _auto_reframe_clip(self, clip, cv2, mediapipe=None):
++        """Track the largest face, with MediaPipe face/pose as a fallback."""
+         path = str(clip.data.get("reader", {}).get("path", ""))
+         capture = cv2.VideoCapture(path)
+         if not capture.isOpened():
+@@ -225,6 +287,7 @@ class VerticalizationDockContent(QWidget):
+ 
+             detector = cv2.FaceDetectorYN_create(self._yunet_model_path(), "", (width, height),
+                                                   0.78, 0.3, 5000)
++            mp_face, mp_pose = self._create_mediapipe_detectors(mediapipe)
+             start = float(clip.data.get("start", 0.0))
+             end = float(clip.data.get("end") or (start + float(clip.data.get("duration", 0.0))))
+             if end <= start:
+@@ -263,8 +326,14 @@ class VerticalizationDockContent(QWidget):
+                     if tracked:
+                         box = tracked_box
+ 
++                face_center = None
+                 if box is not None:
+                     face_center = (box[0] + (box[2] / 2.0)) / width
++                else:
++                    face_center = self._mediapipe_subject_center(
++                        frame, mp_face, mp_pose, cv2)
++
++                if face_center is not None:
+                     target = max(-self._reframe_max_offset(), min(
+                         self._reframe_max_offset(),
+                         -(face_center - 0.5) * 2.0 * self._reframe_max_offset()))
+@@ -290,6 +359,9 @@ class VerticalizationDockContent(QWidget):
+             return points
+         finally:
+             capture.release()
++            for detector_instance in (locals().get("mp_face"), locals().get("mp_pose")):
++                if detector_instance is not None and hasattr(detector_instance, "close"):
++                    detector_instance.close()
+ 
+     def _on_auto_reframe_timeline(self):
+         """Apply YuNet + CSRT horizontal framing to every timeline video clip."""
+@@ -310,6 +382,11 @@ class VerticalizationDockContent(QWidget):
+                                 _("Add one or more video clips to the timeline first."))
+             return
+ 
++        try:
++            import mediapipe
++        except ImportError:
++            mediapipe = None
++
+         self.btn_auto_reframe.setEnabled(False)
+         self.reframe_progress.setRange(0, len(clips))
+         self.reframe_progress.setValue(0)
+@@ -320,11 +397,16 @@ class VerticalizationDockContent(QWidget):
+                 self.reframe_results.setText(_("Following faces in clip %s of %s…") % (index, len(clips)))
+                 get_app().processEvents()
+                 try:
+-                    points = self._auto_reframe_clip(clip, cv2)
++                    points = self._auto_reframe_clip(clip, cv2, mediapipe)
+                     if points:
+                         clip.data["location_x"] = {"Points": [
+                             {"co": {"X": frame, "Y": value}, "interpolation": openshot.BEZIER}
+                             for frame, value in points]}
++                        ui_data = clip.data.get("ui")
++                        if not isinstance(ui_data, dict):
++                            ui_data = {}
++                            clip.data["ui"] = ui_data
++                        ui_data["smouk_auto_reframed"] = True
+                         clip.save()
+                         changed += 1
+                 except Exception as ex:
+diff --git a/src/windows/views/timeline_backend/paint/clip.py b/src/windows/views/timeline_backend/paint/clip.py
+index 0c8a69758..dd7c89ff6 100644
+--- a/src/windows/views/timeline_backend/paint/clip.py
++++ b/src/windows/views/timeline_backend/paint/clip.py
+@@ -2110,6 +2110,27 @@ class ClipPainter(BasePainter):
+ 
+         includes_end = (full_rect.right() - segment_rect.right()) <= 0.5
+ 
++        # SMOUK marks clips whose horizontal framing was generated by automatic
++        # face/pose analysis.  The actual editable motion remains in the native
++        # location_x keyframes; this small badge makes those shots easy to find.
++        data = clip.data if isinstance(getattr(clip, "data", None), dict) else {}
++        ui_data = data.get("ui") if isinstance(data.get("ui"), dict) else {}
++        if includes_start and ui_data.get("smouk_auto_reframed") and segment_rect.width() >= 20.0:
++            badge = QRectF(segment_rect.left() + 4.0, segment_rect.bottom() - 17.0, 22.0, 13.0)
++            painter.save()
++            painter.setRenderHint(QPainter.Antialiasing, True)
++            painter.setPen(QPen(QColor(15, 37, 55, 230), 1.0))
++            painter.setBrush(QColor(34, 169, 225, 235))
++            painter.drawRoundedRect(badge, 3.0, 3.0)
++            badge_font = QFont(painter.font())
++            badge_font.setBold(True)
++            if badge_font.pointSizeF() > 0:
++                badge_font.setPointSizeF(max(6.0, badge_font.pointSizeF() * 0.72))
++            painter.setFont(badge_font)
++            painter.setPen(QColor(255, 255, 255))
++            painter.drawText(badge, Qt.AlignCenter, "AI")
++            painter.restore()
++
+         border_pen = pen if isinstance(pen, QPen) else (self.sel_pen if selected else self.clip_pen)
+         self._stroke_visible_border(
+             painter,
+-- 
+2.55.0.windows.3
+
