@@ -1,0 +1,124 @@
+From 931bb93e9a8801ede41a266a163c946448efeeea Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 15:01:56 +0200
+Subject: [PATCH] SMOUK-0.0.9-live-reframing-slider
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 57 ++++++++++++++++++++++++++++++++--
+ 2 files changed, 55 insertions(+), 4 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 40eacd895..d41054b1f 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.8"
++SMOUK_VERSION = "0.0.9"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index cb8aa4b7f..c078b1a9c 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -23,6 +23,7 @@ import re
+ import shutil
+ import subprocess
+ import sys
++import json
+ 
+ from qt_api import (
+     Qt, QWidget, QFrame, QLabel, QScrollArea, QToolButton, QVBoxLayout,
+@@ -134,6 +135,8 @@ class VerticalizationDockContent(QWidget):
+ 
+         # Verticalization controls (output + viewer guide + clip reframing)
+         self._build_controls(layout, _)
++        self._reframe_dragging = False
++        self._connect_reframe_sync()
+ 
+         self.sections = {}
+         for key, title, description in self.SECTIONS:
+@@ -317,9 +320,13 @@ class VerticalizationDockContent(QWidget):
+         self.reframe_slider.setObjectName("verticalizationReframeSlider")
+         self.reframe_slider.setRange(-1000, 1000)
+         self.reframe_slider.setValue(0)
++        self.reframe_slider.setStyleSheet(
++            "QSlider::handle:horizontal { width: 22px; margin: -7px 0; }")
+         self.reframe_slider.setToolTip(
+             _("Move the selected 16:9 clip beneath the vertical guide."))
+-        self.reframe_slider.sliderReleased.connect(self._on_reframe_changed)
++        self.reframe_slider.sliderPressed.connect(self._on_reframe_press)
++        self.reframe_slider.sliderReleased.connect(self._on_reframe_release)
++        self.reframe_slider.valueChanged.connect(self._on_reframe_changed)
+         cbox.addWidget(self.reframe_slider)
+ 
+         self.chk_keyframes = QCheckBox(_("Keyframes"), controls)
+@@ -357,6 +364,51 @@ class VerticalizationDockContent(QWidget):
+             return None
+         return Clip.get(id=clip_ids[0])
+ 
++    def _connect_reframe_sync(self):
++        """Keep the slider aligned with timeline selection and playhead state."""
++        if hasattr(self.window, "SelectionAdded"):
++            self.window.SelectionAdded.connect(lambda *_args: self._sync_reframe_slider())
++        if hasattr(self.window, "SelectionRemoved"):
++            self.window.SelectionRemoved.connect(lambda *_args: self._sync_reframe_slider())
++        if hasattr(self.window, "SeekSignal"):
++            self.window.SeekSignal.connect(lambda *_args: self._sync_reframe_slider())
++
++    def _on_reframe_press(self):
++        self._reframe_dragging = True
++
++    def _on_reframe_release(self):
++        self._reframe_dragging = False
++
++    def _reframe_max_offset(self):
++        return (1.0 - (self._output_ratio() / (16.0 / 9.0))) / 2.0
++
++    def _reframe_value_at_frame(self, clip, frame):
++        """Evaluate the clip's existing location_x keyframe at a source frame."""
++        keyframe_data = clip.data.get("location_x")
++        if not keyframe_data or not keyframe_data.get("Points"):
++            return 0.0
++        try:
++            keyframe = openshot.Keyframe()
++            keyframe.SetJson(json.dumps(keyframe_data))
++            return float(keyframe.GetValue(frame))
++        except (RuntimeError, TypeError, ValueError):
++            return 0.0
++
++    def _sync_reframe_slider(self):
++        """Show centre for untouched clips, or their saved reframe position."""
++        if self._reframe_dragging:
++            return
++        window = get_app().window
++        clip = self._selected_clip()
++        value = 0.0
++        if window is not None and clip is not None:
++            value = self._reframe_value_at_frame(clip, self._clip_frame(clip, window))
++        max_offset = max(self._reframe_max_offset(), 0.0001)
++        slider_value = int(round(max(-1.0, min(1.0, value / max_offset)) * 1000))
++        self.reframe_slider.blockSignals(True)
++        self.reframe_slider.setValue(slider_value)
++        self.reframe_slider.blockSignals(False)
++
+     @staticmethod
+     def _clip_frame(clip, window):
+         """Return the selected clip's current one-based source frame."""
+@@ -383,8 +435,7 @@ class VerticalizationDockContent(QWidget):
+             return
+ 
+         # Keep the selected output crop entirely inside a 16:9 source frame.
+-        max_offset = (1.0 - (self._output_ratio() / (16.0 / 9.0))) / 2.0
+-        value = (self.reframe_slider.value() / 1000.0) * max_offset
++        value = (self.reframe_slider.value() / 1000.0) * self._reframe_max_offset()
+         fps = get_app().project.get("fps")
+         fps_value = float(fps["num"]) / float(fps["den"])
+         frame = self._clip_frame(clip, window)
+-- 
+2.55.0.windows.3
+

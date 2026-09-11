@@ -108,6 +108,14 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - Añade una barra de progreso por clips procesados y un resumen final de
   cortes insertados o errores encontrados.
 
+### 0.0.9
+
+- El deslizador Horizontal framing se sincroniza con el plano seleccionado:
+  vuelve al centro en planos sin ajuste y recupera su posición guardada en
+  planos ya reencuadrados.
+- El vídeo se desplaza en tiempo real mientras se arrastra el control.
+- Se amplió el handle del deslizador para facilitar su agarre.
+
 ### 0.0.2
 
 - Se añadió el botón **Proyecto vertical 9:16 (1080x1920)** en el dock, que
