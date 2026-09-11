@@ -1,0 +1,227 @@
+From f30005d0db4e729ac01a5ecc49971552384f6bbb Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 00:56:10 +0200
+Subject: [PATCH] SMOUK-0.0.26-restore-layout-PAL-default-and-anamorphic-HD
+
+---
+ src/classes/clip_utils.py         | 32 ++++++++++++++++++++++++++++++-
+ src/classes/project_data.py       | 22 +++++++++++++++++++++
+ src/settings/_default.settings    |  9 ++++++++-
+ src/windows/main_window.py        |  9 +++++++--
+ src/windows/models/files_model.py |  3 +++
+ src/windows/views/timeline.py     |  6 ++++++
+ 6 files changed, 77 insertions(+), 4 deletions(-)
+
+diff --git a/src/classes/clip_utils.py b/src/classes/clip_utils.py
+index 2222a3fd1..257127f69 100644
+--- a/src/classes/clip_utils.py
++++ b/src/classes/clip_utils.py
+@@ -27,7 +27,7 @@
+ import logging
+ import json
+ from fractions import Fraction
+-from typing import Any, Mapping, Optional, Tuple
++from typing import Any, Mapping, MutableMapping, Optional, Tuple
+ 
+ import openshot
+ 
+@@ -36,6 +36,36 @@ from classes.app import get_app
+ logger = logging.getLogger(__name__)
+ 
+ 
++def normalize_anamorphic_1440x1080(media: Any) -> bool:
++    """Recognize 1440x1080 widescreen media and normalize it to 16:9 SAR/DAR.
++
++    HD anamorphic material stores 4:3 pixels in a 1440x1080 raster. FFmpeg
++    normally reports SAR 4:3 and DAR 16:9, but accepting either signal keeps
++    imports robust across containers which omit one of them.
++    """
++    metadata = _as_mapping(media)
++    if not isinstance(metadata, MutableMapping):
++        return False
++    if (_rounded_int(metadata.get("width")) != 1440 or
++            _rounded_int(metadata.get("height")) != 1080):
++        return False
++
++    pixel_ratio = _as_mapping(metadata.get("pixel_ratio"))
++    display_ratio = _as_mapping(metadata.get("display_ratio"))
++    pixel_num = _to_positive_float(pixel_ratio.get("num"))
++    pixel_den = _to_positive_float(pixel_ratio.get("den"))
++    display_num = _to_positive_float(display_ratio.get("num"))
++    display_den = _to_positive_float(display_ratio.get("den"))
++    par = pixel_num / pixel_den if pixel_num and pixel_den else 1.0
++    dar = display_num / display_den if display_num and display_den else 4.0 / 3.0
++    if abs(par - (4.0 / 3.0)) > 0.02 and abs(dar - (16.0 / 9.0)) > 0.02:
++        return False
++
++    metadata["pixel_ratio"] = {"num": 4, "den": 3}
++    metadata["display_ratio"] = {"num": 16, "den": 9}
++    return True
++
++
+ def apply_file_caption_to_clip(clip_data: Any, file_obj: Any, *, dedupe: bool = True) -> bool:
+     """Attach a Caption effect to clip_data when file metadata includes caption text."""
+     if not isinstance(clip_data, Mapping):
+diff --git a/src/classes/project_data.py b/src/classes/project_data.py
+index 2f6df4773..a8228678a 100644
+--- a/src/classes/project_data.py
++++ b/src/classes/project_data.py
+@@ -48,6 +48,7 @@ from classes.assets import get_assets_path
+ from classes.path_utils import comparable_local_path, normalized_local_path
+ from windows.views.find_file import find_missing_file
+ from classes.convert_framerate import change_profile
++from classes.clip_utils import normalize_anamorphic_1440x1080
+ 
+ from .keyframe_scaler import KeyframeScaler
+ 
+@@ -358,6 +359,10 @@ class ProjectDataStore(JsonDataStore, UpdateInterface):
+ 
+         # Get default profile
+         s = get_app().get_settings()
++        if not s.get("smouk-pal-default-profile-v1"):
++            s.set("default-profile", "FHD PAL 1080i 25 fps")
++            s.set("smouk-pal-default-profile-v1", True)
++            s.save()
+         default_profile_desc = s.get("default-profile")
+ 
+         # Get profile (if any)
+@@ -951,6 +956,23 @@ class ProjectDataStore(JsonDataStore, UpdateInterface):
+         ):
+             self._migrate_400_non_crop_locations()
+ 
++        # SMOUK treats HDV-style 1440x1080 footage with non-square 4:3 pixels
++        # as 16:9 display media. Upgrade existing FIT clips as well as newly
++        # imported ones, while preserving any deliberate Crop/None/Stretch.
++        files = {
++            file_data.get("id"): file_data
++            for file_data in self._data.get("files", [])
++            if isinstance(file_data, dict)
++        }
++        for file_data in files.values():
++            normalize_anamorphic_1440x1080(file_data)
++        for clip in self._data.get("clips", []):
++            reader = clip.get("reader") or files.get(clip.get("file_id"), {})
++            if (normalize_anamorphic_1440x1080(reader) and
++                    clip.get("scale", openshot.SCALE_FIT) == openshot.SCALE_FIT):
++                clip["scale"] = openshot.SCALE_STRETCH
++                log.info("SMOUK: expanded anamorphic clip %s to 16:9", clip.get("id", ""))
++
+         # Fix default project id (if found)
+         if self._data.get("id") == "T0":
+             self._data["id"] = self.generate_id()
+diff --git a/src/settings/_default.settings b/src/settings/_default.settings
+index bf8caae0e..915586e96 100644
+--- a/src/settings/_default.settings
++++ b/src/settings/_default.settings
+@@ -57,7 +57,7 @@
+     ]
+   },
+   {
+-    "value": "HD 720p 30 fps",
++    "value": "FHD PAL 1080i 25 fps",
+     "title": "Default Profile",
+     "category": "General",
+     "setting": "default-profile",
+@@ -65,6 +65,13 @@
+     "values": [],
+     "restart": true
+   },
++  {
++    "value": false,
++    "title": "",
++    "type": "hidden",
++    "category": "General",
++    "setting": "smouk-pal-default-profile-v1"
++  },
+   {
+     "value": "",
+     "title": "",
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 3b0d60727..a356f839e 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.25"
++SMOUK_VERSION = "0.0.26"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+@@ -4406,6 +4406,11 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+     def showEvent(self, event):
+         """ Have any child windows follow main-window state """
+         QMainWindow.showEvent(self, event)
++        if not getattr(self, "_restored_saved_window", False):
++            # restoreState() must run after the native window is mapped. It was
++            # previously loaded but never invoked, so every launch kept the UI
++            # file's default dock arrangement.
++            QTimer.singleShot(0, self._restore_saved_window_state)
+         for child in self.getDocks():
+             if child.isFloating() and child.isEnabled():
+                 child.raise_()
+@@ -4428,6 +4433,7 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         hidden_names = get_app().get_settings().get('hidden_docks') or []
+         self._restore_hidden_docks(hidden_names)
+         QTimer.singleShot(0, self._restore_saved_video_dock_width)
++        QTimer.singleShot(100, lambda: self._save_layout_checkpoint(force=True))
+ 
+     def _restore_saved_video_dock_width(self):
+         """Correct Qt 5 fractional-scale drift in the horizontal dock splitter."""
+@@ -5783,7 +5789,6 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+ 
+         # Main window is initialized
+         self.initialized = True
+-        QTimer.singleShot(0, lambda: self._save_layout_checkpoint(force=True))
+         self._layout_checkpoint_timer.start()
+ 
+         # Init all Keyboard shortcuts
+diff --git a/src/windows/models/files_model.py b/src/windows/models/files_model.py
+index 30e23c4eb..576c420ca 100644
+--- a/src/windows/models/files_model.py
++++ b/src/windows/models/files_model.py
+@@ -44,6 +44,7 @@ from qt_api import QAbstractItemView
+ from classes import updates
+ from classes import info
+ from classes.image_types import get_media_type
++from classes.clip_utils import normalize_anamorphic_1440x1080
+ from classes.query import File
+ from classes.logger import log
+ from classes.app import get_app
+@@ -450,6 +451,8 @@ class FilesModel(QObject, updates.UpdateInterface):
+ 
+                 # Determine media type
+                 file_data["media_type"] = get_media_type(file_data)
++                if normalize_anamorphic_1440x1080(file_data):
++                    log.info("SMOUK: detected 1440x1080 anamorphic 16:9 media: %s", filepath)
+ 
+                 # Check for audio-only files
+                 if file_data.get("has_audio") and not file_data.get("has_video"):
+diff --git a/src/windows/views/timeline.py b/src/windows/views/timeline.py
+index 4536b3608..4f81c22fa 100644
+--- a/src/windows/views/timeline.py
++++ b/src/windows/views/timeline.py
+@@ -175,6 +175,7 @@ from classes.clip_utils import (
+     clamp_timing_to_media,
+     apply_file_caption_to_clip,
+     is_single_image_media,
++    normalize_anamorphic_1440x1080,
+ )
+ from .retime import retime_clip
+ from .repeat import apply_repeat, reset_repeat, RepeatDialog
+@@ -5615,6 +5616,11 @@ class TimelineView(updates.UpdateInterface, ViewClass):
+         new_clip["file_id"] = file.id
+         new_clip["title"] = file.data.get("name", filename)
+         new_clip["reader"] = file.data
++        if normalize_anamorphic_1440x1080(new_clip["reader"]):
++            # SCALE_FIT uses the stored raster dimensions in libopenshot.
++            # Stretching this known anamorphic raster expands its 4:3 pixels
++            # to the 16:9 project canvas without cropping.
++            new_clip["scale"] = openshot.SCALE_STRETCH
+ 
+         # Skip clips that are missing a 'reader' attribute
+         if not new_clip.get("reader"):
+-- 
+2.55.0.windows.3
+

@@ -239,6 +239,19 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   izquierdo como inclusivo; el corte automático deja ahora ese final un frame
   nativo antes y mantiene el plano derecho en el timestamp detectado.
 
+### 0.0.26
+
+- La disposición guardada de la interfaz se restaura realmente después de que
+  Windows muestre la ventana. El checkpoint inicial ya no puede sobrescribir
+  antes de tiempo la posición y tamaño de timeline, visor y docks.
+- El perfil predeterminado para proyectos nuevos es `FHD PAL 1080i 25 fps`.
+  Las instalaciones existentes reciben este valor una vez y después conservan
+  cualquier perfil predeterminado que el usuario elija manualmente.
+- Los vídeos HD anamórficos de 1440×1080 con SAR 4:3 o DAR 16:9 se reconocen al
+  importar. Se normalizan como 16:9 y se expanden automáticamente para llenar
+  el lienzo horizontal; también se actualizan los clips existentes que aún
+  utilicen `Best Fit`.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
