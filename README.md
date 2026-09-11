@@ -184,6 +184,14 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - MediaPipe se activa automáticamente cuando está instalado en un Python
   compatible; si no lo está, YuNet/CSRT continúa funcionando sin interrupción.
 
+### 0.0.19
+
+- Se añadió YOLO11n en formato ONNX, ejecutado localmente con OpenCV DNN y sin
+  PyTorch. Cuando YuNet no detecta una cara, el reencuadre puede seguir una
+  persona u objeto COCO relevante —vehículos, animales, deporte o pantallas—.
+- El objeto se selecciona por confianza, prioridad semántica y tamaño visible;
+  su centro se transforma en los mismos keyframes horizontales editables.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
