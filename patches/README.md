@@ -21,6 +21,7 @@ corresponding repository.
 | `0013-SMOUK-0.0.12-remember-export-folder.patch` | **openshot-qt** | Keeps the most recently used export folder when opening the SMOUK export dialog. |
 | `0002-SMOUK-0.0.13-FFmpeg-audio-sample-format.patch` | **libopenshot** | Uses FFmpeg's supported-config API to select the audio encoder sample format on FFmpeg 7+. |
 | `0015-SMOUK-0.0.14-enable-guide-with-dock.patch` | **openshot-qt** | Enables the vertical framing guide when the Verticalization dock is shown. |
+| `0016-SMOUK-0.0.15-hide-guide-with-dock.patch` | **openshot-qt** | Hides the vertical framing guide when the Verticalization dock is closed. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

@@ -1,0 +1,39 @@
+From ef65e54e98fc433bf5e6733ad1bf6d4c5d1a41fc Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 16:39:29 +0200
+Subject: [PATCH] SMOUK-0.0.15-hide-guide-with-dock
+
+---
+ src/windows/main_window.py | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 5022b1e07..77a077463 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.14"
++SMOUK_VERSION = "0.0.15"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+@@ -1597,8 +1597,11 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+ 
+     def _on_verticalization_visibility_changed(self, visible):
+         """Show the framing guide whenever the Verticalization dock is active."""
+-        if visible and not self.verticalization_content.chk_overlay.isChecked():
+-            self.verticalization_content.chk_overlay.setChecked(True)
++        if visible:
++            if not self.verticalization_content.chk_overlay.isChecked():
++                self.verticalization_content.chk_overlay.setChecked(True)
++        elif self.verticalization_content.chk_overlay.isChecked():
++            self.verticalization_content.chk_overlay.setChecked(False)
+ 
+     def _anchor_and_show_properties_dock(self):
+         """Reattach Properties when needed without replacing a view's layout."""
+-- 
+2.55.0.windows.3
+

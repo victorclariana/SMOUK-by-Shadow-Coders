@@ -155,6 +155,11 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - Al mostrarse el dock `Verticalization`, se activa por defecto `Show the
   9:16 guide in the viewer` para que el encuadre de exportación sea visible.
 
+### 0.0.15
+
+- Al ocultar o cerrar el dock `Verticalization`, se desactiva la guía 9:16 y
+  desaparece del visor.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
