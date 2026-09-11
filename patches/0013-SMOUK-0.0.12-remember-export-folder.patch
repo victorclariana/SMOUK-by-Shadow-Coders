@@ -1,0 +1,57 @@
+From 98cd9f82154e533cf647f9206d1bb4da707b1c98 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 15:44:28 +0200
+Subject: [PATCH] SMOUK-0.0.12-remember-export-folder
+
+---
+ src/windows/export.py      | 13 +++++++++++++
+ src/windows/main_window.py |  2 +-
+ 2 files changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/src/windows/export.py b/src/windows/export.py
+index d5ae2ee7c..d43f9e79b 100644
+--- a/src/windows/export.py
++++ b/src/windows/export.py
+@@ -326,6 +326,7 @@ class Export(QDialog):
+ 
+         # Load previous settings (if any)
+         self.load_settings()
++        self._restore_smouk_export_folder()
+         self._select_smouk_output_profile()
+         self._configure_smouk_audio_codec()
+ 
+@@ -397,6 +398,18 @@ class Export(QDialog):
+         if profile_index >= 0:
+             self.cboSimpleVideoProfile.setCurrentIndex(profile_index)
+ 
++    def _restore_smouk_export_folder(self):
++        """Keep SMOUK exports in the user's most recently used export folder."""
++        if not self.smouk_output_profile:
++            return
++
++        # load_settings() restores per-project export settings after the
++        # initial folder has been set. That can overwrite the global, most
++        # recent export location with an old home-directory path.
++        recent_folder = self.s.getDefaultPath(self.s.actionType.EXPORT)
++        if recent_folder and os.path.isdir(recent_folder):
++            self.txtExportFolder.setText(recent_folder)
++
+     def _configure_smouk_audio_codec(self):
+         """Use an MP4-compatible audio encoder for an explicit SMOUK export."""
+         if not self.smouk_output:
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 6db1b551f..190597d1e 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.11"
++SMOUK_VERSION = "0.0.12"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+-- 
+2.55.0.windows.3
+

@@ -18,6 +18,7 @@ corresponding repository.
 | `0010-SMOUK-0.0.9-live-reframing-slider.patch` | **openshot-qt** | Synchronizes per-clip reframing, updates it live while dragging, and enlarges the slider handle. |
 | `0011-SMOUK-0.0.10-apply-vertical-render-profile.patch` | **openshot-qt** | Applies the complete SMOUK profile to the temporary render timeline before cropping. |
 | `0012-SMOUK-0.0.11-fix-crop-and-audio.patch` | **openshot-qt** | Resolves imported media metadata before applying crop and selects an MP4-compatible audio codec for SMOUK exports. |
+| `0013-SMOUK-0.0.12-remember-export-folder.patch` | **openshot-qt** | Keeps the most recently used export folder when opening the SMOUK export dialog. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

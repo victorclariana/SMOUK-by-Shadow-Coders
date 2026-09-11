@@ -135,6 +135,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   con MP4 (AAC cuando está disponible), evitando que un códec heredado del
   preset bloquee la ventana de renderizado.
 
+### 0.0.12
+
+- El diálogo abierto desde `Export vertical video` conserva la última carpeta
+  de exportación usada. Los ajustes guardados del proyecto ya no la sustituyen
+  por una ruta antigua de la carpeta personal.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
