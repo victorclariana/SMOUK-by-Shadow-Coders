@@ -252,6 +252,23 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   el lienzo horizontal; también se actualizan los clips existentes que aún
   utilicen `Best Fit`.
 
+### 0.0.27
+
+- Se corrige definitivamente la regresión de corte introducida en 0.0.25. El
+  límite detectado por FFmpeg vuelve a ser una única frontera compartida: el
+  clip izquierdo termina en ella y el derecho usa esa misma posición como
+  inicio de fuente. Así, la conversión inclusiva de libopenshot deja dos
+  fotogramas consecutivos, sin repetir el anterior y sin abrir un hueco.
+- Se añade una prueba de regresión a 25 fps que reproduce el corte de `34,28 s`
+  y verifica tanto la continuidad del timeline como la continuidad de los
+  fotogramas de fuente.
+- La restauración de la interfaz se ejecuta estrictamente después de que Windows
+  aplique el estado normal, maximizado o de pantalla completa. Se elimina la
+  carrera que consumía prematuramente la restauración desde `showEvent` y se
+  registra en el log si Qt aceptó el estado guardado.
+- El preset vertical elegido queda registrado como una preferencia válida; ya
+  no se descarta al cerrar por faltar su clave en la configuración base.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

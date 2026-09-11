@@ -1,0 +1,301 @@
+From 8967f3f79671d9457d2b0af70b78b0bc2d93b21c Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 01:36:46 +0200
+Subject: [PATCH] SMOUK-0.0.27-frame-exact-cuts-and-final-layout-restore
+
+---
+ src/classes/app.py                 | 25 ++++++++-----
+ src/settings/_default.settings     |  7 ++++
+ src/tests/test_app_window_state.py | 17 +++++++++
+ src/tests/test_main_window.py      |  3 ++
+ src/tests/test_timeline_helpers.py | 58 ++++++++++++++++++++++++++++++
+ src/windows/main_window.py         | 14 ++++----
+ src/windows/verticalization.py     |  3 +-
+ src/windows/views/timeline.py      | 19 +++++-----
+ 8 files changed, 119 insertions(+), 27 deletions(-)
+
+diff --git a/src/classes/app.py b/src/classes/app.py
+index c37f485d9..29272998a 100644
+--- a/src/classes/app.py
++++ b/src/classes/app.py
+@@ -209,15 +209,22 @@ class OpenShotApp(QApplication):
+         """Map the final window geometry, then restore its serialized dock state."""
+         state = window.windowState()
+         window.show()
+-        if state & Qt.WindowFullScreen:
+-            QTimer.singleShot(
+-                0, lambda: (window.showNormal(), window.showFullScreen()))
+-        elif state & Qt.WindowMaximized:
+-            QTimer.singleShot(
+-                0, lambda: (window.showNormal(), window.showMaximized()))
+-        restore_state = getattr(window, "_restore_saved_window_state", None)
+-        if callable(restore_state):
+-            QTimer.singleShot(100, restore_state)
++
++        def finish_window_mapping():
++            # Apply the native window state first. Dock splitter geometry is
++            # only stable after this transition, so restore it in the same
++            # queued callback and strictly afterwards.
++            if state & Qt.WindowFullScreen:
++                window.showNormal()
++                window.showFullScreen()
++            elif state & Qt.WindowMaximized:
++                window.showNormal()
++                window.showMaximized()
++            restore_state = getattr(window, "_restore_saved_window_state", None)
++            if callable(restore_state):
++                restore_state()
++
++        QTimer.singleShot(0, finish_window_mapping)
+ 
+     def gui(self):
+         """
+diff --git a/src/settings/_default.settings b/src/settings/_default.settings
+index 915586e96..96706ab55 100644
+--- a/src/settings/_default.settings
++++ b/src/settings/_default.settings
+@@ -72,6 +72,13 @@
+     "category": "General",
+     "setting": "smouk-pal-default-profile-v1"
+   },
++  {
++    "value": "01080x1350p0025_04-05",
++    "title": "",
++    "type": "hidden",
++    "category": "General",
++    "setting": "smouk_vertical_output_profile"
++  },
+   {
+     "value": "",
+     "title": "",
+diff --git a/src/tests/test_app_window_state.py b/src/tests/test_app_window_state.py
+index 5ca8c65bf..497442c80 100644
+--- a/src/tests/test_app_window_state.py
++++ b/src/tests/test_app_window_state.py
+@@ -33,6 +33,23 @@ class FakeWindow:
+ 
+ 
+ class AppWindowStateTests(unittest.TestCase):
++    def test_restore_is_in_same_callback_after_maximize(self):
++        window = FakeWindow(Qt.WindowMaximized)
++        queued = []
++
++        with patch(
++                "classes.app.QTimer.singleShot",
++                lambda delay, callback: queued.append((delay, callback))):
++            OpenShotApp._show_main_window(window)
++
++        self.assertEqual(window.calls, ["show"])
++        self.assertEqual(len(queued), 1)
++        self.assertEqual(queued[0][0], 0)
++        queued[0][1]()
++        self.assertEqual(
++            window.calls,
++            ["show", "showNormal", "showMaximized", "restoreState"])
++
+     def test_restored_maximized_window_is_shown_maximized(self):
+         window = FakeWindow(Qt.WindowMaximized)
+ 
+diff --git a/src/tests/test_main_window.py b/src/tests/test_main_window.py
+index 9d7758089..c64874cd1 100644
+--- a/src/tests/test_main_window.py
++++ b/src/tests/test_main_window.py
+@@ -77,6 +77,9 @@ class DummySettings:
+     def set(self, key, value):
+         self.values[key] = value
+ 
++    def save(self):
++        pass
++
+     def setDefaultPath(self, action, path):
+         self.default_paths[action] = path
+ 
+diff --git a/src/tests/test_timeline_helpers.py b/src/tests/test_timeline_helpers.py
+index a6c0477f2..0dbea3ca0 100644
+--- a/src/tests/test_timeline_helpers.py
++++ b/src/tests/test_timeline_helpers.py
+@@ -1271,6 +1271,7 @@ class TimelineHelperTests(unittest.TestCase):
+         class Helper:
+             def __init__(self):
+                 self.updated_transitions = []
++                self.updated_clips = []
+                 self.ripple_calls = []
+                 self.window = types.SimpleNamespace(
+                     SeekSignal=types.SimpleNamespace(emit=lambda *_args, **_kwargs: None)
+@@ -1283,6 +1284,12 @@ class TimelineHelperTests(unittest.TestCase):
+             def update_transition_data(self, transition_json, **_kwargs):
+                 self.updated_transitions.append(copy.deepcopy(transition_json))
+ 
++            def update_clip_data(self, clip_json, **_kwargs):
++                self.updated_clips.append(copy.deepcopy(clip_json))
++
++            def _assign_new_effect_ids(self, _clip_json):
++                pass
++
+             def ripple_delete_gap(self, ripple_start, layer, ripple_gap):
+                 self.ripple_calls.append((ripple_start, layer, ripple_gap))
+ 
+@@ -3688,6 +3695,57 @@ class TimelineHelperTests(unittest.TestCase):
+         self.assertEqual(helper.updated_transitions, [{"id": "T1", "position": 10.0, "layer": 2, "start": 0.0, "end": 2.0, "duration": 2.0}])
+         self.assertEqual(saved_right, [{"position": 12.0, "layer": 2, "start": 2.0, "end": 4.0, "duration": 2.0}])
+ 
++    def test_slice_keep_both_has_contiguous_timeline_and_source_frames(self):
++        """A 25 fps scene boundary must neither repeat nor drop a frame."""
++        helper = self.make_slice_helper()
++        clip_data = {
++            "id": "C1", "position": 0.0, "layer": 1,
++            "start": 0.0, "end": 60.0, "duration": 60.0,
++        }
++        left_clip = types.SimpleNamespace(
++            id="C1", type="update", key=["clips", {"id": "C1"}],
++            data=copy.deepcopy(clip_data),
++        )
++        right_clip = types.SimpleNamespace(
++            id="C1", type="update", key=["clips", {"id": "C1"}],
++            data=copy.deepcopy(clip_data),
++        )
++        saved_right = []
++        right_clip.save = lambda: saved_right.append(copy.deepcopy(right_clip.data))
++        app = types.SimpleNamespace(
++            project=types.SimpleNamespace(
++                get=lambda key: {"fps": {"num": 25, "den": 1}, "layers": []}[key]
++            ),
++            updates=types.SimpleNamespace(transaction_id=None),
++            window=types.SimpleNamespace(
++                IgnoreUpdates=types.SimpleNamespace(emit=lambda *_args, **_kwargs: None)
++            ),
++        )
++
++        with ExitStack() as stack:
++            stack.enter_context(patch.object(self.timeline_module, "get_app", return_value=app))
++            stack.enter_context(patch.object(
++                self.timeline_module.Clip, "get", side_effect=[left_clip, right_clip]))
++            stack.enter_context(patch.object(self.timeline_module.Transition, "get", return_value=None))
++            self.timeline_module.TimelineView.Slice_Triggered(
++                helper, self.timeline_module.MenuSlice.KEEP_BOTH,
++                ["C1"], [], 34.28, snap_to_project_frames=False)
++
++        left = helper.updated_clips[0]
++        right = saved_right[0]
++        self.assertAlmostEqual(left["end"], 34.28)
++        self.assertAlmostEqual(right["start"], 34.28)
++        self.assertAlmostEqual(right["position"], 34.28)
++        # libopenshot's actual conversion in Timeline.cpp: left end is
++        # round((position + duration) * fps), right begins at round(position * fps) + 1.
++        left_last_timeline_frame = round(
++            (left["position"] + left["duration"]) * 25)
++        right_first_timeline_frame = round(right["position"] * 25) + 1
++        left_last_source_frame = round(left["end"] * 25)
++        right_first_source_frame = round(right["start"] * 25) + 1
++        self.assertEqual(right_first_timeline_frame, left_last_timeline_frame + 1)
++        self.assertEqual(right_first_source_frame, left_last_source_frame + 1)
++
+     def test_slice_triggered_keep_right_updates_transition_duration(self):
+         helper = self.make_slice_helper()
+         transition = types.SimpleNamespace(
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index a356f839e..76d3c34ad 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.26"
++SMOUK_VERSION = "0.0.27"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+@@ -4407,10 +4407,10 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         """ Have any child windows follow main-window state """
+         QMainWindow.showEvent(self, event)
+         if not getattr(self, "_restored_saved_window", False):
+-            # restoreState() must run after the native window is mapped. It was
+-            # previously loaded but never invoked, so every launch kept the UI
+-            # file's default dock arrangement.
+-            QTimer.singleShot(0, self._restore_saved_window_state)
++            # App._show_main_window restores after its native state transition.
++            # Keep a later fallback for tests and alternate launch paths, but
++            # never let showEvent consume the one-shot restoration too early.
++            QTimer.singleShot(250, self._restore_saved_window_state)
+         for child in self.getDocks():
+             if child.isFloating() and child.isEnabled():
+                 child.raise_()
+@@ -4427,13 +4427,15 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         if self._restored_saved_window:
+             return
+         self._restored_saved_window = True
++        restored = False
+         if self.saved_state:
+-            self.restoreState(self.saved_state)
++            restored = self.restoreState(self.saved_state)
+         # Qt state does not remember docks explicitly removed from all areas.
+         hidden_names = get_app().get_settings().get('hidden_docks') or []
+         self._restore_hidden_docks(hidden_names)
+         QTimer.singleShot(0, self._restore_saved_video_dock_width)
+         QTimer.singleShot(100, lambda: self._save_layout_checkpoint(force=True))
++        log.info("Restored SMOUK UI layout (Qt state accepted=%s)", restored)
+ 
+     def _restore_saved_video_dock_width(self):
+         """Correct Qt 5 fractional-scale drift in the horizontal dock splitter."""
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 314ca85eb..9d7510870 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -634,8 +634,7 @@ class VerticalizationDockContent(QWidget):
+         for cut in sorted(valid_cuts, reverse=True):
+             window.timeline.Slice_Triggered(
+                 MenuSlice.KEEP_BOTH, [clip.id], [],
+-                clip_position + (cut - clip_start), snap_to_project_frames=False,
+-                left_end_frame_offset=(1.0 / source_fps if source_fps > 0.0 else 0.0))
++                clip_position + (cut - clip_start), snap_to_project_frames=False)
+         return len(valid_cuts)
+ 
+     def _on_detect_and_slice_timeline(self):
+diff --git a/src/windows/views/timeline.py b/src/windows/views/timeline.py
+index 4f81c22fa..167d064f5 100644
+--- a/src/windows/views/timeline.py
++++ b/src/windows/views/timeline.py
+@@ -4103,7 +4103,7 @@ class TimelineView(updates.UpdateInterface, ViewClass):
+             QTimer.singleShot(0, partial(self.Slice_Triggered, slice_mode, [], [trans_id], cursor_position))
+ 
+     def Slice_Triggered(self, action, clip_ids, trans_ids, playhead_position=0, ripple=False,
+-                        snap_to_project_frames=True, left_end_frame_offset=0.0):
++                        snap_to_project_frames=True):
+         """Callback for slice context menus"""
+         # Get FPS from project
+         fps = get_app().project.get("fps")
+@@ -4171,14 +4171,13 @@ class TimelineView(updates.UpdateInterface, ViewClass):
+                 elif action == MenuSlice.KEEP_BOTH:
+                     # Update clip data for the left clip
+                     new_end = start_of_clip + (playhead_position - original_position)
+-                    # FFmpeg scene timestamps identify the first frame of the
+-                    # new shot. Clip end is inclusive in libopenshot, so an
+-                    # automated native-source cut must place the left end one
+-                    # source frame earlier or it visibly retains that frame.
+-                    left_end = max(start_of_clip, new_end - max(
+-                        0.0, float(left_end_frame_offset)))
+-                    clip.data["end"] = left_end
+-                    clip.data["duration"] = max(0.0, left_end - start_of_clip)
++                    # A split boundary is shared by both halves. libopenshot
++                    # converts the left duration to an inclusive final frame
++                    # and the right position/start to the immediately following
++                    # frame. Subtracting a frame here creates a timeline hole
++                    # and makes the right clip read that old source frame.
++                    clip.data["end"] = new_end
++                    clip.data["duration"] = max(0.0, new_end - start_of_clip)
+ 
+                     # Split into two clips (left and right side)
+                     right_clip = Clip.get(id=clip_id)
+@@ -4199,7 +4198,7 @@ class TimelineView(updates.UpdateInterface, ViewClass):
+                         right_clip_key.pop(1)
+                     right_clip.key = right_clip_key
+                     right_clip.data["position"] = playhead_position
+-                    right_clip.data["start"] = clip.data["end"]
++                    right_clip.data["start"] = new_end
+                     right_clip.data["end"] = end_of_clip
+                     right_start = float(right_clip.data["start"])
+                     right_end = float(right_clip.data.get("end", right_start))
+-- 
+2.55.0.windows.3
+
