@@ -8,6 +8,8 @@ import textwrap
 
 DEFAULT_MODEL = "BSC-LT/faster-whisper-large-v3-ca-punctuated-3370h"
 DEFAULT_BEAM_SIZE = 3
+MAX_SUBTITLE_LINE_CHARS = 26
+MAX_SUBTITLE_CUE_CHARS = MAX_SUBTITLE_LINE_CHARS * 2
 
 
 def recommended_cpu_threads(logical_cpus=None):
@@ -30,7 +32,7 @@ def _timecode(seconds):
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
-def _balanced_lines(text, width=30):
+def _balanced_lines(text, width=MAX_SUBTITLE_LINE_CHARS):
     """Wrap for a vertical canvas and avoid orphaned Catalan prepositions."""
     clean = " ".join(str(text).split())
     if not clean:
@@ -51,12 +53,13 @@ def _balanced_lines(text, width=30):
     if candidates:
         _score, _index, left, right = min(candidates)
         return [left, right]
-    lines = textwrap.wrap(clean, width=width, break_long_words=False,
-                          break_on_hyphens=False)
-    return [lines[0], " ".join(lines[1:])] if len(lines) > 1 else lines
+    return textwrap.wrap(clean, width=width, break_long_words=False,
+                         break_on_hyphens=False)
 
 
-def words_to_cues(words, max_chars=60, max_seconds=6.0, pause_seconds=0.55):
+def words_to_cues(words, max_chars=MAX_SUBTITLE_CUE_CHARS,
+                  max_seconds=6.0, pause_seconds=0.55,
+                  line_width=MAX_SUBTITLE_LINE_CHARS):
     """Group timestamped words into readable two-line subtitle cues."""
     clean = []
     for word in words:
@@ -79,15 +82,18 @@ def words_to_cues(words, max_chars=60, max_seconds=6.0, pause_seconds=0.55):
         cues.append({
             "start": current[0]["start"],
             "end": max(current[-1]["end"], current[0]["start"] + 0.2),
-            "text": "\n".join(_balanced_lines(cue_text)),
+            "text": "\n".join(_balanced_lines(cue_text, width=line_width)),
         })
         current.clear()
 
     for word in clean:
         proposed = " ".join([item["word"] for item in current] + [word["word"]])
         long_pause = bool(current and word["start"] - current[-1]["end"] >= pause_seconds)
+        proposed_lines = _balanced_lines(proposed, width=line_width)
         too_long = bool(current and (
             len(proposed) > max_chars or
+            len(proposed_lines) > 2 or
+            any(len(line) > line_width for line in proposed_lines) or
             word["end"] - current[0]["start"] > max_seconds
         ))
         sentence_break = bool(current and current[-1]["word"].endswith((".", "?", "!")) and
@@ -97,6 +103,28 @@ def words_to_cues(words, max_chars=60, max_seconds=6.0, pause_seconds=0.55):
         current.append(word)
     finish()
     return cues
+
+
+def segments_to_cues(segments):
+    """Convert segment-only output to word timings and enforce two-line cues."""
+    estimated_words = []
+    for segment in segments:
+        words = str(segment.get("text", "")).split()
+        if not words:
+            continue
+        start = float(segment.get("start", 0.0))
+        end = max(start + 0.2, float(segment.get("end", start)))
+        weights = [max(1, len(word)) for word in words]
+        total_weight = float(sum(weights))
+        elapsed_weight = 0.0
+        for word, weight in zip(words, weights):
+            word_start = start + (end - start) * elapsed_weight / total_weight
+            elapsed_weight += weight
+            word_end = start + (end - start) * elapsed_weight / total_weight
+            estimated_words.append({
+                "start": word_start, "end": word_end, "word": word,
+            })
+    return words_to_cues(estimated_words)
 
 
 def cues_to_srt(cues):
@@ -150,7 +178,7 @@ def main():
             })
         _emit("progress", value=min(99, int(round(float(segment.end) * 100.0 / duration))))
 
-    cues = words_to_cues(words) if words else fallback_segments
+    cues = words_to_cues(words) if words else segments_to_cues(fallback_segments)
     srt = cues_to_srt(cues)
     result = {
         "source": os.path.abspath(args.input),

@@ -331,6 +331,15 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   tipográfico real. Se conserva el contorno fino de 0,5 unidades establecido
   en 0.0.31 tanto en el visor como en la exportación vertical.
 
+### 0.0.33
+
+- Cada bloque de subtítulos generado muestra como máximo dos líneas dentro del
+  encuadre vertical. El agrupador cierra el bloque antes de que una línea larga
+  provoque un tercer renglón automático en `Caption`.
+- El mismo límite se aplica cuando Whisper solo devuelve segmentos y no
+  timestamps por palabra: SMOUK estima los tiempos internos, vuelve a agrupar
+  el texto y conserva todas las palabras.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

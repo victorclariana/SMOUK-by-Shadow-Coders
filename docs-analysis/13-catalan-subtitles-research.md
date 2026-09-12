@@ -127,4 +127,8 @@ inicial es Arial blanca, borde negro, fondo transparente y posición inferior.
   de 0,5 unidades sobre el lienzo vertical final. El motor de `Caption`
   convierte el sufijo ` Bold` en peso real de Qt, en vez de tratarlo como parte
   del nombre de familia.
+- **Legibilidad desde 0.0.33:** cada cue se limita a dos líneas de hasta 26
+  caracteres. La restricción se comprueba al añadir cada palabra y también se
+  aplica a la salida alternativa de Whisper que carece de timestamps por
+  palabra, evitando terceras líneas automáticas y palabras perdidas.
 - **No** depender de servicios cloud; todo local tras descargar el modelo.

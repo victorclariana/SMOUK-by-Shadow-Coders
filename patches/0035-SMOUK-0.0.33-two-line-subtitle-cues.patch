@@ -1,0 +1,25 @@
+From 15ccc4189fc2ae94c5143400b4e4eec042acc7ad Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 19:31:05 +0200
+Subject: [PATCH] SMOUK-0.0.33-two-line-subtitle-cues
+
+---
+ src/windows/main_window.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 42b74bfdf..acdb07bd7 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.32"
++SMOUK_VERSION = "0.0.33"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+-- 
+2.55.0.windows.3
+
