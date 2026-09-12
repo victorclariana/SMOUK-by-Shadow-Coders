@@ -29,19 +29,33 @@ def _timecode(seconds):
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
-def _balanced_lines(text, width=42):
-    lines = textwrap.wrap(
-        " ".join(str(text).split()), width=width,
-        break_long_words=False, break_on_hyphens=False,
-    )
-    if len(lines) <= 1:
-        return lines
-    if len(lines) == 2:
-        return lines
-    return [lines[0], " ".join(lines[1:])]
+def _balanced_lines(text, width=30):
+    """Wrap for a vertical canvas and avoid orphaned Catalan prepositions."""
+    clean = " ".join(str(text).split())
+    if not clean:
+        return []
+    if len(clean) <= width:
+        return [clean]
+    words = clean.split()
+    candidates = []
+    weak_endings = {"a", "amb", "d'", "de", "del", "dels", "el", "els",
+                    "i", "la", "les", "per", "pel", "pels"}
+    for index in range(1, len(words)):
+        left = " ".join(words[:index])
+        right = " ".join(words[index:])
+        if len(left) > width or len(right) > width:
+            continue
+        penalty = 20 if words[index - 1].lower() in weak_endings else 0
+        candidates.append((abs(len(left) - len(right)) + penalty, index, left, right))
+    if candidates:
+        _score, _index, left, right = min(candidates)
+        return [left, right]
+    lines = textwrap.wrap(clean, width=width, break_long_words=False,
+                          break_on_hyphens=False)
+    return [lines[0], " ".join(lines[1:])] if len(lines) > 1 else lines
 
 
-def words_to_cues(words, max_chars=84, max_seconds=6.0, pause_seconds=0.55):
+def words_to_cues(words, max_chars=60, max_seconds=6.0, pause_seconds=0.55):
     """Group timestamped words into readable two-line subtitle cues."""
     clean = []
     for word in words:

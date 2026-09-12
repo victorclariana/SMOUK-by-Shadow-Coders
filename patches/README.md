@@ -36,6 +36,7 @@ corresponding repository.
 | `0028-SMOUK-0.0.27-frame-exact-cuts-and-final-layout-resto.patch` | **openshot-qt** | Uses one shared source/timeline boundary for frame-contiguous shot cuts, restores docks only after the final native window state, and persists the selected vertical preset. |
 | `0029-SMOUK-0.0.28-catalan-transcription.patch` | **openshot-qt** | Adds one-click offline Catalan transcription with progress and applies tagged, editable Caption effects to every matching timeline clip. |
 | `0030-SMOUK-0.0.29-faster-catalan-transcription.patch` | **openshot-qt** | Bumps SMOUK to 0.0.29 and tests the adaptive CPU-thread policy used by the faster Catalan transcription worker. |
+| `0031-SMOUK-0.0.30-vertical-caption-layout.patch` | **openshot-qt** | Places generated captions after clip transforms, constrains their preview to the active vertical guide, and converts their typography to the final 1080px export canvas. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

@@ -88,7 +88,7 @@ Valores **iniciales configurables** (no definitivos; calibrar con pruebas):
 | Parámetro | Valor inicial propuesto |
 |---|---|
 | Máximo de líneas | 2 |
-| Caracteres por línea (orientativo) | ~40-42 |
+| Caracteres por línea vertical (orientativo) | ~30 |
 | Duración mínima | 1.0 s |
 | Duración máxima | 6.0 s |
 | Velocidad de lectura | ~15-17 caracteres/s (catalán) |
@@ -103,6 +103,11 @@ Reglas de segmentación:
 4. Insertar salto de línea en límites sintácticos o conjunciones.
 5. Evitar solapamiento; dejar un pequeño margen entre bloques consecutivos.
 6. Opcionalmente alinear a cambios de plano (no romper un subtítulo en un corte).
+
+Desde 0.0.30, los Caption generados se dibujan después de transformar el clip.
+En la edición 16:9 se limitan al interior de la guía activa y, al exportar, sus
+márgenes y tamaño se convierten al lienzo vertical de 1080 píxeles. El estilo
+inicial es Arial blanca, borde negro, fondo transparente y posición inferior.
 
 ---
 

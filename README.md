@@ -296,6 +296,21 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - La selección automática de hilos tiene pruebas para equipos de 2, 8, 14 y 32
   procesadores lógicos y admite parámetros manuales para futuras comparativas.
 
+### 0.0.30
+
+- Los subtítulos automáticos adoptan un estilo vertical basado en la referencia:
+  Arial blanca, borde negro, fondo transparente, centrados en la parte baja y
+  limitados al 86 % de la anchura interior de la guía.
+- El efecto `Caption` se dibuja después del reencuadre del clip. En el visor sus
+  coordenadas se calculan dentro del rectángulo 9:16 o 4:5; durante la
+  exportación se convierten a coordenadas y tamaño reales del lienzo vertical
+  de 1080 píxeles. El texto ya no pertenece al espacio horizontal 16:9.
+- Al abrir un proyecto, mostrar el dock o cambiar de preset se migran también
+  los efectos de transcripción existentes. Los captions manuales no se tocan.
+- La segmentación reduce cada pantalla a 60 caracteres y unas 30 posiciones por
+  línea, evitando dejar preposiciones catalanas al final. La frase de referencia
+  queda como `i la crida feta` / `pel president d'Omnium`.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

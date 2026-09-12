@@ -1,0 +1,209 @@
+From 32af54cf25e731102e0ac54508a674a1b720809f Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 15:20:22 +0200
+Subject: [PATCH] SMOUK-0.0.30-vertical-caption-layout
+
+---
+ src/tests/test_smouk_transcription.py |  8 +++-
+ src/windows/export.py                 | 21 +++++++++
+ src/windows/main_window.py            | 11 ++++-
+ src/windows/verticalization.py        | 61 ++++++++++++++++++++++++++-
+ 4 files changed, 98 insertions(+), 3 deletions(-)
+
+diff --git a/src/tests/test_smouk_transcription.py b/src/tests/test_smouk_transcription.py
+index 5a4b6b852..81311bc16 100644
+--- a/src/tests/test_smouk_transcription.py
++++ b/src/tests/test_smouk_transcription.py
+@@ -52,7 +52,13 @@ class SmoukTranscriptionTests(unittest.TestCase):
+ 
+         self.assertTrue(cues)
+         self.assertTrue(all(len(cue["text"].splitlines()) <= 2 for cue in cues))
+-        self.assertTrue(all(len(cue["text"].replace("\n", " ")) <= 84 for cue in cues))
++        self.assertTrue(all(len(cue["text"].replace("\n", " ")) <= 60 for cue in cues))
++
++    def test_reference_caption_wraps_without_orphaning_preposition(self):
++        self.assertEqual(
++            worker._balanced_lines("i la crida feta pel president d'Omnium"),
++            ["i la crida feta", "pel president d'Omnium"],
++        )
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/src/windows/export.py b/src/windows/export.py
+index abb1f4a3d..db661cb43 100644
+--- a/src/windows/export.py
++++ b/src/windows/export.py
+@@ -363,6 +363,15 @@ class Export(QDialog):
+         files = {file_data.get("id"): file_data
+                  for file_data in data.get("files", [])}
+ 
++        def constant_value(value):
++            return {"Points": [{
++                "co": {"X": 1.0, "Y": float(value)},
++                "handle_left": {"X": 0.5, "Y": 1.0},
++                "handle_right": {"X": 0.5, "Y": 0.0},
++                "handle_type": 0,
++                "interpolation": 0,
++            }]}
++
+         for clip in data.get("clips", []):
+             # A serialized clip may contain only its file_id.  In that case,
+             # its media dimensions live in the project's files table, not in
+@@ -389,6 +398,18 @@ class Export(QDialog):
+                 continue
+ 
+             clip["scale"] = openshot.SCALE_CROP
++            # Generated captions use guide-relative margins in the horizontal
++            # editor. The export canvas is already vertical, so convert those
++            # values to normal vertical safe-area coordinates and output size.
++            for effect in clip.get("effects", []):
++                if isinstance(effect, dict) and effect.get("smouk_transcription"):
++                    effect["apply_before_clip"] = False
++                    effect["left"] = constant_value(0.07)
++                    effect["right"] = constant_value(0.07)
++                    effect["top"] = constant_value(0.69)
++                    effect["bottom"] = constant_value(0.14)
++                    effect["font_size"] = constant_value(35.0)
++                    effect["stroke_width"] = constant_value(2.25)
+             for point in clip.get("location_x", {}).get("Points", []):
+                 coordinate = point.get("co", {})
+                 if "Y" in coordinate:
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 2eff0219d..1074ebea6 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.29"
++SMOUK_VERSION = "0.0.30"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+@@ -789,6 +789,7 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+             self.movePlayhead(1)
+             if loaded_project:
+                 self._pending_project_open_refresh = True
++                QTimer.singleShot(0, self._refresh_smouk_caption_style)
+ 
+         except Exception as ex:
+             log.error("Couldn't open project %s.", file_path, exc_info=1)
+@@ -1605,11 +1606,19 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+     def _on_verticalization_visibility_changed(self, visible):
+         """Show the framing guide whenever the Verticalization dock is active."""
+         if visible:
++            self._refresh_smouk_caption_style()
+             if not self.verticalization_content.chk_overlay.isChecked():
+                 self.verticalization_content.chk_overlay.setChecked(True)
+         elif self.verticalization_content.chk_overlay.isChecked():
+             self.verticalization_content.chk_overlay.setChecked(False)
+ 
++    def _refresh_smouk_caption_style(self):
++        """Migrate generated captions into the active vertical safe area."""
++        content = getattr(self, "verticalization_content", None)
++        if content and content._restyle_transcription_captions():
++            log.info("Updated existing SMOUK captions for the vertical safe area")
++            self.refreshFrameSignal.emit()
++
+     def _anchor_and_show_properties_dock(self):
+         """Reattach Properties when needed without replacing a view's layout."""
+         files_dock = getattr(self, "dockFiles", None)
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index e7c61ea3c..ce10067c2 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -405,7 +405,45 @@ class VerticalizationDockContent(QWidget):
+         self._start_next_transcription()
+ 
+     @staticmethod
+-    def _upsert_transcription_caption(clip, caption_text, language, model):
++    def _constant_effect_value(value):
++        return {"Points": [{
++            "co": {"X": 1.0, "Y": float(value)},
++            "handle_left": {"X": 0.5, "Y": 1.0},
++            "handle_right": {"X": 0.5, "Y": 0.0},
++            "handle_type": 0,
++            "interpolation": 0,
++        }]}
++
++    @classmethod
++    def _set_effect_color(cls, effect, key, red, green, blue, alpha=255):
++        effect[key] = {
++            "red": cls._constant_effect_value(red),
++            "green": cls._constant_effect_value(green),
++            "blue": cls._constant_effect_value(blue),
++            "alpha": cls._constant_effect_value(alpha),
++        }
++
++    def _style_transcription_caption(self, effect):
++        """Style Caption in the vertical guide, after horizontal clip transforms."""
++        guide_fraction = min(1.0, self._output_ratio() / (16.0 / 9.0))
++        horizontal_margin = (1.0 - guide_fraction * 0.86) / 2.0
++        effect["apply_before_clip"] = False
++        effect["caption_font"] = "Arial"
++        effect["left"] = self._constant_effect_value(horizontal_margin)
++        effect["right"] = self._constant_effect_value(horizontal_margin)
++        effect["top"] = self._constant_effect_value(0.69)
++        effect["bottom"] = self._constant_effect_value(0.14)
++        # Caption scales text from the complete 16:9 width. Compensate for the
++        # guide width so preview typography matches the final 1080px export.
++        effect["font_size"] = self._constant_effect_value(35.0 * guide_fraction)
++        effect["stroke_width"] = self._constant_effect_value(2.3 * guide_fraction)
++        effect["line_spacing"] = self._constant_effect_value(1.0)
++        effect["background_alpha"] = self._constant_effect_value(0.0)
++        self._set_effect_color(effect, "color", 255, 255, 255)
++        self._set_effect_color(effect, "stroke", 0, 0, 0)
++        effect["smouk_caption_style"] = "vertical-reference-v1"
++
++    def _upsert_transcription_caption(self, clip, caption_text, language, model):
+         effects = clip.data.get("effects")
+         if not isinstance(effects, list):
+             effects = []
+@@ -415,6 +453,7 @@ class VerticalizationDockContent(QWidget):
+                 effect["caption_text"] = caption_text
+                 effect["smouk_transcription_language"] = language
+                 effect["smouk_transcription_model"] = model
++                self._style_transcription_caption(effect)
+                 return
+         caption = openshot.EffectInfo().CreateEffect("Caption")
+         caption.Id(get_app().project.generate_id())
+@@ -423,8 +462,24 @@ class VerticalizationDockContent(QWidget):
+         effect["smouk_transcription"] = True
+         effect["smouk_transcription_language"] = language
+         effect["smouk_transcription_model"] = model
++        self._style_transcription_caption(effect)
+         effects.append(effect)
+ 
++    def _restyle_transcription_captions(self):
++        """Update existing generated captions when the vertical profile changes."""
++        changed = False
++        for clip in self._timeline_video_clips():
++            clip_changed = False
++            for effect in clip.data.get("effects", []):
++                if isinstance(effect, dict) and effect.get("smouk_transcription"):
++                    before = json.dumps(effect, sort_keys=True)
++                    self._style_transcription_caption(effect)
++                    clip_changed = clip_changed or json.dumps(effect, sort_keys=True) != before
++            if clip_changed:
++                clip.save()
++                changed = True
++        return changed
++
+     def _apply_transcription_outputs(self):
+         _ = get_app()._tr
+         clips = self._timeline_video_clips()
+@@ -1016,6 +1071,10 @@ class VerticalizationDockContent(QWidget):
+             window = get_app().window
+             if window is not None:
+                 window.refreshFrameSignal.emit()
++        if self._restyle_transcription_captions():
++            window = get_app().window
++            if window is not None:
++                window.refreshFrameSignal.emit()
+         self._apply_output_ratio_to_preview()
+ 
+     def _output_ratio(self):
+-- 
+2.55.0.windows.3
+
