@@ -27,8 +27,8 @@ reproducción, audio y renderizado.
 
 Estamos en una fase inicial de desarrollo. La investigación técnica y el plan
 por fases están en [docs-analysis](docs-analysis/README.md). El dock
-`Verticalization` ya existe como estructura visual; sus automatizaciones aún
-no están conectadas.
+`Verticalization` ya integra corte de planos, reencuadre asistido, exportación
+vertical y la primera automatización de subtítulos en catalán.
 
 ## Versiones y cambios
 
@@ -268,6 +268,22 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   registra en el log si Qt aceptó el estado guardado.
 - El preset vertical elegido queda registrado como una preferencia válida; ya
   no se descarta al cerrar por faltar su clave en la configuración base.
+
+### 0.0.28
+
+- Se añade `Transcribe timeline in Catalan` a la sección `Subtitles` del dock.
+  Un solo clic transcribe cada fuente con audio presente en la timeline y
+  aplica el resultado a todos sus planos como efectos `Caption` editables.
+- La transcripción es local mediante `faster-whisper` en CPU con cuantización
+  INT8 y el modelo catalán con puntuación
+  `BSC-LT/faster-whisper-large-v3-ca-punctuated-3370h`. En el primer uso se
+  confirma la instalación y descarga del modelo; después funciona sin red.
+- El proceso muestra progreso, genera copias JSON y SRT reproducibles dentro de
+  `.smouk-transcriptions` y conserva cualquier efecto Caption creado a mano.
+  Al repetirlo solo actualiza los efectos identificados como transcripción de
+  SMOUK.
+- El runtime Python y los modelos se aíslan en carpetas ignoradas por Git para
+  no alterar el Python/Qt con el que se ejecuta OpenShot.
 
 ## Desarrollo local
 

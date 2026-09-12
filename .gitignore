@@ -14,3 +14,7 @@ __pycache__/
 !/build/.gitkeep
 /logs/*
 !/logs/.gitkeep
+# Local SMOUK transcription runtime, downloaded models, and generated captions
+.smouk-transcription/
+.smouk-models/
+.smouk-transcriptions/

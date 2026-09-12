@@ -50,15 +50,16 @@
 |---|---|---|---|---|---|
 | `projecte-aina/whisper-large-v3-ca-3catparla` | Apache-2.0 | large-v3 | 0.96 | ~8-12 | parcial |
 | `BSC-LT/whisper-bsc-large-v3-cat` | Apache-2.0 | large-v3 | 4.80 | ~3-5 | parcial |
+| `BSC-LT/faster-whisper-large-v3-ca-punctuated-3370h` | Apache-2.0 | large-v3 | — | — | sí |
 | `openai/whisper-large-v3` (language=ca) | MIT | — | referencia | — | sí (multi-idioma) |
 
 - **Mejor precisión catalán:** `BSC-LT/whisper-bsc-large-v3-cat` (~3.09 GB en
   F16, Apache-2.0). Los modelos especializados en catalán suelen **perder
   puntuación/mayúsculas**.
-- **Estrategia recomendada:** usar un modelo catalán (BSC o projecte-aina) y
-  aplicar **restauración de puntuación/mayúsculas** posterior (modelo de
-  puntuación o reglas), o usar `large-v3-turbo` con `language=ca` (puntúa mejor
-  pero algo menos preciso en catalán). Decidir con pruebas sobre el corpus real.
+- **Estrategia adoptada en 0.0.28:** usar directamente el modelo CTranslate2
+  `BSC-LT/faster-whisper-large-v3-ca-punctuated-3370h`, ajustado para catalán y
+  con puntuación. Evita convertir el modelo y evita una segunda red neuronal
+  dedicada únicamente a restaurar signos.
 - **Conversión:** los modelos transformers deben convertirse a CTranslate2 para
   faster-whisper (`ct2-transformers-converter`), o usarse vía `transformers`.
 
@@ -107,10 +108,9 @@ Reglas de segmentación:
 
 ## 6. Recomendación
 
-- **Adoptar faster-whisper** (MIT) con modelo catalán **BSC-LT/whisper-bsc-large-v3-cat**
-  (Apache-2.0), convertido a CTranslate2, ejecutándose en un worker, con fallback
-  a CPU.
-- **Añadir** restauración de puntuación/mayúsculas.
+- **Adoptado:** `faster-whisper` (MIT) con el modelo catalán puntuado
+  **BSC-LT/faster-whisper-large-v3-ca-punctuated-3370h** (Apache-2.0), ya
+  convertido a CTranslate2 y ejecutado en un worker aislado con CPU INT8.
 - **WhisperX** solo si se requiere alineación fina; evitar pyannote (diarización).
 - **Integrar** subtítulos con el efecto `Caption` (VTT) ya existente.
 - **No** depender de servicios cloud; todo local tras descargar el modelo.

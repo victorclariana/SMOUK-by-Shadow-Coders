@@ -34,6 +34,7 @@ corresponding repository.
 | `0026-SMOUK-0.0.25-exclude-first-frame-of-next-shot.patch` | **openshot-qt** | Treats FFmpeg's detected frame as the right-shot start and excludes it from OpenShot's inclusive left clip end. |
 | `0027-SMOUK-0.0.26-restore-layout-PAL-default-and-anamorph.patch` | **openshot-qt** | Restores the saved dock layout after window mapping, defaults new projects to FHD PAL 1080i 25 fps, and expands detected 1440x1080 anamorphic media to 16:9. |
 | `0028-SMOUK-0.0.27-frame-exact-cuts-and-final-layout-resto.patch` | **openshot-qt** | Uses one shared source/timeline boundary for frame-contiguous shot cuts, restores docks only after the final native window state, and persists the selected vertical preset. |
+| `0029-SMOUK-0.0.28-catalan-transcription.patch` | **openshot-qt** | Adds one-click offline Catalan transcription with progress and applies tagged, editable Caption effects to every matching timeline clip. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

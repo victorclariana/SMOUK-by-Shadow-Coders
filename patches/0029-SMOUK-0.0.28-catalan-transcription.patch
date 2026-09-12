@@ -1,0 +1,388 @@
+From e1b7c0b5a2123e193e5559e52314f4385f662735 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 11:59:44 +0200
+Subject: [PATCH] "SMOUK-0.0.28-catalan-transcription"
+
+---
+ src/tests/test_smouk_transcription.py |  53 +++++
+ src/windows/main_window.py            |   2 +-
+ src/windows/verticalization.py        | 267 +++++++++++++++++++++++++-
+ 3 files changed, 320 insertions(+), 2 deletions(-)
+ create mode 100644 src/tests/test_smouk_transcription.py
+
+diff --git a/src/tests/test_smouk_transcription.py b/src/tests/test_smouk_transcription.py
+new file mode 100644
+index 000000000..306df7b1f
+--- /dev/null
++++ b/src/tests/test_smouk_transcription.py
+@@ -0,0 +1,53 @@
++"""Focused tests for SMOUK's standalone subtitle worker."""
++
++import importlib.util
++import os
++import unittest
++
++
++ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
++WORKER = os.path.join(ROOT, "scripts", "smouk_transcribe.py")
++SPEC = importlib.util.spec_from_file_location("smouk_transcribe", WORKER)
++worker = importlib.util.module_from_spec(SPEC)
++SPEC.loader.exec_module(worker)
++
++
++class SmoukTranscriptionTests(unittest.TestCase):
++    def test_catalan_words_split_on_pause_and_keep_accents(self):
++        cues = worker.words_to_cues([
++            {"start": 0.0, "end": 0.3, "word": "Bon"},
++            {"start": 0.31, "end": 0.8, "word": "dia."},
++            {"start": 1.5, "end": 1.9, "word": "Això"},
++            {"start": 1.91, "end": 2.4, "word": "funciona."},
++        ])
++
++        self.assertEqual([cue["text"] for cue in cues], ["Bon dia.", "Això funciona."])
++        self.assertEqual(cues[1]["start"], 1.5)
++
++    def test_srt_uses_millisecond_timecodes(self):
++        text = worker.cues_to_srt([
++            {"start": 1.234, "end": 2.5, "text": "Parlem en català."},
++        ])
++
++        self.assertEqual(
++            text,
++            "1\n00:00:01,234 --> 00:00:02,500\nParlem en català.\n",
++        )
++
++    def test_long_caption_is_limited_to_two_lines(self):
++        words = [
++            {"start": index * 0.2, "end": index * 0.2 + 0.15, "word": word}
++            for index, word in enumerate(
++                "Aquest és un subtítol català prou llarg per comprovar que la pantalla "
++                "es divideix de manera llegible".split())
++        ]
++
++        cues = worker.words_to_cues(words)
++
++        self.assertTrue(cues)
++        self.assertTrue(all(len(cue["text"].splitlines()) <= 2 for cue in cues))
++        self.assertTrue(all(len(cue["text"].replace("\n", " ")) <= 84 for cue in cues))
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 76d3c34ad..8ebd9aced 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.27"
++SMOUK_VERSION = "0.0.28"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 9d7510870..e7c61ea3c 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -25,16 +25,18 @@ import subprocess
+ import sys
+ import json
+ import statistics
++import hashlib
+ 
+ from qt_api import (
+     Qt, QWidget, QFrame, QLabel, QScrollArea, QToolButton, QVBoxLayout,
+     QCheckBox, QComboBox, QPushButton, QProgressBar, QSlider, QMessageBox,
++    QProcess,
+ )
+ 
+ import openshot
+ from classes.app import get_app
+ from classes.logger import log
+-from classes.query import Clip
++from classes.query import Clip, File
+ from windows.views.timeline_backend.enums import MenuSlice
+ 
+ 
+@@ -152,6 +154,7 @@ class VerticalizationDockContent(QWidget):
+         self._build_export_button(_)
+         self._build_shot_detection_controls(_)
+         self._build_auto_reframe_controls(_)
++        self._build_transcription_controls(_)
+ 
+         layout.addStretch(1)
+ 
+@@ -206,6 +209,268 @@ class VerticalizationDockContent(QWidget):
+         self.reframe_results.setWordWrap(True)
+         self.sections["automatic_reframing"].add_widget(self.reframe_results)
+ 
++    def _build_transcription_controls(self, _):
++        """Add one-click offline Catalan transcription and Caption insertion."""
++        self.btn_transcribe = QPushButton(_("Transcribe timeline in Catalan"), self)
++        self.btn_transcribe.setObjectName("verticalizationTranscribeCatalan")
++        self.btn_transcribe.setToolTip(_(
++            "Transcribe every unique timeline source with the local BSC Catalan model "
++            "and apply editable Caption effects."))
++        self.btn_transcribe.clicked.connect(self._on_transcribe_catalan)
++        self.sections["subtitles"].add_widget(self.btn_transcribe)
++
++        self.transcription_progress = QProgressBar(self)
++        self.transcription_progress.setObjectName("verticalizationTranscriptionProgress")
++        self.transcription_progress.setRange(0, 100)
++        self.transcription_progress.setValue(0)
++        self.transcription_progress.setVisible(False)
++        self.sections["subtitles"].add_widget(self.transcription_progress)
++
++        self.transcription_results = QLabel(_("No transcription has been run."), self)
++        self.transcription_results.setObjectName("verticalizationTranscriptionResults")
++        self.transcription_results.setWordWrap(True)
++        self.sections["subtitles"].add_widget(self.transcription_results)
++
++        self._transcription_process = None
++        self._transcription_stage = None
++        self._transcription_sources = []
++        self._transcription_outputs = []
++        self._transcription_output_buffer = ""
++        self._transcription_log_tail = []
++        self._transcription_completed_sources = 0
++
++    @staticmethod
++    def _smouk_workspace_root():
++        return os.path.dirname(os.path.dirname(os.path.dirname(
++            os.path.dirname(os.path.abspath(__file__)))))
++
++    @classmethod
++    def _transcription_paths(cls):
++        root = cls._smouk_workspace_root()
++        return {
++            "python": os.path.join(root, ".smouk-transcription", "Scripts", "python.exe"),
++            "setup": os.path.join(root, "scripts", "setup_smouk_transcription.py"),
++            "worker": os.path.join(root, "scripts", "smouk_transcribe.py"),
++            "models": os.path.join(root, ".smouk-models"),
++            "outputs": os.path.join(root, ".smouk-transcriptions"),
++            "venv": os.path.join(root, ".smouk-transcription"),
++        }
++
++    @staticmethod
++    def _same_media_path(left, right):
++        try:
++            return os.path.normcase(os.path.abspath(left)) == os.path.normcase(os.path.abspath(right))
++        except (TypeError, ValueError):
++            return False
++
++    def _on_transcribe_catalan(self):
++        """Transcribe each unique source represented by timeline clips."""
++        _ = get_app()._tr
++        clips = self._timeline_video_clips()
++        sources = []
++        for clip in clips:
++            reader = clip.data.get("reader", {})
++            if reader.get("has_audio") is False:
++                continue
++            path = str(reader.get("path", ""))
++            if path and not any(self._same_media_path(path, existing) for existing in sources):
++                sources.append(path)
++        if not sources:
++            QMessageBox.warning(self, _("Catalan Transcription"),
++                                _("Add one or more videos with audio to the timeline first."))
++            return
++
++        paths = self._transcription_paths()
++        self._transcription_sources = sources
++        self._transcription_outputs = []
++        self._transcription_completed_sources = 0
++        self.transcription_progress.setRange(0, 100)
++        self.transcription_progress.setValue(0)
++        self.transcription_progress.setVisible(True)
++        self.btn_transcribe.setEnabled(False)
++
++        if not os.path.isfile(paths["python"]):
++            answer = QMessageBox.question(
++                self, _("Install Catalan transcription"),
++                _("The first use installs the local faster-whisper engine and then downloads "
++                  "the BSC Catalan model (several GB). Continue?"),
++                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
++            if answer != QMessageBox.Yes:
++                self._finish_transcription_ui(_("Transcription cancelled."))
++                return
++            launcher = shutil.which("py.exe") or shutil.which("py")
++            if not launcher:
++                self._finish_transcription_ui(
++                    _("Python Launcher was not found. Install Python 3.12 and try again."))
++                return
++            self.transcription_progress.setRange(0, 0)
++            self.transcription_results.setText(_("Installing the transcription engine…"))
++            self._start_transcription_process(
++                launcher, ["-3.12", paths["setup"], "--venv", paths["venv"]], "setup")
++            return
++
++        self._start_next_transcription()
++
++    def _start_transcription_process(self, program, arguments, stage):
++        process = QProcess(self)
++        process.setProcessChannelMode(QProcess.MergedChannels)
++        process.readyReadStandardOutput.connect(self._read_transcription_output)
++        process.finished.connect(self._transcription_process_finished)
++        self._transcription_process = process
++        self._transcription_stage = stage
++        self._transcription_output_buffer = ""
++        self._transcription_log_tail = []
++        process.start(program, arguments)
++
++    def _start_next_transcription(self):
++        _ = get_app()._tr
++        if not self._transcription_sources:
++            self._apply_transcription_outputs()
++            return
++        paths = self._transcription_paths()
++        source = self._transcription_sources[0]
++        digest = hashlib.sha1(os.path.normcase(os.path.abspath(source)).encode(
++            "utf-8", errors="surrogatepass")).hexdigest()[:16]
++        output = os.path.join(paths["outputs"], digest + ".json")
++        self._current_transcription_output = output
++        self.transcription_progress.setRange(0, 100)
++        self.transcription_results.setText(
++            _("Transcribing source %s of %s in Catalan…") %
++            (self._transcription_completed_sources + 1,
++             self._transcription_completed_sources + len(self._transcription_sources)))
++        self._start_transcription_process(paths["python"], [
++            paths["worker"], "--input", source, "--output", output,
++            "--model-dir", paths["models"],
++        ], "transcribe")
++
++    def _read_transcription_output(self):
++        process = self._transcription_process
++        if process is None:
++            return
++        chunk = bytes(process.readAllStandardOutput()).decode("utf-8", errors="replace")
++        self._transcription_output_buffer += chunk
++        lines = self._transcription_output_buffer.split("\n")
++        self._transcription_output_buffer = lines.pop()
++        for line in lines:
++            self._handle_transcription_line(line.strip())
++
++    def _handle_transcription_line(self, line):
++        if not line:
++            return
++        self._transcription_log_tail.append(line)
++        self._transcription_log_tail = self._transcription_log_tail[-30:]
++        if self._transcription_stage == "setup":
++            self.transcription_results.setText(line)
++            return
++        try:
++            event = json.loads(line)
++        except json.JSONDecodeError:
++            log.debug("SMOUK transcription output: %s", line)
++            return
++        event_name = event.get("event")
++        if event_name == "status":
++            self.transcription_results.setText(str(event.get("text", "")))
++        elif event_name == "progress":
++            local = max(0, min(100, int(event.get("value", 0))))
++            total = self._transcription_completed_sources + len(self._transcription_sources)
++            overall = int(round((self._transcription_completed_sources + local / 100.0) * 100 / total))
++            self.transcription_progress.setValue(overall)
++
++    def _transcription_process_finished(self, exit_code, _exit_status):
++        _ = get_app()._tr
++        if self._transcription_output_buffer.strip():
++            self._handle_transcription_line(self._transcription_output_buffer.strip())
++        stage = self._transcription_stage
++        self._transcription_process = None
++        if exit_code != 0:
++            message = "\n".join(self._transcription_log_tail)
++            log.warning("SMOUK %s process failed with exit code %s: %s", stage, exit_code, message)
++            self._finish_transcription_ui(
++                _("Transcription failed. See openshot-qt.log for details."))
++            return
++        if stage == "setup":
++            self.transcription_progress.setRange(0, 100)
++            self._start_next_transcription()
++            return
++
++        try:
++            with open(self._current_transcription_output, "r", encoding="utf-8") as handle:
++                self._transcription_outputs.append(json.load(handle))
++        except (OSError, ValueError) as ex:
++            log.warning("Could not load SMOUK transcription result: %s", ex)
++            self._finish_transcription_ui(_("The transcription result could not be loaded."))
++            return
++        self._transcription_sources.pop(0)
++        self._transcription_completed_sources += 1
++        self._start_next_transcription()
++
++    @staticmethod
++    def _upsert_transcription_caption(clip, caption_text, language, model):
++        effects = clip.data.get("effects")
++        if not isinstance(effects, list):
++            effects = []
++            clip.data["effects"] = effects
++        for effect in effects:
++            if isinstance(effect, dict) and effect.get("smouk_transcription"):
++                effect["caption_text"] = caption_text
++                effect["smouk_transcription_language"] = language
++                effect["smouk_transcription_model"] = model
++                return
++        caption = openshot.EffectInfo().CreateEffect("Caption")
++        caption.Id(get_app().project.generate_id())
++        effect = json.loads(caption.Json())
++        effect["caption_text"] = caption_text
++        effect["smouk_transcription"] = True
++        effect["smouk_transcription_language"] = language
++        effect["smouk_transcription_model"] = model
++        effects.append(effect)
++
++    def _apply_transcription_outputs(self):
++        _ = get_app()._tr
++        clips = self._timeline_video_clips()
++        changed = cue_count = 0
++        transaction_id = (get_app().window.timeline.get_uuid()
++                          if getattr(get_app().window, "timeline", None) else None)
++        get_app().updates.transaction_id = transaction_id
++        try:
++            for result in self._transcription_outputs:
++                source = result.get("source", "")
++                caption_text = str(result.get("srt", "")).strip()
++                language = str(result.get("language", "ca"))
++                model = str(result.get("model", ""))
++                cue_count += len(result.get("cues", []))
++                if not caption_text:
++                    log.info("No speech was detected in %s; no Caption effect added", source)
++                    continue
++                file_obj = File.get(path=source)
++                if file_obj:
++                    file_obj.data["caption"] = caption_text
++                    file_obj.data["smouk_transcription_language"] = language
++                    file_obj.data["smouk_transcription_model"] = model
++                    file_obj.save()
++                for clip in clips:
++                    clip_path = str(clip.data.get("reader", {}).get("path", ""))
++                    if self._same_media_path(clip_path, source):
++                        self._upsert_transcription_caption(clip, caption_text, language, model)
++                        clip.save()
++                        changed += 1
++        finally:
++            get_app().updates.transaction_id = None
++        if changed:
++            get_app().window.refreshFrameSignal.emit()
++        self.transcription_progress.setRange(0, 100)
++        self.transcription_progress.setValue(100)
++        self._finish_transcription_ui(
++            _("Finished: %s Catalan subtitle cues applied to %s clips.") %
++            (cue_count, changed), keep_progress=True)
++
++    def _finish_transcription_ui(self, message, keep_progress=False):
++        self.btn_transcribe.setEnabled(True)
++        if not keep_progress:
++            self.transcription_progress.setRange(0, 100)
++            self.transcription_progress.setVisible(False)
++        self.transcription_results.setText(message)
++
+     @staticmethod
+     def _yunet_model_path():
+         return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+-- 
+2.55.0.windows.3
+
