@@ -340,6 +340,19 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   timestamps por palabra: SMOUK estima los tiempos internos, vuelve a agrupar
   el texto y conserva todas las palabras.
 
+### 0.0.34
+
+- Los efectos de subtítulos reciben WebVTT sin índices SRT, evitando que el
+  número de un cue se cuele en pantalla a partir de ciertas transcripciones.
+- La tipografía sube de 35 a 37 puntos en el lienzo final. Las contracciones
+  con apóstrofo (por ejemplo, `d'odi` y `d'acollida`) se mantienen como una
+  sola palabra al unir tokens, repartir líneas y separar pantallas.
+- Los cues duran al menos un segundo cuando es posible unirlos sin exceder las
+  dos líneas; así no aparecen textos fugaces de unos pocos fotogramas.
+- El progreso distingue el reconocimiento de voz del formateo y guardado. Si
+  Whisper tarda en decodificar un segmento largo, el dock informa de esa fase y
+  del último porcentaje del audio procesado, sin quedarse falsamente en 98 %.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

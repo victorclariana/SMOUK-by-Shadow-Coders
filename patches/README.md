@@ -41,6 +41,7 @@ corresponding repository.
 | `0033-SMOUK-0.0.32-bold-generated-captions.patch` | **openshot-qt** | Selects Arial Bold for captions created by the Verticalization transcription workflow and bumps SMOUK to 0.0.32. |
 | `0034-SMOUK-0.0.32-bold-caption-font.patch` | **libopenshot** | Interprets a ` Bold` font suffix as a real Qt bold weight while preserving the requested font family and thin outline. |
 | `0035-SMOUK-0.0.33-two-line-subtitle-cues.patch` | **openshot-qt** | Bumps SMOUK to 0.0.33 for the companion transcription-worker change that limits generated subtitle cues to two safe-width lines. |
+| `0036-SMOUK-0.0.34-fix-caption-cues-and-progress.patch` | **openshot-qt** | Removes SRT cue indices from rendered captions, increases font size by two points, and reports recognition/finalization progress. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

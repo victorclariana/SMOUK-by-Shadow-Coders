@@ -44,6 +44,41 @@ class SubtitleCueTests(unittest.TestCase):
             self.SAMPLE,
         )
 
+    def test_apostrophized_words_are_never_split_between_whisper_tokens(self):
+        words = [
+            {"word": "d", "start": 0.0, "end": 0.1},
+            {"word": "'odi", "start": 0.1, "end": 0.45},
+            {"word": "d'", "start": 0.5, "end": 0.6},
+            {"word": "acollida", "start": 0.6, "end": 1.1},
+        ]
+        cues = TRANSCRIBE.words_to_cues(words)
+        rendered = " ".join(cue["text"].replace("\n", " ") for cue in cues)
+        self.assertEqual(rendered, "d'odi d'acollida")
+        self.assertTrue(all("d\n'odi" not in cue["text"] for cue in cues))
+        self.assert_two_line_cues(cues)
+
+    def test_short_twelve_frame_cue_is_kept_readable(self):
+        cues = TRANSCRIBE.words_to_cues([
+            {"word": "Sí.", "start": 30.05, "end": 30.53},
+        ])
+        self.assertEqual(len(cues), 1)
+        self.assertGreaterEqual(
+            cues[0]["end"] - cues[0]["start"],
+            TRANSCRIBE.MIN_SUBTITLE_CUE_SECONDS,
+        )
+
+    def test_caption_vtt_has_no_srt_cue_numbers(self):
+        cues = TRANSCRIBE.words_to_cues([
+            {"word": "Primer", "start": 0.0, "end": 0.6},
+            {"word": "text.", "start": 0.6, "end": 1.2},
+            {"word": "Segon", "start": 1.3, "end": 1.9},
+            {"word": "text.", "start": 1.9, "end": 2.5},
+        ])
+        vtt = TRANSCRIBE.cues_to_vtt(cues)
+        self.assertNotIn("\n1\n", vtt)
+        self.assertNotIn("\n2\n", vtt)
+        self.assertIn("00:00:00.000 -->", vtt)
+
 
 if __name__ == "__main__":
     unittest.main()

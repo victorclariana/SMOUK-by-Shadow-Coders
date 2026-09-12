@@ -1,0 +1,50 @@
+From c82ec1a48562bc27889d542ac6fe125beee449dd Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 20:13:56 +0200
+Subject: [PATCH] SMOUK-0.0.34-fix-caption-cues-and-progress
+
+---
+ src/windows/main_window.py     | 2 +-
+ src/windows/verticalization.py | 6 ++++--
+ 2 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index acdb07bd7..1fb1efac4 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.33"
++SMOUK_VERSION = "0.0.34"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index b41c1aee5..2e3bfe1a8 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -435,7 +435,7 @@ class VerticalizationDockContent(QWidget):
+         effect["bottom"] = self._constant_effect_value(0.14)
+         # Caption scales text from the complete 16:9 width. Compensate for the
+         # guide width so preview typography matches the final 1080px export.
+-        effect["font_size"] = self._constant_effect_value(35.0 * guide_fraction)
++        effect["font_size"] = self._constant_effect_value(37.0 * guide_fraction)
+         effect["stroke_width"] = self._constant_effect_value(0.5 * guide_fraction)
+         effect["line_spacing"] = self._constant_effect_value(1.0)
+         effect["background_alpha"] = self._constant_effect_value(0.0)
+@@ -490,7 +490,9 @@ class VerticalizationDockContent(QWidget):
+         try:
+             for result in self._transcription_outputs:
+                 source = result.get("source", "")
+-                caption_text = str(result.get("srt", "")).strip()
++                # Caption parses WebVTT-style timestamps and text blocks. SRT
++                # cue indices can leak into rendered captions at higher counts.
++                caption_text = str(result.get("vtt", "") or result.get("srt", "")).strip()
+                 language = str(result.get("language", "ca"))
+                 model = str(result.get("model", ""))
+                 cue_count += len(result.get("cues", []))
+-- 
+2.55.0.windows.3
+

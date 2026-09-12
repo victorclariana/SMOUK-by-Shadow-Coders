@@ -131,4 +131,10 @@ inicial es Arial blanca, borde negro, fondo transparente y posición inferior.
   caracteres. La restricción se comprueba al añadir cada palabra y también se
   aplica a la salida alternativa de Whisper que carece de timestamps por
   palabra, evitando terceras líneas automáticas y palabras perdidas.
+- **Ajustes desde 0.0.34:** el efecto `Caption` recibe WebVTT sin números de
+  cue; los tokens a ambos lados de un apóstrofo se unen antes de agrupar para
+  impedir cortes dentro de contracciones catalanas. Los cues de menos de un
+  segundo se juntan con un vecino si siguen cabiendo en dos líneas. La barra
+  reserva el 15 % final para preparar y guardar y muestra el progreso de audio
+  y una señal de actividad durante segmentos largos.
 - **No** depender de servicios cloud; todo local tras descargar el modelo.

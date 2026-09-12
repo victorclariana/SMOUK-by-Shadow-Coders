@@ -4,12 +4,15 @@ import argparse
 import json
 import os
 import textwrap
+import threading
 
 
 DEFAULT_MODEL = "BSC-LT/faster-whisper-large-v3-ca-punctuated-3370h"
 DEFAULT_BEAM_SIZE = 3
 MAX_SUBTITLE_LINE_CHARS = 26
 MAX_SUBTITLE_CUE_CHARS = MAX_SUBTITLE_LINE_CHARS * 2
+MIN_SUBTITLE_CUE_SECONDS = 1.0
+APOSTROPHES = ("'", "’", "ʼ")
 
 
 def recommended_cpu_threads(logical_cpus=None):
@@ -59,18 +62,28 @@ def _balanced_lines(text, width=MAX_SUBTITLE_LINE_CHARS):
 
 def words_to_cues(words, max_chars=MAX_SUBTITLE_CUE_CHARS,
                   max_seconds=6.0, pause_seconds=0.55,
-                  line_width=MAX_SUBTITLE_LINE_CHARS):
+                  line_width=MAX_SUBTITLE_LINE_CHARS,
+                  min_seconds=MIN_SUBTITLE_CUE_SECONDS):
     """Group timestamped words into readable two-line subtitle cues."""
     clean = []
     for word in words:
         text = str(word.get("word", "")).strip()
         if not text:
             continue
-        clean.append({
+        item = {
             "start": float(word.get("start", 0.0)),
             "end": float(word.get("end", word.get("start", 0.0))),
             "word": text,
-        })
+        }
+        # Whisper may timestamp the two sides of a Catalan contraction as
+        # separate tokens (for example, "d" + "'acollida"). Keep the whole
+        # apostrophized word indivisible for both cue and line wrapping.
+        if clean and (clean[-1]["word"].endswith(APOSTROPHES) or
+                      item["word"].startswith(APOSTROPHES)):
+            clean[-1]["word"] += item["word"]
+            clean[-1]["end"] = max(clean[-1]["end"], item["end"])
+        else:
+            clean.append(item)
 
     cues = []
     current = []
@@ -88,7 +101,10 @@ def words_to_cues(words, max_chars=MAX_SUBTITLE_CUE_CHARS,
 
     for word in clean:
         proposed = " ".join([item["word"] for item in current] + [word["word"]])
-        long_pause = bool(current and word["start"] - current[-1]["end"] >= pause_seconds)
+        current_duration = (current[-1]["end"] - current[0]["start"]
+                            if current else 0.0)
+        long_pause = bool(current and current_duration >= min_seconds and
+                          word["start"] - current[-1]["end"] >= pause_seconds)
         proposed_lines = _balanced_lines(proposed, width=line_width)
         too_long = bool(current and (
             len(proposed) > max_chars or
@@ -96,12 +112,60 @@ def words_to_cues(words, max_chars=MAX_SUBTITLE_CUE_CHARS,
             any(len(line) > line_width for line in proposed_lines) or
             word["end"] - current[0]["start"] > max_seconds
         ))
-        sentence_break = bool(current and current[-1]["word"].endswith((".", "?", "!")) and
+        sentence_break = bool(current and current_duration >= min_seconds and
+                              current[-1]["word"].endswith((".", "?", "!")) and
                               word["start"] - current[-1]["end"] >= 0.18)
         if long_pause or too_long or sentence_break:
             finish()
         current.append(word)
     finish()
+    return _merge_short_cues(cues, max_chars=max_chars, max_seconds=max_seconds,
+                             line_width=line_width, min_seconds=min_seconds)
+
+
+def _merge_short_cues(cues, max_chars=MAX_SUBTITLE_CUE_CHARS,
+                      max_seconds=6.0, line_width=MAX_SUBTITLE_LINE_CHARS,
+                      min_seconds=MIN_SUBTITLE_CUE_SECONDS):
+    """Join brief cues to a neighbor when the resulting text remains readable."""
+    cues = [dict(cue) for cue in cues]
+    index = 0
+    while index < len(cues):
+        cue = cues[index]
+        if cue["end"] - cue["start"] >= min_seconds:
+            index += 1
+            continue
+
+        options = []
+        for neighbor_index in (index - 1, index + 1):
+            if not 0 <= neighbor_index < len(cues):
+                continue
+            left_index, right_index = sorted((index, neighbor_index))
+            left, right = cues[left_index], cues[right_index]
+            text = " ".join((left["text"] + " " + right["text"]).split())
+            lines = _balanced_lines(text, width=line_width)
+            start, end = min(left["start"], right["start"]), max(left["end"], right["end"])
+            gap = max(0.0, right["start"] - left["end"])
+            if (len(text) <= max_chars and len(lines) <= 2 and
+                    all(len(line) <= line_width for line in lines) and
+                    end - start <= max_seconds and gap <= 1.5):
+                options.append((gap, left_index, right_index, text, start, end))
+
+        if options:
+            _gap, left_index, right_index, text, start, end = min(options)
+            cues[left_index] = {
+                "start": start, "end": end,
+                "text": "\n".join(_balanced_lines(text, width=line_width)),
+            }
+            del cues[right_index]
+            index = max(0, left_index - 1)
+            continue
+
+        # If an isolated, very short utterance cannot be merged without
+        # overflowing two lines, keep it visible for at least one second.
+        cues[index]["end"] = max(cue["end"], cue["start"] + min_seconds)
+        if index + 1 < len(cues) and cues[index]["end"] > cues[index + 1]["start"]:
+            cues[index + 1]["start"] = cues[index]["end"]
+        index += 1
     return cues
 
 
@@ -136,6 +200,16 @@ def cues_to_srt(cues):
     return "\n\n".join(blocks) + ("\n" if blocks else "")
 
 
+def cues_to_vtt(cues):
+    """Build the timestamp-only format expected by OpenShot's Caption effect."""
+    blocks = []
+    for cue in cues:
+        start = _timecode(cue["start"]).replace(",", ".")
+        end = _timecode(cue["end"]).replace(",", ".")
+        blocks.append(f"{start} --> {end}\n{cue['text']}")
+    return "\n\n".join(blocks) + ("\n" if blocks else "")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True)
@@ -166,20 +240,43 @@ def main():
     duration = max(0.001, float(getattr(info, "duration", 0.0) or 0.0))
     words = []
     fallback_segments = []
-    for segment in segments:
-        fallback_segments.append({
-            "start": float(segment.start), "end": float(segment.end),
-            "text": str(segment.text).strip(),
-        })
-        for word in getattr(segment, "words", None) or []:
-            words.append({
-                "start": float(word.start), "end": float(word.end),
-                "word": str(word.word).strip(),
-            })
-        _emit("progress", value=min(99, int(round(float(segment.end) * 100.0 / duration))))
+    last_audio_percent = {"value": 0}
+    stop_heartbeat = threading.Event()
 
+    def report_long_segment():
+        while not stop_heartbeat.wait(10.0):
+            _emit("status", text=(
+                "Recognizing speech… audio processed through "
+                f"{last_audio_percent['value']}%. The current segment is still being decoded."
+            ))
+
+    heartbeat = threading.Thread(target=report_long_segment, daemon=True)
+    heartbeat.start()
+    try:
+        for segment in segments:
+            fallback_segments.append({
+                "start": float(segment.start), "end": float(segment.end),
+                "text": str(segment.text).strip(),
+            })
+            for word in getattr(segment, "words", None) or []:
+                words.append({
+                    "start": float(word.start), "end": float(word.end),
+                    "word": str(word.word).strip(),
+                })
+            last_audio_percent["value"] = min(
+                100, int(round(float(segment.end) * 100.0 / duration)))
+            # Reserve the final 15% for cue formatting and writing, and avoid
+            # implying completion while Whisper is still decoding a segment.
+            _emit("progress", value=int(round(last_audio_percent["value"] * 0.85)))
+    finally:
+        stop_heartbeat.set()
+        heartbeat.join(timeout=1.0)
+
+    _emit("progress", value=90)
+    _emit("status", text="Formatting two-line subtitles and checking reading times…")
     cues = words_to_cues(words) if words else segments_to_cues(fallback_segments)
     srt = cues_to_srt(cues)
+    vtt = cues_to_vtt(cues)
     result = {
         "source": os.path.abspath(args.input),
         "language": "ca",
@@ -187,13 +284,19 @@ def main():
         "duration": duration,
         "cues": cues,
         "srt": srt,
+        "vtt": vtt,
     }
     output = os.path.abspath(args.output)
     os.makedirs(os.path.dirname(output), exist_ok=True)
+    _emit("progress", value=94)
+    _emit("status", text="Saving the transcription and subtitle files…")
     with open(output, "w", encoding="utf-8") as handle:
         json.dump(result, handle, ensure_ascii=False, indent=2)
     with open(os.path.splitext(output)[0] + ".srt", "w", encoding="utf-8") as handle:
         handle.write(srt)
+    with open(os.path.splitext(output)[0] + ".vtt", "w", encoding="utf-8") as handle:
+        handle.write("WEBVTT\n\n" + vtt)
+    _emit("progress", value=99)
     _emit("complete", cues=len(cues), output=output)
 
 
