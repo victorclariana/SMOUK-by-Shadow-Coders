@@ -9,6 +9,14 @@ import textwrap
 DEFAULT_MODEL = "BSC-LT/faster-whisper-large-v3-ca-punctuated-3370h"
 
 
+def recommended_cpu_threads(logical_cpus=None):
+    """Use most of a workstation CPU without starving the SMOUK interface."""
+    logical_cpus = int(logical_cpus or os.cpu_count() or 1)
+    if logical_cpus <= 4:
+        return logical_cpus
+    return min(10, logical_cpus - 2)
+
+
 def _emit(event, **values):
     print(json.dumps({"event": event, **values}, ensure_ascii=False), flush=True)
 
@@ -91,6 +99,8 @@ def main():
     parser.add_argument("--output", required=True)
     parser.add_argument("--model-dir", required=True)
     parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--cpu-threads", type=int, default=recommended_cpu_threads())
+    parser.add_argument("--beam-size", type=int, default=1)
     args = parser.parse_args()
 
     from faster_whisper import WhisperModel
@@ -98,12 +108,15 @@ def main():
     _emit("status", text="Loading the Catalan model (the first run downloads it)...")
     model = WhisperModel(
         args.model, device="cpu", compute_type="int8",
+        cpu_threads=max(1, args.cpu_threads),
         download_root=os.path.abspath(args.model_dir),
     )
-    _emit("status", text="Transcribing Catalan audio...")
+    _emit("status", text=(
+        f"Transcribing Catalan audio with {max(1, args.cpu_threads)} CPU threads..."
+    ))
     segments, info = model.transcribe(
         os.path.abspath(args.input), language="ca", task="transcribe",
-        beam_size=5, vad_filter=True, word_timestamps=True,
+        beam_size=max(1, args.beam_size), vad_filter=True, word_timestamps=True,
         condition_on_previous_text=False,
     )
     duration = max(0.001, float(getattr(info, "duration", 0.0) or 0.0))

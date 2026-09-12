@@ -1,0 +1,43 @@
+From 7d0994d161c827a24efa68047aa9d43c7823dddc Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 14:28:42 +0200
+Subject: [PATCH] SMOUK-0.0.29-faster-catalan-transcription
+
+---
+ src/tests/test_smouk_transcription.py | 6 ++++++
+ src/windows/main_window.py            | 2 +-
+ 2 files changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/src/tests/test_smouk_transcription.py b/src/tests/test_smouk_transcription.py
+index 306df7b1f..5a4b6b852 100644
+--- a/src/tests/test_smouk_transcription.py
++++ b/src/tests/test_smouk_transcription.py
+@@ -13,6 +13,12 @@ SPEC.loader.exec_module(worker)
+ 
+ 
+ class SmoukTranscriptionTests(unittest.TestCase):
++    def test_cpu_threads_leave_capacity_for_the_interface(self):
++        self.assertEqual(worker.recommended_cpu_threads(2), 2)
++        self.assertEqual(worker.recommended_cpu_threads(8), 6)
++        self.assertEqual(worker.recommended_cpu_threads(14), 10)
++        self.assertEqual(worker.recommended_cpu_threads(32), 10)
++
+     def test_catalan_words_split_on_pause_and_keep_accents(self):
+         cues = worker.words_to_cues([
+             {"start": 0.0, "end": 0.3, "word": "Bon"},
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 8ebd9aced..2eff0219d 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.28"
++SMOUK_VERSION = "0.0.29"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+-- 
+2.55.0.windows.3
+

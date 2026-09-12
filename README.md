@@ -285,6 +285,17 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - El runtime Python y los modelos se aíslan en carpetas ignoradas por Git para
   no alterar el Python/Qt con el que se ejecuta OpenShot.
 
+### 0.0.29
+
+- Se acelera la transcripción catalana en CPU. El worker deja dos hilos libres
+  para mantener fluida la interfaz y utiliza hasta diez hilos; en el equipo de
+  desarrollo pasa de los cuatro hilos predeterminados de CTranslate2 a diez.
+- La decodificación cambia de `beam_size=5` a `beam_size=1`. Se conserva el
+  modelo BSC catalán, la cuantización INT8, el detector de voz y los timestamps
+  por palabra, evitando calcular cinco hipótesis completas para cada fragmento.
+- La selección automática de hilos tiene pruebas para equipos de 2, 8, 14 y 32
+  procesadores lógicos y admite parámetros manuales para futuras comparativas.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

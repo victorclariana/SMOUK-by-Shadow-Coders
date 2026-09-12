@@ -111,6 +111,10 @@ Reglas de segmentación:
 - **Adoptado:** `faster-whisper` (MIT) con el modelo catalán puntuado
   **BSC-LT/faster-whisper-large-v3-ca-punctuated-3370h** (Apache-2.0), ya
   convertido a CTranslate2 y ejecutado en un worker aislado con CPU INT8.
+- **Perfil CPU desde 0.0.29:** hasta 10 hilos, reservando dos procesadores
+  lógicos para la interfaz, y `beam_size=1`. Se mantienen VAD y timestamps por
+  palabra; el objetivo es evitar el cuello de botella observado con los cuatro
+  hilos predeterminados y cinco hipótesis por segmento.
 - **WhisperX** solo si se requiere alineación fina; evitar pyannote (diarización).
 - **Integrar** subtítulos con el efecto `Caption` (VTT) ya existente.
 - **No** depender de servicios cloud; todo local tras descargar el modelo.
