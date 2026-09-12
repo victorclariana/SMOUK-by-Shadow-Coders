@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 import textwrap
 import threading
 
@@ -13,6 +14,10 @@ MAX_SUBTITLE_LINE_CHARS = 26
 MAX_SUBTITLE_CUE_CHARS = MAX_SUBTITLE_LINE_CHARS * 2
 MIN_SUBTITLE_CUE_SECONDS = 1.0
 APOSTROPHES = ("'", "’", "ʼ")
+TRAILING_REPEAT_WORDS = {
+    "a", "al", "de", "del", "el", "els", "en", "i", "la", "les",
+    "lo", "que", "un", "una", "y",
+}
 
 
 def recommended_cpu_threads(logical_cpus=None):
@@ -33,6 +38,37 @@ def _timecode(seconds):
     minutes, remainder = divmod(remainder, 60_000)
     secs, millis = divmod(remainder, 1000)
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
+
+def _normalized_token(token):
+    return str(token).strip(".,;:!?¿¡()[]{}\"“”'’ʼ").casefold()
+
+
+def _trailing_hallucination_start(tokens):
+    """Find a repeated Catalan function-word tail ending in a stray i/y."""
+    normalized = [_normalized_token(token) for token in tokens]
+    if len(normalized) < 4 or normalized[-1] not in {"i", "y"}:
+        return None
+    if len(normalized[-1]) != 1:
+        return None
+    for index in range(len(normalized) - 3, max(-1, len(normalized) - 6), -1):
+        if (normalized[index] in TRAILING_REPEAT_WORDS and
+                normalized[index] == normalized[index + 1] and
+                all(len(token) <= 3 for token in normalized[index + 2:])):
+            return index
+    return None
+
+
+def trim_hallucinated_tail(text):
+    """Remove only a duplicated function-word tail ending in a stray letter."""
+    tokens = str(text).split()
+    start = _trailing_hallucination_start(tokens)
+    if start is None:
+        return str(text).strip()
+    kept = tokens[:start]
+    if kept:
+        kept[-1] = re.sub(r"[,;:]+$", ".", kept[-1])
+    return " ".join(kept)
 
 
 def _balanced_lines(text, width=MAX_SUBTITLE_LINE_CHARS):
@@ -274,6 +310,16 @@ def main():
 
     _emit("progress", value=90)
     _emit("status", text="Formatting two-line subtitles and checking reading times…")
+    if words:
+        tail_start = _trailing_hallucination_start([item["word"] for item in words])
+        if tail_start is not None:
+            words = words[:tail_start]
+            if words:
+                words[-1]["word"] = re.sub(r"[,;:]+$", ".", words[-1]["word"])
+    elif fallback_segments:
+        fallback_segments[-1]["text"] = trim_hallucinated_tail(
+            fallback_segments[-1]["text"])
+
     cues = words_to_cues(words) if words else segments_to_cues(fallback_segments)
     srt = cues_to_srt(cues)
     vtt = cues_to_vtt(cues)

@@ -1,0 +1,286 @@
+From 6d82bdb1828b48e19615263a7b1803f14e1908d3 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 22:20:45 +0200
+Subject: [PATCH] SMOUK-0.0.35-subtitle-timeline-clips
+
+---
+ src/windows/main_window.py     |   2 +-
+ src/windows/verticalization.py | 206 +++++++++++++++++++++++++++------
+ 2 files changed, 172 insertions(+), 36 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 1fb1efac4..1d0347140 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.34"
++SMOUK_VERSION = "0.0.35"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 2e3bfe1a8..fbd37118c 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -24,8 +24,10 @@ import shutil
+ import subprocess
+ import sys
+ import json
++import html
+ import statistics
+ import hashlib
++import uuid
+ 
+ from qt_api import (
+     Qt, QWidget, QFrame, QLabel, QScrollArea, QToolButton, QVBoxLayout,
+@@ -36,7 +38,10 @@ from qt_api import (
+ import openshot
+ from classes.app import get_app
+ from classes.logger import log
+-from classes.query import Clip, File
++from classes.query import Clip, File, Track
++from classes.assets import get_assets_path
++from classes.image_types import get_media_type
++from windows.models.files_model import inspect_media
+ from windows.views.timeline_backend.enums import MenuSlice
+ 
+ 
+@@ -428,20 +433,20 @@ class VerticalizationDockContent(QWidget):
+         guide_fraction = min(1.0, self._output_ratio() / (16.0 / 9.0))
+         horizontal_margin = (1.0 - guide_fraction * 0.86) / 2.0
+         effect["apply_before_clip"] = False
+-        effect["caption_font"] = "Arial Bold"
++        effect["caption_font"] = "Arial Black"
+         effect["left"] = self._constant_effect_value(horizontal_margin)
+         effect["right"] = self._constant_effect_value(horizontal_margin)
+         effect["top"] = self._constant_effect_value(0.69)
+         effect["bottom"] = self._constant_effect_value(0.14)
+         # Caption scales text from the complete 16:9 width. Compensate for the
+         # guide width so preview typography matches the final 1080px export.
+-        effect["font_size"] = self._constant_effect_value(37.0 * guide_fraction)
++        effect["font_size"] = self._constant_effect_value(39.0 * guide_fraction)
+         effect["stroke_width"] = self._constant_effect_value(0.5 * guide_fraction)
+         effect["line_spacing"] = self._constant_effect_value(1.0)
+         effect["background_alpha"] = self._constant_effect_value(0.0)
+         self._set_effect_color(effect, "color", 255, 255, 255)
+         self._set_effect_color(effect, "stroke", 0, 0, 0)
+-        effect["smouk_caption_style"] = "vertical-reference-v1"
++        effect["smouk_caption_style"] = "vertical-reference-v3"
+ 
+     def _upsert_transcription_caption(self, clip, caption_text, language, model):
+         effects = clip.data.get("effects")
+@@ -480,46 +485,177 @@ class VerticalizationDockContent(QWidget):
+                 changed = True
+         return changed
+ 
++    def _subtitle_asset_directory(self):
++        project_path = getattr(get_app().project, "current_filepath", "")
++        if project_path:
++            return os.path.join(get_assets_path(project_path), "smouk-subtitles")
++        return os.path.join(self._transcription_paths()["outputs"], "subtitle-assets")
++
++    def _clear_generated_subtitles(self):
++        """Replace prior SMOUK subtitle clips and remove legacy caption effects."""
++        for clip in Clip.filter():
++            if clip.data.get("smouk_subtitle_clip"):
++                clip.delete()
++                continue
++            effects = clip.data.get("effects", [])
++            retained = [effect for effect in effects
++                        if not isinstance(effect, dict) or
++                        not effect.get("smouk_transcription")]
++            if len(retained) != len(effects):
++                clip.data["effects"] = retained
++                clip.save()
++        for file_obj in File.filter():
++            if file_obj.data.get("smouk_subtitle_asset"):
++                file_obj.delete()
++
++    @staticmethod
++    def _ensure_subtitle_track():
++        for track in Track.filter():
++            if track.data.get("smouk_subtitle_track"):
++                return int(track.data.get("number", 0))
++        layers = get_app().project.get("layers") or []
++        top = max([int(layer.get("number", 0)) for layer in layers] or [0])
++        number = top + 1000000
++        track = Track()
++        track.data = {
++            "number": number, "y": 0, "label": "SMOUK Subtitles",
++            "lock": False, "smouk_subtitle_track": True,
++        }
++        track.save()
++        return number
++
++    def _subtitle_svg(self, text, width, height):
++        """Create one transparent, full-frame title for an editable timeline clip."""
++        ratio = max(0.01, min(16.0 / 9.0, self._output_ratio()))
++        guide_fraction = ratio / (16.0 / 9.0)
++        guide_width = min(float(width), float(height) * ratio)
++        lines = [line.strip() for line in str(text).splitlines() if line.strip()][:2]
++        if not lines:
++            return ""
++        font_size = min(104.0 * guide_fraction,
++                        guide_width / max(max(len(line) for line in lines) * 0.65, 1.0))
++        line_height = font_size * 1.15
++        center_y = float(height) * 0.82
++        first_y = center_y - (len(lines) - 1) * line_height / 2.0
++        tspans = []
++        for index, line in enumerate(lines):
++            y = first_y + index * line_height
++            tspans.append('<text x="{:.2f}" y="{:.2f}" text-anchor="middle" '
++                          'font-family="Arial Black, Arial, sans-serif" font-size="{:.2f}" '
++                          'font-weight="900" fill="#ffffff" stroke="#000000" '
++                          'stroke-width="1.2" stroke-linejoin="round" paint-order="stroke">{}</text>'.format(
++                              float(width) / 2.0, y, font_size, html.escape(line)))
++        return ('<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" '
++                'viewBox="0 0 {} {}">{}</svg>').format(
++                    int(width), int(height), int(width), int(height), "".join(tspans))
++
++    @staticmethod
++    def _subtitle_clip_segments(video_clip, cue):
++        """Map a source-time cue onto the visible portion of one timeline clip."""
++        clip_start = float(video_clip.data.get("start", 0.0))
++        clip_end = float(video_clip.data.get("end", clip_start))
++        source_start = max(clip_start, float(cue.get("start", 0.0)))
++        source_end = min(clip_end, float(cue.get("end", 0.0)))
++        if source_end <= source_start:
++            return None
++        return {
++            "position": float(video_clip.data.get("position", 0.0)) + source_start - clip_start,
++            "start": 0.0,
++            "end": source_end - source_start,
++            "duration": source_end - source_start,
++        }
++
++    def _create_subtitle_timeline_clip(self, svg_path, asset_data, layer, position,
++                                       start, end, title, subtitle_text):
++        file_obj = File()
++        file_obj.data = dict(asset_data)
++        file_obj.data["smouk_subtitle_asset"] = True
++        file_obj.data["name"] = title
++        file_obj.save()
++
++        source_path = file_obj.absolute_path()
++        reader_clip = openshot.Clip(source_path)
++        clip_data = json.loads(reader_clip.Json(), strict=False)
++        clip_data.update({
++            "position": float(position), "start": float(start), "end": float(end),
++            "layer": int(layer), "file_id": file_obj.id, "title": title,
++            "reader": file_obj.data, "smouk_subtitle_clip": True,
++            "smouk_subtitle_text": subtitle_text,
++        })
++        clip_record = Clip()
++        clip_record.data = clip_data
++        clip_record.save()
++        return clip_record.id
++
+     def _apply_transcription_outputs(self):
+         _ = get_app()._tr
+-        clips = self._timeline_video_clips()
+-        changed = cue_count = 0
+-        transaction_id = (get_app().window.timeline.get_uuid()
+-                          if getattr(get_app().window, "timeline", None) else None)
++        window = get_app().window
++        video_clips = self._timeline_video_clips()
++        transaction_id = (window.timeline.get_uuid()
++                          if getattr(window, "timeline", None) else None)
+         get_app().updates.transaction_id = transaction_id
++        cue_count = added_clip_count = 0
+         try:
++            self._clear_generated_subtitles()
++            layer = self._ensure_subtitle_track()
++            project_width = int(get_app().project.get("width") or 1920)
++            project_height = int(get_app().project.get("height") or 1080)
++            asset_dir = self._subtitle_asset_directory()
++            os.makedirs(asset_dir, exist_ok=True)
++            run_id = uuid.uuid4().hex[:8]
++
+             for result in self._transcription_outputs:
+-                source = result.get("source", "")
+-                # Caption parses WebVTT-style timestamps and text blocks. SRT
+-                # cue indices can leak into rendered captions at higher counts.
+-                caption_text = str(result.get("vtt", "") or result.get("srt", "")).strip()
+-                language = str(result.get("language", "ca"))
+-                model = str(result.get("model", ""))
+-                cue_count += len(result.get("cues", []))
+-                if not caption_text:
+-                    log.info("No speech was detected in %s; no Caption effect added", source)
+-                    continue
+-                file_obj = File.get(path=source)
+-                if file_obj:
+-                    file_obj.data["caption"] = caption_text
+-                    file_obj.data["smouk_transcription_language"] = language
+-                    file_obj.data["smouk_transcription_model"] = model
+-                    file_obj.save()
+-                for clip in clips:
+-                    clip_path = str(clip.data.get("reader", {}).get("path", ""))
+-                    if self._same_media_path(clip_path, source):
+-                        self._upsert_transcription_caption(clip, caption_text, language, model)
+-                        clip.save()
+-                        changed += 1
+-        finally:
++                source = str(result.get("source", ""))
++                cues = result.get("cues", [])
++                source_clips = [
++                    clip for clip in video_clips
++                    if self._same_media_path(
++                        str(clip.data.get("reader", {}).get("path", "")), source)
++                ]
++                for cue_index, cue in enumerate(cues, start=1):
++                    segments = [(clip, self._subtitle_clip_segments(clip, cue))
++                                for clip in source_clips]
++                    segments = [(clip, segment) for clip, segment in segments if segment]
++                    if not segments:
++                        continue
++                    cue_text = str(cue.get("text", "")).strip()
++                    svg = self._subtitle_svg(cue_text, project_width, project_height)
++                    if not svg:
++                        continue
++                    source_digest = hashlib.sha1(os.path.normcase(os.path.abspath(source)).encode(
++                        "utf-8", errors="surrogatepass")).hexdigest()[:12]
++                    svg_path = os.path.join(
++                        asset_dir, "subtitle-{}-{}-{}.svg".format(
++                            source_digest, run_id, cue_index))
++                    with open(svg_path, "w", encoding="utf-8") as handle:
++                        handle.write(svg)
++                    asset_data, _duration = inspect_media(svg_path, max_width=project_width,
++                                                          max_height=project_height)
++                    asset_data["media_type"] = get_media_type(asset_data)
++                    cue_count += 1
++                    for clip, segment in segments:
++                        title = "Subtitle {:04d}".format(cue_index)
++                        self._create_subtitle_timeline_clip(
++                            svg_path, asset_data, layer, segment["position"],
++                            segment["start"], segment["end"], title, cue_text)
++                        added_clip_count += 1
++
+             get_app().updates.transaction_id = None
+-        if changed:
+-            get_app().window.refreshFrameSignal.emit()
++        except Exception:
++            get_app().updates.transaction_id = None
++            log.exception("SMOUK could not create editable subtitle clips")
++            self._finish_transcription_ui(
++                _("Subtitle clips could not be created. See openshot-qt.log for details."))
++            return
++
++        if added_clip_count:
++            window.refreshFilesSignal.emit()
++            window.refreshFrameSignal.emit()
+         self.transcription_progress.setRange(0, 100)
+         self.transcription_progress.setValue(100)
+         self._finish_transcription_ui(
+-            _("Finished: %s Catalan subtitle cues applied to %s clips.") %
+-            (cue_count, changed), keep_progress=True)
++            _("Finished: %s subtitle cues created as %s editable timeline clips.") %
++            (cue_count, added_clip_count), keep_progress=True)
+ 
+     def _finish_transcription_ui(self, message, keep_progress=False):
+         self.btn_transcribe.setEnabled(True)
+-- 
+2.55.0.windows.3
+

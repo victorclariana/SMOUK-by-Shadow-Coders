@@ -137,4 +137,11 @@ inicial es Arial blanca, borde negro, fondo transparente y posición inferior.
   segundo se juntan con un vecino si siguen cabiendo en dos líneas. La barra
   reserva el 15 % final para preparar y guardar y muestra el progreso de audio
   y una señal de actividad durante segmentos largos.
+- **Timeline desde 0.0.35:** cada cue se guarda como un SVG transparente dentro
+  de los recursos del proyecto y se inserta como clip independiente en la pista
+  superior `SMOUK Subtitles`, intersectando el intervalo de origen con cada
+  clip de vídeo cortado. Se conserva una duración mínima de lectura cuando se
+  puede unir el texto en dos líneas; Arial Black peso 900 y la guía activa
+  determinan el tamaño y la ubicación. El postproceso elimina una cola final
+  duplicada de partículas seguida de una `i`/`y` aislada.
 - **No** depender de servicios cloud; todo local tras descargar el modelo.

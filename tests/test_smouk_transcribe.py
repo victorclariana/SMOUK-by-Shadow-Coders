@@ -79,6 +79,17 @@ class SubtitleCueTests(unittest.TestCase):
         self.assertNotIn("\n2\n", vtt)
         self.assertIn("00:00:00.000 -->", vtt)
 
+    def test_removes_repeated_hallucinated_words_at_the_end(self):
+        text = "però diu que l'equip no es pot relaxar, el, el, I,"
+        self.assertEqual(
+            TRANSCRIBE.trim_hallucinated_tail(text),
+            "però diu que l'equip no es pot relaxar.",
+        )
+
+    def test_preserves_normal_ending_without_repeated_tail(self):
+        text = "l'equip no es pot relaxar i"
+        self.assertEqual(TRANSCRIBE.trim_hallucinated_tail(text), text)
+
 
 if __name__ == "__main__":
     unittest.main()

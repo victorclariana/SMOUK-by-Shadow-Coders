@@ -353,6 +353,20 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   Whisper tarda en decodificar un segmento largo, el dock informa de esa fase y
   del último porcentaje del audio procesado, sin quedarse falsamente en 98 %.
 
+### 0.0.35
+
+- Cada cue se crea como un clip SVG transparente e independiente en una nueva
+  pista `SMOUK Subtitles` situada sobre las pistas actuales. Los clips siguen
+  los tiempos de origen incluso cuando el vídeo ya está cortado; se pueden
+  mover y recortar en el Timeline, y sus títulos SVG se pueden editar desde los
+  medios del proyecto. Al volver a transcribir, se sustituyen los clips SMOUK
+  previos y se retiran los antiguos efectos Caption automáticos.
+- Los títulos usan Arial Black, peso 900 y dos puntos más que la tipografía
+  anterior, centrados dentro de la guía vertical y con contorno fino.
+- Se elimina una cola final muy concreta de repetición de partículas
+  (`el, el, i/y`) que el modelo puede inventar después de cerrar una frase; no
+  se recortan finales normales sin ese patrón.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
