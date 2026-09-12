@@ -117,9 +117,10 @@ inicial es Arial blanca, borde negro, fondo transparente y posición inferior.
   **BSC-LT/faster-whisper-large-v3-ca-punctuated-3370h** (Apache-2.0), ya
   convertido a CTranslate2 y ejecutado en un worker aislado con CPU INT8.
 - **Perfil CPU desde 0.0.29:** hasta 10 hilos, reservando dos procesadores
-  lógicos para la interfaz, y `beam_size=1`. Se mantienen VAD y timestamps por
-  palabra; el objetivo es evitar el cuello de botella observado con los cuatro
-  hilos predeterminados y cinco hipótesis por segmento.
+  lógicos para la interfaz. En 0.0.31 se adopta `beam_size=3`, contexto entre
+  ventanas y VAD con umbral 0,35 y 500 ms de padding: un equilibrio entre el
+  modo rápido de una hipótesis y el lento original de cinco. Se mantienen los
+  timestamps por palabra.
 - **WhisperX** solo si se requiere alineación fina; evitar pyannote (diarización).
 - **Integrar** subtítulos con el efecto `Caption` (VTT) ya existente.
 - **No** depender de servicios cloud; todo local tras descargar el modelo.

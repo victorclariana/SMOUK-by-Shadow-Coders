@@ -311,6 +311,18 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   línea, evitando dejar preposiciones catalanas al final. La frase de referencia
   queda como `i la crida feta` / `pel president d'Omnium`.
 
+### 0.0.31
+
+- La transcripción usa un perfil equilibrado de precisión: tres hipótesis por
+  segmento en lugar de una, conserva el texto anterior como contexto y reduce
+  el umbral del detector de voz con 500 ms de margen. Esto recupera palabras de
+  menor volumen y mejora la continuidad sin volver al coste de cinco hipótesis.
+- Se mantienen los diez hilos de CPU de 0.0.29, por lo que el aumento de calidad
+  sigue siendo considerablemente más rápido que la primera implementación.
+- El borde negro de los subtítulos se reduce de 2,25 a 0,5 unidades en el render
+  vertical. En el visor se escala en la misma proporción respecto a la guía,
+  dejando que domine el relleno blanco como en la referencia proporcionada.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

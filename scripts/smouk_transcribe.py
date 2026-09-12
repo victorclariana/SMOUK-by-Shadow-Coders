@@ -7,6 +7,7 @@ import textwrap
 
 
 DEFAULT_MODEL = "BSC-LT/faster-whisper-large-v3-ca-punctuated-3370h"
+DEFAULT_BEAM_SIZE = 3
 
 
 def recommended_cpu_threads(logical_cpus=None):
@@ -114,7 +115,7 @@ def main():
     parser.add_argument("--model-dir", required=True)
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--cpu-threads", type=int, default=recommended_cpu_threads())
-    parser.add_argument("--beam-size", type=int, default=1)
+    parser.add_argument("--beam-size", type=int, default=DEFAULT_BEAM_SIZE)
     args = parser.parse_args()
 
     from faster_whisper import WhisperModel
@@ -130,8 +131,9 @@ def main():
     ))
     segments, info = model.transcribe(
         os.path.abspath(args.input), language="ca", task="transcribe",
-        beam_size=max(1, args.beam_size), vad_filter=True, word_timestamps=True,
-        condition_on_previous_text=False,
+        beam_size=max(1, args.beam_size), vad_filter=True,
+        vad_parameters={"threshold": 0.35, "speech_pad_ms": 500},
+        word_timestamps=True, condition_on_previous_text=True,
     )
     duration = max(0.001, float(getattr(info, "duration", 0.0) or 0.0))
     words = []
