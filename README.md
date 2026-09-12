@@ -323,6 +323,14 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   vertical. En el visor se escala en la misma proporción respecto a la guía,
   dejando que domine el relleno blanco como en la referencia proporcionada.
 
+### 0.0.32
+
+- Los subtítulos creados por la transcripción usan Arial en negrita para
+  separarse mejor del fondo sin recuperar el borde negro grueso.
+- `libopenshot` interpreta el sufijo ` Bold` del nombre de fuente como peso
+  tipográfico real. Se conserva el contorno fino de 0,5 unidades establecido
+  en 0.0.31 tanto en el visor como en la exportación vertical.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

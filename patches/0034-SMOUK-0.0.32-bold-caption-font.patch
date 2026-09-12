@@ -1,0 +1,31 @@
+From 6c0d52f37799e6e8f3a9186e7d5853293ba51316 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 12 Sep 2026 17:19:59 +0200
+Subject: [PATCH] SMOUK-0.0.32-bold-caption-font
+
+---
+ src/effects/Caption.cpp | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/src/effects/Caption.cpp b/src/effects/Caption.cpp
+index c82790c0..4609d4af 100644
+--- a/src/effects/Caption.cpp
++++ b/src/effects/Caption.cpp
+@@ -152,7 +152,13 @@ std::shared_ptr<openshot::Frame> Caption::GetFrame(std::shared_ptr<openshot::Fra
+ 
+ 	// Font options and metrics for caption text
+ 	double font_size_value = font_size.GetValue(frame_number) * timeline_scale_factor;
+-	QFont font(QString(font_name.c_str()), int(font_size_value));
++	QString font_family = QString::fromStdString(font_name);
++	bool use_bold_font = font_family.endsWith(QStringLiteral(" Bold"), Qt::CaseInsensitive);
++	if (use_bold_font) {
++		font_family.chop(5);
++	}
++	QFont font(font_family, int(font_size_value));
++	font.setBold(use_bold_font);
+ 	font.setPixelSize(std::max(font_size_value, 1.0));
+ 	QFontMetricsF metrics = QFontMetricsF(font);
+ 
+-- 
+2.55.0.windows.3
+

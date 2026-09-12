@@ -123,4 +123,8 @@ inicial es Arial blanca, borde negro, fondo transparente y posición inferior.
   timestamps por palabra.
 - **WhisperX** solo si se requiere alineación fina; evitar pyannote (diarización).
 - **Integrar** subtítulos con el efecto `Caption` (VTT) ya existente.
+- **Tipografía SMOUK desde 0.0.32:** Arial Bold blanca con contorno negro fino
+  de 0,5 unidades sobre el lienzo vertical final. El motor de `Caption`
+  convierte el sufijo ` Bold` en peso real de Qt, en vez de tratarlo como parte
+  del nombre de familia.
 - **No** depender de servicios cloud; todo local tras descargar el modelo.
