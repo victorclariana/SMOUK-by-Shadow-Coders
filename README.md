@@ -367,6 +367,15 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   (`el, el, i/y`) que el modelo puede inventar después de cerrar una frase; no
   se recortan finales normales sin ese patrón.
 
+### 0.0.36
+
+- El análisis de reencuadre desentrelaza los fotogramas de forma temporal con
+  FFmpeg `bwdif` antes de enviarlos a YuNet, YOLO y MediaPipe. Solo cambia la
+  copia usada por los detectores: la fuente del proyecto, los cortes y la
+  frecuencia de imagen se conservan.
+- El log indica cuántos fotogramas analizó cada clip y en cuántos encontró un
+  sujeto, para distinguir una detección vacía de un fallo real de FFmpeg.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

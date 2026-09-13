@@ -1,0 +1,238 @@
+From 8a34e1a4f3ea2ae773fa22242d4ba7de4f983e48 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sun, 13 Sep 2026 02:11:13 +0200
+Subject: [PATCH] SMOUK-0.0.36-deinterlace-reframing-analysis
+
+---
+ src/windows/main_window.py     |   2 +-
+ src/windows/verticalization.py | 180 ++++++++++++++++++++++-----------
+ 2 files changed, 120 insertions(+), 62 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 1d0347140..b7ea7b623 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.35"
++SMOUK_VERSION = "0.0.36"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index fbd37118c..ac3c54a36 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -820,7 +820,7 @@ class VerticalizationDockContent(QWidget):
+             return None, None
+ 
+     def _auto_reframe_clip(self, clip, cv2, mediapipe=None):
+-        """Find a stable framing, following a subject only when it is warranted."""
++        """Find a stable framing using deinterlaced analysis frames."""
+         path = str(clip.data.get("reader", {}).get("path", ""))
+         capture = cv2.VideoCapture(path)
+         if not capture.isOpened():
+@@ -831,6 +831,7 @@ class VerticalizationDockContent(QWidget):
+             height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+             if fps <= 0 or width <= 0 or height <= 0:
+                 raise RuntimeError("video has no valid dimensions")
++            capture.release()
+ 
+             detector = cv2.FaceDetectorYN_create(self._yunet_model_path(), "", (width, height),
+                                                   0.78, 0.3, 5000)
+@@ -843,73 +844,130 @@ class VerticalizationDockContent(QWidget):
+             # Two samples per second are enough to identify a sustained pan,
+             # while avoiding fast, nervous reactions to detector noise.
+             sample_step = max(1, int(round(fps / 2.0)))
++            # Very short timeline fragments may contain only a few frames;
++            # inspect every one so a single missed sample does not suppress
++            # reframing for the whole fragment.
++            if end - start < 1.0:
++                sample_step = 1
+             redetect_step = max(sample_step, int(round(fps)))
+             tracker = None
+             smoothed_x = None
+             last_subject_center = None
+             samples = []
+-            frame_number = int(round(start * fps))
++            start_frame = int(round(start * fps))
++            frame_number = start_frame
+             end_number = int(round(end * fps))
+-            capture.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+-
+-            while frame_number <= end_number:
+-                ok, frame = capture.read()
+-                if not ok:
+-                    break
+-                box = None
+-                if frame_number % redetect_step == 0 or tracker is None:
+-                    _ok, faces = detector.detect(frame)
+-                    if faces is not None and len(faces):
+-                        # Once a subject has been acquired, keep that subject
+-                        # rather than jumping to whichever face is largest in
+-                        # a later sample. This is crucial for interviews and
+-                        # shots with people crossing each other.
+-                        def face_center(candidate):
+-                            return (candidate[0] + candidate[2] / 2.0) / width
+-
+-                        face = (max(faces, key=lambda candidate: candidate[2] * candidate[3])
+-                                if last_subject_center is None else
+-                                min(faces, key=lambda candidate: abs(
+-                                    face_center(candidate) - last_subject_center)))
+-                        box = tuple(float(value) for value in face[:4])
+-                        tracker = cv2.TrackerCSRT_create()
+-                        # OpenCV 5 requires an integer Rect, while YuNet
+-                        # returns its coordinates as float32.
+-                        tracker_box = tuple(max(0, int(round(value))) for value in box)
+-                        try:
+-                            tracker.init(frame, tracker_box)
+-                        except cv2.error:
+-                            # Keep using face detections rather than discard
+-                            # this entire shot if CSRT is unavailable.
+-                            tracker = None
+-                elif tracker is not None:
+-                    tracked, tracked_box = tracker.update(frame)
+-                    if tracked:
+-                        box = tracked_box
+-
+-                face_center = None
+-                if box is not None:
+-                    face_center = (box[0] + (box[2] / 2.0)) / width
+-                else:
+-                    face_center = self._yolo_subject_center(frame, yolo_detector, cv2)
+-                    if face_center is None:
+-                        face_center = self._mediapipe_subject_center(
+-                            frame, mp_face, mp_pose, cv2)
+-
+-                if face_center is not None:
+-                    last_subject_center = face_center
+-                    target = max(-self._reframe_max_offset(), min(
+-                        self._reframe_max_offset(),
+-                        -(face_center - 0.5) * 2.0 * self._reframe_max_offset()))
+-                    # A low-pass filter removes the small frame-to-frame
+-                    # changes from face boxes and CSRT tracking.
+-                    smoothed_x = target if smoothed_x is None else (0.85 * smoothed_x + 0.15 * target)
+-                    samples.append((frame_number + 1, smoothed_x))
+-
+-                for _unused in range(sample_step - 1):
+-                    if not capture.grab():
++            ffmpeg = self._ffmpeg_path()
++            if not ffmpeg:
++                raise RuntimeError("FFmpeg is required to deinterlace frames for reframing")
++
++            # OpenCV's FFmpeg backend returns interlaced PAL frames as BGR and
++            # logs swscale conversion errors; YuNet/YOLO then miss subjects in
++            # footage which is visibly clear in the editor. Deinterlace only
++            # this analysis stream. bwdif send_frame preserves the clip's
++            # frame rate, while select keeps the existing half-second sampling
++            # cadence and avoids sending every full-resolution frame over the
++            # pipe. With an accurate input seek, emitted sample 0 corresponds
++            # to the clip's source start frame.
++            frame_filter = (
++                "bwdif=mode=send_frame:parity=auto:deint=interlaced,"
++                "select='not(mod(n\\,%d))'" % sample_step
++            )
++            command = [
++                ffmpeg, "-hide_banner", "-loglevel", "error",
++                "-ss", "%.9f" % start, "-i", path,
++                "-t", "%.9f" % (end - start),
++                "-vf", frame_filter, "-fps_mode", "passthrough",
++                "-an", "-sn", "-dn", "-f", "rawvideo",
++                "-pix_fmt", "bgr24", "pipe:1",
++            ]
++            try:
++                import numpy as np
++                process = subprocess.Popen(
++                    command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
++                    stderr=subprocess.DEVNULL,
++                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
++            except (OSError, ImportError) as ex:
++                raise RuntimeError("could not start FFmpeg deinterlacing: %s" % ex)
++
++            frame_bytes = width * height * 3
++            sample_index = analyzed_frames = detected_frames = 0
++            try:
++                while True:
++                    raw_frame = process.stdout.read(frame_bytes)
++                    if not raw_frame:
++                        break
++                    if len(raw_frame) != frame_bytes:
++                        raise RuntimeError("FFmpeg returned an incomplete analysis frame")
++                    frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape((height, width, 3))
++                    frame_number = start_frame + sample_index * sample_step
++                    sample_index += 1
++                    if frame_number > end_number:
+                         break
+-                frame_number += sample_step
++                    analyzed_frames += 1
++                    box = None
++                    if frame_number % redetect_step == 0 or tracker is None:
++                        _ok, faces = detector.detect(frame)
++                        if faces is not None and len(faces):
++                            # Once a subject has been acquired, keep that subject
++                            # rather than jumping to whichever face is largest in
++                            # a later sample. This is crucial for interviews and
++                            # shots with people crossing each other.
++                            def face_center(candidate):
++                                return (candidate[0] + candidate[2] / 2.0) / width
++
++                            face = (max(faces, key=lambda candidate: candidate[2] * candidate[3])
++                                    if last_subject_center is None else
++                                    min(faces, key=lambda candidate: abs(
++                                        face_center(candidate) - last_subject_center)))
++                            box = tuple(float(value) for value in face[:4])
++                            tracker = cv2.TrackerCSRT_create()
++                            # OpenCV 5 requires an integer Rect, while YuNet
++                            # returns its coordinates as float32.
++                            tracker_box = tuple(max(0, int(round(value))) for value in box)
++                            try:
++                                tracker.init(frame, tracker_box)
++                            except cv2.error:
++                                # Keep using face detections rather than discard
++                                # this entire shot if CSRT is unavailable.
++                                tracker = None
++                    elif tracker is not None:
++                        tracked, tracked_box = tracker.update(frame)
++                        if tracked:
++                            box = tracked_box
++
++                    face_center = None
++                    if box is not None:
++                        face_center = (box[0] + (box[2] / 2.0)) / width
++                    else:
++                        face_center = self._yolo_subject_center(frame, yolo_detector, cv2)
++                        if face_center is None:
++                            face_center = self._mediapipe_subject_center(
++                                frame, mp_face, mp_pose, cv2)
++
++                    if face_center is not None:
++                        detected_frames += 1
++                        last_subject_center = face_center
++                        target = max(-self._reframe_max_offset(), min(
++                            self._reframe_max_offset(),
++                            -(face_center - 0.5) * 2.0 * self._reframe_max_offset()))
++                        # A low-pass filter removes the small frame-to-frame
++                        # changes from face boxes and CSRT tracking.
++                        smoothed_x = (target if smoothed_x is None else
++                                      (0.85 * smoothed_x + 0.15 * target))
++                        samples.append((frame_number + 1, smoothed_x))
++                return_code = process.wait()
++                if return_code:
++                    raise RuntimeError("FFmpeg deinterlacing exited with code %s" % return_code)
++            finally:
++                if process.poll() is None:
++                    process.terminate()
++                    process.wait()
++                if process.stdout:
++                    process.stdout.close()
++
++            log.info("SMOUK reframing analyzed %s: %s frames, %s subject detections",
++                     path, analyzed_frames, detected_frames)
+ 
+             if not samples:
+                 return []
+-- 
+2.55.0.windows.3
+
