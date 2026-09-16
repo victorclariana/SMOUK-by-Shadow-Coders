@@ -392,6 +392,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - La opacidad se guarda en la propiedad Alpha del clip como keyframes constantes
   y se sincroniza al cambiar de clip o mover el cabezal.
 
+### 0.0.39
+
+- Se protege la sincronización del control de opacidad durante el arranque para
+  que la restauración del estado de selección no use el deslizador antes de que
+  el dock haya terminado de construirlo.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
