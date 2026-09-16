@@ -403,6 +403,11 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - Las señales de selección y posición se conectan después de construir todo el
   dock Verticalization, evitando callbacks prematuros durante el arranque.
 
+### 0.0.41
+
+- La opacidad del logo se aplica al clip seleccionado sin conexiones automáticas
+  durante el arranque. Esto evita cierres nativos de Qt al restaurar la ventana.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
