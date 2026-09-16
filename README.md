@@ -398,6 +398,11 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   que la restauración del estado de selección no use el deslizador antes de que
   el dock haya terminado de construirlo.
 
+### 0.0.40
+
+- Las señales de selección y posición se conectan después de construir todo el
+  dock Verticalization, evitando callbacks prematuros durante el arranque.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

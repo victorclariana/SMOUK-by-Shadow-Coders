@@ -47,6 +47,7 @@ corresponding repository.
 | `0039-SMOUK-0.0.37-transparent-logo-overlay.patch` | **openshot-qt** | Adds transparent PNG browsing, validation, and a full-duration editable logo clip on the dedicated top `SMOUK Logo` track. |
 | `0040-SMOUK-0.0.38-logo-opacity-control.patch` | **openshot-qt** | Adds a 0–100% opacity slider in the Logo dock and persists Alpha keyframes for the selected logo clip. |
 | `0041-SMOUK-0.0.39-logo-opacity-startup-guard.patch` | **openshot-qt** | Guards the logo opacity synchronization callback during dock construction and startup state restoration. |
+| `0042-SMOUK-0.0.40-delay-logo-sync-connections.patch` | **openshot-qt** | Connects timeline selection synchronization only after the Verticalization dock controls are fully constructed. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply
