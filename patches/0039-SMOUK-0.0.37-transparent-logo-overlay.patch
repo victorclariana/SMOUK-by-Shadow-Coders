@@ -1,0 +1,185 @@
+From 6c7e28e264539aa4e82d12464801a78770107276 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Wed, 16 Sep 2026 19:50:04 +0200
+Subject: [PATCH] SMOUK 0.0.37 transparent logo overlay
+
+---
+ src/windows/main_window.py     |   2 +-
+ src/windows/verticalization.py | 133 ++++++++++++++++++++++++++++++++-
+ 2 files changed, 132 insertions(+), 3 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index b7ea7b623..87d6f5152 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.36"
++SMOUK_VERSION = "0.0.37"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index ac3c54a36..6c7ded201 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -30,9 +30,9 @@ import hashlib
+ import uuid
+ 
+ from qt_api import (
+-    Qt, QWidget, QFrame, QLabel, QScrollArea, QToolButton, QVBoxLayout,
++    Qt, QtCore, QWidget, QFrame, QLabel, QScrollArea, QToolButton, QVBoxLayout,
+     QCheckBox, QComboBox, QPushButton, QProgressBar, QSlider, QMessageBox,
+-    QProcess,
++    QProcess, QImage, show_open_file_dialog,
+ )
+ 
+ import openshot
+@@ -160,6 +160,7 @@ class VerticalizationDockContent(QWidget):
+         self._build_shot_detection_controls(_)
+         self._build_auto_reframe_controls(_)
+         self._build_transcription_controls(_)
++        self._build_logo_controls(_)
+ 
+         layout.addStretch(1)
+ 
+@@ -244,6 +245,134 @@ class VerticalizationDockContent(QWidget):
+         self._transcription_log_tail = []
+         self._transcription_completed_sources = 0
+ 
++    def _build_logo_controls(self, _):
++        """Add the PNG logo picker and replacement workflow."""
++        self.btn_browse_logo = QPushButton(_("Browse PNG logo"), self)
++        self.btn_browse_logo.setObjectName("verticalizationBrowseLogo")
++        self.btn_browse_logo.setToolTip(_(
++            "Choose a transparent PNG and place it on the SMOUK Logo track."))
++        self.btn_browse_logo.clicked.connect(self._on_browse_logo)
++        self.logo_results = QLabel(_("No logo has been added."), self)
++        self.logo_results.setObjectName("verticalizationLogoResults")
++        self.logo_results.setWordWrap(True)
++        self.sections["logo"].add_widget(self.btn_browse_logo)
++        self.sections["logo"].add_widget(self.logo_results)
++
++    @staticmethod
++    def _logo_track_number():
++        """Return the stable topmost layer reserved for the SMOUK logo."""
++        for track in Track.filter():
++            if track.data.get("smouk_logo_track"):
++                return int(track.data.get("number", 0))
++        layers = get_app().project.get("layers") or []
++        top = max([int(layer.get("number", 0)) for layer in layers] or [0])
++        number = top + 1000000
++        track = Track()
++        track.data = {
++            "number": number, "y": 0, "label": "SMOUK Logo", "lock": False,
++            "smouk_logo_track": True,
++        }
++        track.save()
++        return number
++
++    @staticmethod
++    def _project_duration():
++        """Return the current timeline duration, with a useful image fallback."""
++        durations = []
++        for clip in Clip.filter():
++            try:
++                durations.append(float(clip.data.get("position", 0.0)) +
++                                 float(clip.data.get("end", 0.0)) -
++                                 float(clip.data.get("start", 0.0)))
++            except (TypeError, ValueError):
++                continue
++        return max(durations or [
++            float(get_app().get_settings().get("default-image-length") or 10.0)
++        ])
++
++    @staticmethod
++    def _clear_generated_logo():
++        """Remove previous generated logo clips but keep original PNG files."""
++        for clip in Clip.filter():
++            if clip.data.get("smouk_logo_clip"):
++                clip.delete()
++
++    def _on_browse_logo(self):
++        """Open a PNG-only dialog and add the chosen transparent logo."""
++        _ = get_app()._tr
++        project_path = getattr(get_app().project, "current_filepath", "")
++        directory = os.path.dirname(project_path) if project_path else ""
++
++        def on_selected(urls):
++            if not urls:
++                return
++            path = urls[0].toLocalFile()
++            if not path or not path.lower().endswith(".png"):
++                QMessageBox.warning(self, _("Logo"),
++                                    _("Please choose a PNG image."))
++                return
++            image = QImage(path)
++            if image.isNull():
++                QMessageBox.warning(self, _("Logo"),
++                                    _("The selected PNG could not be opened."))
++                return
++            if not image.hasAlphaChannel():
++                QMessageBox.warning(self, _("Logo"),
++                                    _("The selected PNG has no alpha channel."))
++                return
++            try:
++                self._add_logo(path)
++            except Exception:
++                log.exception("SMOUK could not add logo %s", path)
++                QMessageBox.warning(self, _("Logo"),
++                                    _("The logo could not be added. See openshot-qt.log for details."))
++
++        show_open_file_dialog(self, _("Choose transparent PNG logo"), directory,
++                              _("PNG images (*.png)"), on_selected,
++                              allow_multiple=False)
++
++    def _add_logo(self, path):
++        """Register *path* and create a full-duration native image clip."""
++        _ = get_app()._tr
++        window = get_app().window
++        file_obj = File.get(path=path)
++        if not file_obj:
++            file_data, _duration = inspect_media(path)
++            file_data["media_type"] = get_media_type(file_data)
++            file_obj = File()
++            file_obj.data = file_data
++            file_obj.save()
++        file_obj.data["smouk_logo_asset"] = True
++        file_obj.data["name"] = "SMOUK Logo - " + os.path.basename(path)
++        file_obj.save()
++
++        self._clear_generated_logo()
++        track = self._logo_track_number()
++        # Use OpenShot's normal insertion path so the clip has all standard
++        # reader, transform, selection, and undo metadata.
++        clip_data = window.timeline.addClip(
++            file_obj.id, QtCore.QPoint(0, 0), track,
++            ignore_refresh=True, call_manual_move=False)
++        if not clip_data:
++            raise RuntimeError("OpenShot could not create the logo clip")
++        clip = Clip.get(id=clip_data.get("id"))
++        if not clip:
++            raise RuntimeError("Logo clip was not persisted")
++        duration = self._project_duration()
++        clip.data.update({
++            "position": 0.0, "start": 0.0, "end": duration,
++            "duration": duration, "layer": track,
++            "title": file_obj.data["name"], "file_id": file_obj.id,
++            "reader": file_obj.data, "smouk_logo_clip": True,
++        })
++        clip.save()
++        get_app().updates.transaction_id = None
++        window.refreshFilesSignal.emit()
++        window.refreshFrameSignal.emit()
++        self.logo_results.setText(
++            _("Logo added: %s. Select its clip in the SMOUK Logo track to move or resize it in the viewer.") %
++            os.path.basename(path))
++
+     @staticmethod
+     def _smouk_workspace_root():
+         return os.path.dirname(os.path.dirname(os.path.dirname(
+-- 
+2.55.0.windows.3
+

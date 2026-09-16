@@ -376,6 +376,15 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - El log indica cuántos fotogramas analizó cada clip y en cuántos encontró un
   sujeto, para distinguir una detección vacía de un fallo real de FFmpeg.
 
+### 0.0.37
+
+- El dock Verticalization incorpora `Browse PNG logo`: valida que el archivo
+  tenga canal Alpha y lo añade como clip de imagen nativo en la pista superior
+  `SMOUK Logo`.
+- El logo cubre la duración actual del proyecto y conserva los controles
+  estándar de OpenShot para moverlo y cambiar su escala desde el visor; al
+  volver a elegir un PNG se reemplaza solo el clip generado anterior.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
