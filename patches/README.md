@@ -45,6 +45,7 @@ corresponding repository.
 | `0037-SMOUK-0.0.35-subtitle-timeline-clips.patch` | **openshot-qt** | Creates independent editable subtitle title clips on a track above the video, uses a heavy Arial Black face, and bumps SMOUK to 0.0.35. |
 | `0038-SMOUK-0.0.36-deinterlace-reframing-analysis.patch` | **openshot-qt** | Deinterlaces analysis-only frames with FFmpeg `bwdif` so the reframer can detect subjects in interlaced media, and logs per-clip sample/detection counts. |
 | `0039-SMOUK-0.0.37-transparent-logo-overlay.patch` | **openshot-qt** | Adds transparent PNG browsing, validation, and a full-duration editable logo clip on the dedicated top `SMOUK Logo` track. |
+| `0040-SMOUK-0.0.38-logo-opacity-control.patch` | **openshot-qt** | Adds a 0–100% opacity slider in the Logo dock and persists Alpha keyframes for the selected logo clip. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

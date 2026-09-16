@@ -1,0 +1,129 @@
+From ad09a341d76451d44bb000e170e53543bb699097 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Wed, 16 Sep 2026 21:06:46 +0200
+Subject: [PATCH] SMOUK 0.0.38 logo opacity control
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 62 ++++++++++++++++++++++++++++++++++
+ 2 files changed, 63 insertions(+), 1 deletion(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 87d6f5152..d9fa0d5e6 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.37"
++SMOUK_VERSION = "0.0.38"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 6c7ded201..0584d5bf5 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -144,6 +144,7 @@ class VerticalizationDockContent(QWidget):
+         # Verticalization controls (output + viewer guide + clip reframing)
+         self._build_controls(layout, _)
+         self._reframe_dragging = False
++        self._logo_opacity_dragging = False
+         self._connect_reframe_sync()
+ 
+         self.sections = {}
+@@ -255,8 +256,21 @@ class VerticalizationDockContent(QWidget):
+         self.logo_results = QLabel(_("No logo has been added."), self)
+         self.logo_results.setObjectName("verticalizationLogoResults")
+         self.logo_results.setWordWrap(True)
++        self.logo_opacity_label = QLabel(_("Logo opacity: 100%"), self)
++        self.logo_opacity_label.setObjectName("verticalizationLogoOpacityLabel")
++        self.logo_opacity_slider = QSlider(Qt.Horizontal, self)
++        self.logo_opacity_slider.setObjectName("verticalizationLogoOpacity")
++        self.logo_opacity_slider.setRange(0, 100)
++        self.logo_opacity_slider.setValue(100)
++        self.logo_opacity_slider.setToolTip(_(
++            "Adjust the selected logo clip opacity (0% to 100%)."))
++        self.logo_opacity_slider.valueChanged.connect(self._on_logo_opacity_changed)
++        self.logo_opacity_slider.sliderPressed.connect(lambda: setattr(self, "_logo_opacity_dragging", True))
++        self.logo_opacity_slider.sliderReleased.connect(self._on_logo_opacity_released)
+         self.sections["logo"].add_widget(self.btn_browse_logo)
+         self.sections["logo"].add_widget(self.logo_results)
++        self.sections["logo"].add_widget(self.logo_opacity_label)
++        self.sections["logo"].add_widget(self.logo_opacity_slider)
+ 
+     @staticmethod
+     def _logo_track_number():
+@@ -297,6 +311,48 @@ class VerticalizationDockContent(QWidget):
+             if clip.data.get("smouk_logo_clip"):
+                 clip.delete()
+ 
++    def _logo_clip(self):
++        clip = self._selected_clip()
++        return clip if clip is not None and clip.data.get("smouk_logo_clip") else None
++
++    def _on_logo_opacity_released(self):
++        self._logo_opacity_dragging = False
++        self._sync_logo_opacity()
++
++    def _sync_logo_opacity(self):
++        """Show the selected SMOUK logo clip's current alpha value."""
++        if getattr(self, "_logo_opacity_dragging", False):
++            return
++        clip = self._logo_clip()
++        value = 1.0
++        if clip is not None:
++            points = clip.data.get("alpha", {}).get("Points", [])
++            if points:
++                try:
++                    value = float(points[0].get("co", {}).get("Y", 1.0))
++                except (TypeError, ValueError):
++                    value = 1.0
++        self.logo_opacity_slider.blockSignals(True)
++        self.logo_opacity_slider.setValue(int(round(max(0.0, min(1.0, value)) * 100)))
++        self.logo_opacity_slider.blockSignals(False)
++        self.logo_opacity_label.setText(_("Logo opacity: %d%%") % self.logo_opacity_slider.value())
++
++    def _on_logo_opacity_changed(self, slider_value):
++        """Persist a constant alpha keyframe on the selected logo clip."""
++        value = max(0.0, min(1.0, float(slider_value) / 100.0))
++        self.logo_opacity_label.setText(_("Logo opacity: %d%%") % int(slider_value))
++        clip = self._logo_clip()
++        window = get_app().window
++        if clip is None or window is None:
++            return
++        fps = get_app().project.get("fps") or {"num": 25, "den": 1}
++        fps_value = float(fps.get("num", 25)) / float(fps.get("den", 1) or 1)
++        end_frame = max(1, int(round(float(clip.data.get("duration", 1.0)) * fps_value)))
++        point = lambda frame: {"co": {"X": frame, "Y": value}, "interpolation": openshot.BEZIER}
++        clip.data["alpha"] = {"Points": [point(1), point(end_frame)]}
++        clip.save()
++        window.refreshFrameSignal.emit()
++
+     def _on_browse_logo(self):
+         """Open a PNG-only dialog and add the chosen transparent logo."""
+         _ = get_app()._tr
+@@ -372,6 +428,7 @@ class VerticalizationDockContent(QWidget):
+         self.logo_results.setText(
+             _("Logo added: %s. Select its clip in the SMOUK Logo track to move or resize it in the viewer.") %
+             os.path.basename(path))
++        self._sync_logo_opacity()
+ 
+     @staticmethod
+     def _smouk_workspace_root():
+@@ -1428,6 +1485,11 @@ class VerticalizationDockContent(QWidget):
+             self.window.SelectionRemoved.connect(lambda *_args: self._sync_reframe_slider())
+         if hasattr(self.window, "SeekSignal"):
+             self.window.SeekSignal.connect(lambda *_args: self._sync_reframe_slider())
++            self.window.SeekSignal.connect(lambda *_args: self._sync_logo_opacity())
++        if hasattr(self.window, "SelectionAdded"):
++            self.window.SelectionAdded.connect(lambda *_args: self._sync_logo_opacity())
++        if hasattr(self.window, "SelectionRemoved"):
++            self.window.SelectionRemoved.connect(lambda *_args: self._sync_logo_opacity())
+ 
+     def _on_reframe_press(self):
+         self._reframe_dragging = True
+-- 
+2.55.0.windows.3
+

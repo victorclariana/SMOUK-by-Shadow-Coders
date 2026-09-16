@@ -385,6 +385,13 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   estándar de OpenShot para moverlo y cambiar su escala desde el visor; al
   volver a elegir un PNG se reemplaza solo el clip generado anterior.
 
+### 0.0.38
+
+- El apartado `Logo` del dock incluye un deslizador `Logo opacity` de 0 a 100 %
+  para ajustar directamente la transparencia del clip seleccionado.
+- La opacidad se guarda en la propiedad Alpha del clip como keyframes constantes
+  y se sincroniza al cambiar de clip o mover el cabezal.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
