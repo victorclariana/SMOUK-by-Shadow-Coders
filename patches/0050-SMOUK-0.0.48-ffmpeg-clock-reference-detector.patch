@@ -1,0 +1,194 @@
+From f1f5cc6ba7e4906ad23c624c8fb5bdd9314b5258 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Thu, 17 Sep 2026 23:47:56 +0200
+Subject: [PATCH] SMOUK-0.0.48-ffmpeg-clock-reference-detector
+
+---
+ src/classes/smouk_titles.py    | 108 +++++++++++++++++++++------------
+ src/windows/main_window.py     |   2 +-
+ src/windows/verticalization.py |   6 +-
+ 3 files changed, 75 insertions(+), 41 deletions(-)
+
+diff --git a/src/classes/smouk_titles.py b/src/classes/smouk_titles.py
+index 3f9a8fe26..80361e6d6 100644
+--- a/src/classes/smouk_titles.py
++++ b/src/classes/smouk_titles.py
+@@ -8,6 +8,9 @@ returns a serialisable diagnostic that the Verticalization dock can display.
+ import json
+ import os
+ import re
++import shutil
++import subprocess
++import sys
+ 
+ 
+ TIMECODE_RE = re.compile(r"^(?P<h>\d{1,2}):(?P<m>[0-5]\d):(?P<s>[0-5]\d)(?::(?P<f>\d{1,2}))?$")
+@@ -49,55 +52,89 @@ def _media_info(path):
+         return {"exists": os.path.isfile(path)}
+ 
+ 
++def _ffmpeg_path():
++    """Return the FFmpeg executable used for reliable broadcast MP4 reads."""
++    path = (shutil.which("ffmpeg") or shutil.which("ffmpeg.exe") or
++            os.path.join(os.path.dirname(sys.executable), "ffmpeg.exe"))
++    return path if os.path.isfile(path) else None
++
++
++def _clock_components(frame, cv2):
++    """Measure the white/orange broadcast-clock graphic in a BGR frame."""
++    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
++    _, binary = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
++    contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
++    height, width = gray.shape[:2]
++    digit_like = 0
++    for contour in contours:
++        _x, _y, component_width, component_height = cv2.boundingRect(contour)
++        area = component_width * component_height
++        if (area >= 30
++                and component_height >= max(8, int(height * 0.015))
++                and component_width <= int(width * 0.35)):
++            digit_like += 1
++
++    # The supplied reference clock has white numerals on its characteristic
++    # high-saturation orange panels.  This rejects ordinary white programme
++    # text that would otherwise look like digit contours alone.
++    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
++    orange = cv2.inRange(hsv, (4, 120, 140), (24, 255, 255))
++    orange_ratio = float(cv2.countNonZero(orange)) / float(max(1, width * height))
++    return digit_like, orange_ratio
++
++
+ def _clock_probe(path, fps=25, max_seconds=180):
+     """Search the first *max_seconds* for the standard burned-in clock.
+ 
+     The clock's final reading belongs to the OCR stage.  This lightweight
+-    detector uses its shared bright graphic appearance to find the first
+-    plausible clock frame, sampling exactly one frame per second at the
+-    supplied frame rate.  Sampling at 25 fps therefore checks frames 0, 25,
+-    50, ..., 4475 for the first three minutes.
++    detector uses the shared white-numeral/orange-panel appearance to find the
++    first plausible clock frame.  FFmpeg decodes broadcast MP4 files that
++    OpenCV cannot always seek reliably, producing one sample per second for
++    the first three minutes.
+     """
+     try:
+         import cv2
+-        capture = cv2.VideoCapture(path)
+-        if not capture.isOpened():
+-            return {"candidate": False, "reason": "cannot_open", "samples": 0}
+-
+-        sample_step = max(1, int(fps))
+-        max_frames = max(1, int(max_seconds)) * sample_step
+-        total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+-        stop_frame = min(max_frames, total_frames) if total_frames > 0 else max_frames
++        import numpy
++        ffmpeg = _ffmpeg_path()
++        if not ffmpeg:
++            return {"candidate": False, "reason": "ffmpeg_not_found", "samples": 0}
++
++        output_width, output_height = 640, 360
++        requested_samples = max(1, int(max_seconds))
++        command = [
++            ffmpeg, "-v", "error", "-ss", "0", "-t", str(max_seconds), "-i", path,
++            "-vf", "fps=1,scale=%s:%s:flags=bilinear" % (output_width, output_height),
++            "-an", "-frames:v", str(requested_samples),
++            "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1",
++        ]
++        process = subprocess.run(  # nosec B603 -- fixed executable and argv list
++            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
++            check=False, timeout=300)
++        if process.returncode != 0:
++            return {"candidate": False, "reason": "ffmpeg_failed", "samples": 0}
++
++        frame_size = output_width * output_height * 3
++        available = len(process.stdout) // frame_size
++        if not available:
++            return {"candidate": False, "reason": "no_frame", "samples": 0}
+         samples = 0
+         first_candidate = None
+         candidate_samples = 0
+-        for frame_number in range(0, stop_frame, sample_step):
+-            capture.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+-            ok, frame = capture.read()
+-            if not ok or frame is None:
+-                continue
++        for sample_index in range(available):
++            start = sample_index * frame_size
++            frame = numpy.frombuffer(process.stdout[start:start + frame_size], dtype=numpy.uint8)
++            frame = frame.reshape((output_height, output_width, 3))
+             samples += 1
+-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+-            _, binary = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+-            contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+-            height, width = gray.shape[:2]
+-            digit_like = 0
+-            for contour in contours:
+-                _x, _y, component_width, component_height = cv2.boundingRect(contour)
+-                area = component_width * component_height
+-                if (area >= 80
+-                        and component_height >= max(12, int(height * 0.015))
+-                        and component_width <= int(width * 0.35)):
+-                    digit_like += 1
+-            if digit_like >= 4:
++            digit_like, orange_ratio = _clock_components(frame, cv2)
++            if digit_like >= 4 and orange_ratio >= 0.02:
+                 candidate_samples += 1
+                 if first_candidate is None:
+                     first_candidate = {
+                         "components": digit_like,
+-                        "frame": frame_number,
+-                        "seconds": float(frame_number) / float(sample_step),
++                        "orange_ratio": orange_ratio,
++                        "frame": sample_index * int(fps),
++                        "seconds": float(sample_index),
+                     }
+-        capture.release()
+         if first_candidate is not None:
+             first_candidate.update({
+                 "candidate": True,
+@@ -109,11 +146,6 @@ def _clock_probe(path, fps=25, max_seconds=180):
+         return {"candidate": False, "samples": samples, "searched_seconds": max_seconds}
+     except Exception as exc:
+         return {"candidate": False, "reason": str(exc), "samples": 0}
+-    finally:
+-        try:
+-            capture.release()
+-        except (NameError, UnboundLocalError):
+-            pass
+ 
+ 
+ def validate_title_folder(folder, fps=25):
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 74ce792d7..bb51c83d7 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.47"
++SMOUK_VERSION = "0.0.48"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ 
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index aa87a828c..1375fe60c 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -386,9 +386,11 @@ class VerticalizationDockContent(QWidget):
+                     "%s: reloj candidato en %0.0f s (%s muestras)" % (
+                         title, float(probe.get("seconds", 0.0)), probe.get("samples", 0)))
+             else:
++                reason = str(probe.get("reason") or "")
++                diagnostic = "; %s" % reason if reason else ""
+                 clock_lines.append(
+-                    "%s: sin reloj en los primeros 3 min (%s muestras)" % (
+-                        title, probe.get("samples", 0)))
++                    "%s: sin reloj en los primeros 3 min (%s muestras%s)" % (
++                        title, probe.get("samples", 0), diagnostic))
+         summary += "\n" + "\n".join(clock_lines)
+         if warnings:
+             summary += "\n" + _("Avisos: ") + "; ".join(warnings)
+-- 
+2.55.0.windows.3
+

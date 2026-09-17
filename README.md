@@ -457,6 +457,15 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   muestra por separado el primer instante candidato y las muestras analizadas
   de cada vídeo. La lectura de los dígitos se incorporará en la fase OCR.
 
+### 0.0.48
+
+- El rastreo del reloj usa FFmpeg para extraer las muestras, evitando el fallo
+  de lectura de OpenCV que podía devolver cero fotogramas para los MP4 de
+  emisión. El detector reconoce la combinación visual de números blancos y
+  paneles naranja saturados del reloj de referencia.
+- El resultado informa del diagnóstico del lector cuando no se ha podido
+  obtener una muestra, en vez de presentarlo como un reloj no encontrado.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
