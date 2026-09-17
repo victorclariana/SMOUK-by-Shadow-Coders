@@ -422,6 +422,14 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   recálculo continuo de un panel muy alto al arrastrar su barra de desplazamiento
   en esta instalación de Qt para Windows.
 
+### 0.0.44
+
+- Se restablecen abiertas por defecto todas las secciones de Verticalization.
+- El estado de los docks ya no se serializa durante cada `resizeEvent`: abrir,
+  cerrar o desplazar las secciones no puede llamar a `Qt.saveState()` mientras
+  Qt está recalculando el área desplazable, evitando el cierre nativo en
+  `Qt5Core.dll`.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
