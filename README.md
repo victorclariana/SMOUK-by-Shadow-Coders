@@ -496,6 +496,20 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   puntuación y plantilla durante tres muestras consecutivas, descartando las
   caretas de aspecto parecido.
 
+### 0.0.52
+
+- Al seleccionar una carpeta vÃ¡lida con `CLEAN.MP4`, `DATA.JSON` y
+  `PROGRAMA.MP4`, el dock ejecuta el flujo completo sin ventanas de resultado:
+  valida los cortes, detecta los dos relojes, hace OCR de su banda de dÃ­gitos,
+  sincroniza los dos orÃ­genes y coloca el intervalo de `CLEAN.MP4` en Track 2.
+- Incorpora el modelo local catalÃ¡n de Tesseract para leer los timecodes y
+  rastrea las regiones de localizaciÃ³n y rÃ³tulo inferior de `PROGRAMA.MP4`.
+  Las detecciones consecutivas se agrupan y se crean como SVG transparentes y
+  editables en la pista superior `CHYRONS`, con texto, plantilla, coordenadas,
+  referencia, confianza y timecodes conservados como metadatos del clip.
+- El progreso y los posibles problemas se muestran en el dock Titles y en la
+  barra de estado, sin interrumpir el flujo con diÃ¡logos emergentes.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
