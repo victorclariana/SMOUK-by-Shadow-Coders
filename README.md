@@ -408,6 +408,14 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - La opacidad del logo se aplica al clip seleccionado sin conexiones automáticas
   durante el arranque. Esto evita cierres nativos de Qt al restaurar la ventana.
 
+### 0.0.42
+
+- El dock Verticalization permite seleccionar una carpeta de análisis de títulos
+  y valida los ficheros `CLEAN.MP4`, `DATA.JSON` y `PROGRAMA.MP4`.
+- Se validan los cortes del JSON a 25 fps, se comprueba la información básica de
+  los dos vídeos y se marca la posible presencia de un reloj visual para la
+  futura calibración OCR, sin modificar todavía el proyecto.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

@@ -1,0 +1,286 @@
+From 2971c18eaa50f4fb110928cdfba721e97e100b12 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Thu, 17 Sep 2026 19:26:45 +0200
+Subject: [PATCH] SMOUK 0.0.42 validate title analysis folders
+
+---
+ src/classes/smouk_titles.py    | 161 +++++++++++++++++++++++++++++++++
+ src/windows/main_window.py     |   2 +-
+ src/windows/verticalization.py |  59 +++++++++++-
+ 3 files changed, 220 insertions(+), 2 deletions(-)
+ create mode 100644 src/classes/smouk_titles.py
+
+diff --git a/src/classes/smouk_titles.py b/src/classes/smouk_titles.py
+new file mode 100644
+index 000000000..d3dd329f4
+--- /dev/null
++++ b/src/classes/smouk_titles.py
+@@ -0,0 +1,161 @@
++"""SMOUK title-analysis input validation and timecode helpers.
++
++This module deliberately does not modify a project.  It validates a folder
++containing the three files used by the title-reconstruction experiment and
++returns a serialisable diagnostic that the Verticalization dock can display.
++"""
++
++import json
++import os
++import re
++
++
++TIMECODE_RE = re.compile(r"^(?P<h>\d{1,2}):(?P<m>[0-5]\d):(?P<s>[0-5]\d)(?::(?P<f>\d{1,2}))?$")
++
++
++def parse_timecode(value, fps=25):
++    """Return a timecode as a frame number, or ``None`` when invalid."""
++    if value is None:
++        return None
++    match = TIMECODE_RE.match(str(value).strip())
++    if not match:
++        return None
++    parts = {key: int(number or 0) for key, number in match.groupdict().items()}
++    frames = parts["f"]
++    if frames >= int(fps):
++        return None
++    return ((parts["h"] * 60 + parts["m"]) * 60 + parts["s"]) * int(fps) + frames
++
++
++def _find_clip(data):
++    clean = data.get("cleanFeed") or {}
++    clips = clean.get("clips") or []
++    return next((clip for clip in clips if clip.get("tipus") == "VERTICAL"), clips[0] if clips else None)
++
++
++def _media_info(path):
++    """Return lightweight media information without making OpenCV mandatory."""
++    try:
++        from windows.models.files_model import inspect_media
++        info, _duration = inspect_media(path)
++        return {
++            "exists": True,
++            "duration": float(_duration or 0.0),
++            "fps": info.get("fps"),
++            "width": info.get("width"),
++            "height": info.get("height"),
++        }
++    except Exception:
++        return {"exists": os.path.isfile(path)}
++
++
++def _clock_probe(path):
++    """Look for a plausible burned-in clock without requiring OCR.
++
++    This is intentionally a probe, not a claimed reading of the clock.  The
++    next stage can replace it with OCR and return the actual origin TC.
++    """
++    try:
++        import cv2
++        capture = cv2.VideoCapture(path)
++        ok, frame = capture.read()
++        capture.release()
++        if not ok or frame is None:
++            return {"candidate": False, "reason": "no_frame"}
++        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
++        _, binary = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
++        contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
++        height, width = gray.shape[:2]
++        digit_like = 0
++        for contour in contours:
++            x, y, w, h = cv2.boundingRect(contour)
++            area = w * h
++            if area >= 80 and h >= max(12, int(height * 0.015)) and w <= int(width * 0.35):
++                digit_like += 1
++        return {"candidate": digit_like >= 4, "components": digit_like}
++    except Exception as exc:
++        return {"candidate": False, "reason": str(exc)}
++
++
++def validate_title_folder(folder, fps=25):
++    """Validate a SMOUK title-analysis folder.
++
++    Required names are intentionally strict for the first implementation:
++    ``CLEAN.MP4``, ``DATA.JSON`` and ``PROGRAMA.MP4``.  The returned mapping
++    is safe to show in the UI and contains no project mutations.
++    """
++    folder = os.path.abspath(os.path.expanduser(str(folder or "")))
++    result = {
++        "folder": folder,
++        "valid": False,
++        "files": {},
++        "errors": [],
++        "warnings": [],
++        "clip": None,
++        "timecodes": {},
++        "clock_candidate": False,
++    }
++    if not os.path.isdir(folder):
++        result["errors"].append("La carpeta seleccionada no existe.")
++        return result
++
++    required = {"clean": "CLEAN.MP4", "data": "DATA.JSON", "program": "PROGRAMA.MP4"}
++    for key, name in required.items():
++        path = os.path.join(folder, name)
++        result["files"][key] = path
++        if not os.path.isfile(path):
++            result["errors"].append("Falta el fichero %s." % name)
++
++    if result["errors"]:
++        return result
++
++    try:
++        with open(result["files"]["data"], "r", encoding="utf-8-sig") as stream:
++            data = json.load(stream)
++    except Exception as exc:
++        result["errors"].append("DATA.JSON no se puede leer: %s" % exc)
++        return result
++
++    clip = _find_clip(data)
++    result["clip"] = clip or {}
++    clean = data.get("cleanFeed") or {}
++    start = clean.get("mediaStart")
++    clip_in = (clip or {}).get("in")
++    clip_out = (clip or {}).get("out")
++    result["timecodes"] = {
++        "media_start": start,
++        "media_stop": clean.get("mediaStop"),
++        "clip_in": clip_in,
++        "clip_out": clip_out,
++        "media_start_frames": parse_timecode(start, fps),
++        "clip_in_frames": parse_timecode(clip_in, fps),
++        "clip_out_frames": parse_timecode(clip_out, fps),
++    }
++    if result["timecodes"]["clip_in_frames"] is None or result["timecodes"]["clip_out_frames"] is None:
++        result["errors"].append("DATA.JSON no contiene in/out válidos para el clip vertical.")
++    if result["timecodes"]["media_start_frames"] is None:
++        result["warnings"].append("No se ha podido convertir mediaStart a frames.")
++    if not clip:
++        result["errors"].append("DATA.JSON no contiene ningún clip VERTICAL.")
++
++    for key, path in list(result["files"].items()):
++        result["files"][key + "_info"] = _media_info(path)
++    clean_info = result["files"].get("clean_info", {})
++    program_info = result["files"].get("program_info", {})
++    if clean_info.get("width") and program_info.get("width") and clean_info["width"] != program_info["width"]:
++        result["warnings"].append("CLEAN.MP4 y PROGRAMA.MP4 tienen resoluciones distintas.")
++    if clean_info.get("fps") and program_info.get("fps") and clean_info["fps"] != program_info["fps"]:
++        result["warnings"].append("Los vídeos no tienen la misma cadencia declarada.")
++
++    # The first pass only verifies that the programme contains a plausible
++    # graphic/clock frame.  Exact clock OCR is the next analysis stage.
++    result["clock_probe"] = _clock_probe(result["files"]["program"])
++    result["clock_candidate"] = bool(result["clock_probe"].get("candidate"))
++    if not result["clock_candidate"]:
++        result["warnings"].append(
++            "No se ha detectado un reloj visual en el primer fotograma; será necesaria una calibración manual.")
++    else:
++        result["warnings"].append(
++            "Se ha detectado un posible reloj visual; su lectura exacta todavía requiere OCR/calibración.")
++    result["valid"] = not result["errors"]
++    return result
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 1017c72f5..89e4e1685 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.41"
++SMOUK_VERSION = "0.0.42"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index c8796290a..bd3491071 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -32,7 +32,7 @@ import uuid
+ from qt_api import (
+     Qt, QtCore, QWidget, QFrame, QLabel, QScrollArea, QToolButton, QVBoxLayout,
+     QCheckBox, QComboBox, QPushButton, QProgressBar, QSlider, QMessageBox,
+-    QProcess, QImage, show_open_file_dialog,
++    QProcess, QImage, QFileDialog, show_open_file_dialog,
+ )
+ 
+ import openshot
+@@ -43,6 +43,7 @@ from classes.assets import get_assets_path
+ from classes.image_types import get_media_type
+ from windows.models.files_model import inspect_media
+ from windows.views.timeline_backend.enums import MenuSlice
++from classes.smouk_titles import validate_title_folder
+ 
+ 
+ VERTICALIZATION_DOCK_MIN_WIDTH = 320
+@@ -161,6 +162,7 @@ class VerticalizationDockContent(QWidget):
+         self._build_auto_reframe_controls(_)
+         self._build_transcription_controls(_)
+         self._build_logo_controls(_)
++        self._build_title_import_controls(_)
+         self._connect_reframe_sync()
+ 
+         layout.addStretch(1)
+@@ -319,6 +321,61 @@ class VerticalizationDockContent(QWidget):
+         self._logo_opacity_dragging = False
+         self._sync_logo_opacity()
+ 
++    def _build_title_import_controls(self, _):
++        """Add the first-pass folder validator for title reconstruction.
++
++        The button intentionally stops after validation.  OCR and Timeline
++        creation are separate stages so an invalid media set can never mutate
++        the current project.
++        """
++        self.btn_browse_title_folder = QPushButton(
++            _("Select title-analysis folder"), self)
++        self.btn_browse_title_folder.setObjectName("verticalizationBrowseTitleFolder")
++        self.btn_browse_title_folder.setToolTip(_(
++            "Choose a folder containing CLEAN.MP4, DATA.JSON and PROGRAMA.MP4."))
++        self.btn_browse_title_folder.clicked.connect(self._on_browse_title_folder)
++        self.title_folder_results = QLabel(
++            _("No title-analysis folder has been selected."), self)
++        self.title_folder_results.setObjectName("verticalizationTitleFolderResults")
++        self.title_folder_results.setWordWrap(True)
++        self.sections["titles"].add_widget(self.btn_browse_title_folder)
++        self.sections["titles"].add_widget(self.title_folder_results)
++        self.title_analysis_data = None
++
++    def _on_browse_title_folder(self):
++        """Validate a folder before the OCR/title reconstruction stage."""
++        _ = get_app()._tr
++        project_path = getattr(get_app().project, "current_filepath", "")
++        directory = os.path.dirname(project_path) if project_path else ""
++        folder = QFileDialog.getExistingDirectory(
++            self, _("Choose title-analysis folder"), directory,
++            QFileDialog.ShowDirsOnly)
++        if not folder:
++            return
++        result = validate_title_folder(folder, fps=25)
++        self.title_analysis_data = result
++        if not result.get("valid"):
++            details = "\n".join(result.get("errors") or [])
++            self.title_folder_results.setText(
++                _("Invalid title-analysis folder:\n%s") % details)
++            QMessageBox.warning(
++                self, _("Title analysis"),
++                _("The selected folder is not valid. Choose a folder containing "
++                  "CLEAN.MP4, DATA.JSON and PROGRAMA.MP4, with valid cut timecodes.\n\n%s") % details)
++            return
++
++        files = result["files"]
++        tc = result["timecodes"]
++        warnings = result.get("warnings") or []
++        summary = _(
++            "Folder accepted.\nCorte: %s – %s\nClean Feed: %s\nPrograma: %s") % (
++                tc.get("clip_in"), tc.get("clip_out"),
++                os.path.basename(files["clean"]), os.path.basename(files["program"]))
++        if warnings:
++            summary += "\n" + _("Avisos: ") + "; ".join(warnings)
++        self.title_folder_results.setText(summary)
++        QMessageBox.information(self, _("Title analysis"), summary)
++
+     def _sync_logo_opacity(self):
+         """Show the selected SMOUK logo clip's current alpha value."""
+         if not hasattr(self, "logo_opacity_slider"):
+-- 
+2.55.0.windows.3
+

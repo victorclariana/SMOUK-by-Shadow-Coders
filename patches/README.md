@@ -49,6 +49,7 @@ corresponding repository.
 | `0041-SMOUK-0.0.39-logo-opacity-startup-guard.patch` | **openshot-qt** | Guards the logo opacity synchronization callback during dock construction and startup state restoration. |
 | `0042-SMOUK-0.0.40-delay-logo-sync-connections.patch` | **openshot-qt** | Connects timeline selection synchronization only after the Verticalization dock controls are fully constructed. |
 | `0043-SMOUK-0.0.41-safe-logo-opacity-startup.patch` | **openshot-qt** | Removes startup-time logo opacity synchronization while retaining direct Alpha editing for the selected logo clip. |
+| `0044-SMOUK-0.0.42-title-analysis-folder-validation.patch` | **openshot-qt** | Adds the first title-analysis workflow step: validates `CLEAN.MP4`, `DATA.JSON` and `PROGRAMA.MP4`, converts JSON cuts to 25-fps frames, and probes for a visual clock without changing the project. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply
