@@ -510,6 +510,15 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - El progreso y los posibles problemas se muestran en el dock Titles y en la
   barra de estado, sin interrumpir el flujo con diÃ¡logos emergentes.
 
+### 0.0.53
+
+- Corrige el bloqueo aparente tras aceptar una carpeta de tÃ­tulos: la
+  extracciÃ³n FFmpeg y el OCR de los dos relojes se ejecutan ahora en un hilo
+  de trabajo, manteniendo reactiva la interfaz.
+- El dock Titles conserva una traza visible de las Ãºltimas fases (fotograma
+  de CLEAN, fotograma de PROGRAMA, sincronizaciÃ³n, importaciÃ³n y OCR de
+  rÃ³tulos) y cada una se registra tambiÃ©n en `openshot-qt.log`.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

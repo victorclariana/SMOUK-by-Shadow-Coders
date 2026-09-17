@@ -1,0 +1,152 @@
+From 7e8a7fe4fa64c83451d456b52e188b88ef503047 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 18 Sep 2026 01:59:41 +0200
+Subject: [PATCH] SMOUK 0.0.53 asynchronous clock OCR trace
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 80 ++++++++++++++++++++++++++++++++--
+ 2 files changed, 78 insertions(+), 4 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 31cbc4774..5e910cfbf 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.52"
++SMOUK_VERSION = "0.0.53"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ 
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index c950f916d..dddf8295b 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -61,6 +61,29 @@ OUTPUT_PROFILES = (
+ )
+ 
+ 
++class SmoukClockOcrWorker(QtCore.QThread):
++    """Read clock digits off the Qt thread so media decoding cannot freeze SMOUK."""
++    stage = QtCore.pyqtSignal(str)
++    completed = QtCore.pyqtSignal(object)
++
++    def __init__(self, dock, files, probes):
++        super().__init__(dock)
++        self.dock = dock
++        self.files = files
++        self.probes = probes
++
++    def run(self):
++        try:
++            self.stage.emit("OCR: extrayendo el fotograma del reloj de CLEAN.MP4…")
++            clean = self.dock._ocr_clock_at(self.files["clean"], self.probes["clean"])
++            self.stage.emit("OCR: extrayendo el fotograma del reloj de PROGRAMA.MP4…")
++            program = self.dock._ocr_clock_at(self.files["program"], self.probes["program"])
++            self.completed.emit({"clean": clean, "program": program, "error": ""})
++        except Exception as exc:
++            log.exception("SMOUK clock OCR worker failed")
++            self.completed.emit({"clean": {}, "program": {}, "error": str(exc)})
++
++
+ class CollapsibleSection(QFrame):
+     """A collapsible panel with a header toggle and a content area."""
+ 
+@@ -356,6 +379,7 @@ class VerticalizationDockContent(QWidget):
+         self.sections["titles"].add_widget(self.title_clock_status)
+         self.sections["titles"].add_widget(self.title_folder_results)
+         self.title_analysis_data = None
++        self._title_trace = []
+ 
+     def _on_browse_title_folder(self):
+         """Run the non-interactive title reconstruction pipeline."""
+@@ -367,6 +391,7 @@ class VerticalizationDockContent(QWidget):
+             QFileDialog.ShowDirsOnly)
+         if not folder:
+             return
++        self._title_trace = []
+         self.title_clock_progress.setVisible(True)
+         self.title_clock_progress.setRange(0, 360)
+         self.title_clock_progress.setValue(0)
+@@ -436,6 +461,11 @@ class VerticalizationDockContent(QWidget):
+         if value is not None:
+             self.title_clock_progress.setValue(int(value))
+         self.title_clock_status.setText(text)
++        if not self._title_trace or self._title_trace[-1] != text:
++            self._title_trace.append(text)
++            self._title_trace = self._title_trace[-8:]
++            self.title_folder_results.setText("Trace:\n" + "\n".join(self._title_trace))
++        log.info("SMOUK title pipeline: %s", text)
+         window = get_app().window
+         if getattr(window, "statusBar", None):
+             window.statusBar().showMessage(text)
+@@ -666,9 +696,15 @@ class VerticalizationDockContent(QWidget):
+             self._title_progress(_("OCR language model is unavailable."), 100, 100)
+             return
+         self._title_progress(_("Reading the CLEAN.MP4 clock with OCR…"), 0, 100)
+-        clean_clock = self._ocr_clock_at(files["clean"], probes["clean"])
+-        self._title_progress(_("Reading the PROGRAMA.MP4 clock with OCR…"), 20, 100)
+-        program_clock = self._ocr_clock_at(files["program"], probes["program"])
++        self._title_progress(_("OCR queued: preparing the CLEAN.MP4 clock frame…"), 0, 100)
++        log.info("SMOUK title pipeline: starting asynchronous clock OCR")
++        worker = SmoukClockOcrWorker(self, files, probes)
++        self._title_ocr_worker = worker
++        worker.stage.connect(lambda message: self._title_progress(message))
++        worker.completed.connect(lambda payload: self._on_title_clock_ocr_completed(result, payload))
++        worker.finished.connect(worker.deleteLater)
++        worker.start()
++        return
+         if clean_clock.get("frames") is None or program_clock.get("frames") is None:
+             self.title_folder_results.setText(_("Clock OCR could not read both timecodes. Timeline was not changed. CLEAN: %s; PROGRAMA: %s") % (clean_clock.get("text", "—"), program_clock.get("text", "—")))
+             self._title_progress(_("Clock OCR needs review."), 100, 100)
+@@ -697,6 +733,44 @@ class VerticalizationDockContent(QWidget):
+         self.title_folder_results.setText(_("CLEAN.MP4 imported in Track 2 (%s–%s). Clock OCR: CLEAN %s / PROGRAMA %s. %s chyron detections were placed as editable clips in CHYRONS.") % (timecodes["clip_in"], timecodes["clip_out"], clean_clock.get("text", ""), program_clock.get("text", ""), added))
+         self._title_progress(_("Title import completed: %s editable chyron clips.") % added, 100, 100)
+ 
++    def _on_title_clock_ocr_completed(self, result, payload):
++        """Continue in Qt after background FFmpeg and Tesseract clock OCR."""
++        _ = get_app()._tr
++        files, probes, timecodes = result["files"], result.get("clock_probes", {}), result["timecodes"]
++        clean_clock, program_clock = payload.get("clean", {}), payload.get("program", {})
++        if payload.get("error") or clean_clock.get("frames") is None or program_clock.get("frames") is None:
++            details = payload.get("error") or "CLEAN: %s; PROGRAMA: %s" % (
++                clean_clock.get("text", "—"), program_clock.get("text", "—"))
++            self.title_folder_results.setText(_("Clock OCR could not read both timecodes. Timeline was not changed. %s") % details)
++            self._title_progress(_("Clock OCR needs review; see the trace above."), 100, 100)
++            log.warning("SMOUK title pipeline: clock OCR unusable: %s", details)
++            return
++        self._title_progress(_("Clock OCR completed. Calculating the Clean Feed cut…"), 35, 100)
++        clean_origin = int(clean_clock["frames"] - float(probes["clean"]["seconds"]) * 25)
++        program_origin = int(program_clock["frames"] - float(probes["program"]["seconds"]) * 25)
++        clip_in, clip_out = timecodes["clip_in_frames"], timecodes["clip_out_frames"]
++        clean_start, clean_end = (clip_in - clean_origin) / 25.0, (clip_out - clean_origin) / 25.0
++        if clean_start < 0 or clean_end <= clean_start:
++            self.title_folder_results.setText(_("The JSON cut is outside CLEAN.MP4 after clock synchronisation. Timeline was not changed."))
++            return
++        self._title_progress(_("Importing the CLEAN Feed cut into Track 2…"), 45, 100)
++        log.info("SMOUK title pipeline: import clean %.3f to %.3f", clean_start, clean_end)
++        self._clear_generated_title_import()
++        self._add_clean_feed_clip(files["clean"], clean_start, clean_end, clean_origin)
++        get_app().window.refreshFilesSignal.emit()
++        get_app().window.refreshFrameSignal.emit()
++        self.title_analysis_data.update({"clean_clock_ocr": clean_clock, "program_clock_ocr": program_clock,
++                                         "clean_origin": clean_origin, "program_origin": program_origin})
++        self._title_progress(_("CLEAN Feed imported. OCR title scan begins in PROGRAMA.MP4…"), 55, 100)
++        program_start = (clip_in - program_origin) / 25.0
++        events, added = self._scan_and_place_chyrons(
++            files["program"], program_start, clean_end - clean_start, program_origin, clip_in)
++        self.title_analysis_data["chyrons"] = events
++        get_app().window.refreshFilesSignal.emit()
++        get_app().window.refreshFrameSignal.emit()
++        self.title_folder_results.setText(_("CLEAN.MP4 imported in Track 2 (%s–%s). Clock OCR: CLEAN %s / PROGRAMA %s. %s chyron detections were placed as editable clips in CHYRONS.") % (timecodes["clip_in"], timecodes["clip_out"], clean_clock.get("text", ""), program_clock.get("text", ""), added))
++        self._title_progress(_("Title import completed: %s editable chyron clips.") % added, 100, 100)
++
+     def _sync_logo_opacity(self):
+         """Show the selected SMOUK logo clip's current alpha value."""
+         if not hasattr(self, "logo_opacity_slider"):
+-- 
+2.55.0.windows.3
+
