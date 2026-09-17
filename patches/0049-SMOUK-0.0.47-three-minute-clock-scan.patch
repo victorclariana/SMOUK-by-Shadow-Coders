@@ -1,0 +1,183 @@
+From a5cafd5934f28f204aa738f3893766b7c5f35581 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Thu, 17 Sep 2026 23:32:19 +0200
+Subject: [PATCH] SMOUK-0.0.47-three-minute-clock-scan
+
+---
+ src/classes/smouk_titles.py    | 98 +++++++++++++++++++++++++---------
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 13 +++++
+ 3 files changed, 86 insertions(+), 27 deletions(-)
+
+diff --git a/src/classes/smouk_titles.py b/src/classes/smouk_titles.py
+index d3dd329f4..3f9a8fe26 100644
+--- a/src/classes/smouk_titles.py
++++ b/src/classes/smouk_titles.py
+@@ -49,32 +49,71 @@ def _media_info(path):
+         return {"exists": os.path.isfile(path)}
+ 
+ 
+-def _clock_probe(path):
+-    """Look for a plausible burned-in clock without requiring OCR.
+-
+-    This is intentionally a probe, not a claimed reading of the clock.  The
+-    next stage can replace it with OCR and return the actual origin TC.
++def _clock_probe(path, fps=25, max_seconds=180):
++    """Search the first *max_seconds* for the standard burned-in clock.
++
++    The clock's final reading belongs to the OCR stage.  This lightweight
++    detector uses its shared bright graphic appearance to find the first
++    plausible clock frame, sampling exactly one frame per second at the
++    supplied frame rate.  Sampling at 25 fps therefore checks frames 0, 25,
++    50, ..., 4475 for the first three minutes.
+     """
+     try:
+         import cv2
+         capture = cv2.VideoCapture(path)
+-        ok, frame = capture.read()
++        if not capture.isOpened():
++            return {"candidate": False, "reason": "cannot_open", "samples": 0}
++
++        sample_step = max(1, int(fps))
++        max_frames = max(1, int(max_seconds)) * sample_step
++        total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
++        stop_frame = min(max_frames, total_frames) if total_frames > 0 else max_frames
++        samples = 0
++        first_candidate = None
++        candidate_samples = 0
++        for frame_number in range(0, stop_frame, sample_step):
++            capture.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
++            ok, frame = capture.read()
++            if not ok or frame is None:
++                continue
++            samples += 1
++            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
++            _, binary = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
++            contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
++            height, width = gray.shape[:2]
++            digit_like = 0
++            for contour in contours:
++                _x, _y, component_width, component_height = cv2.boundingRect(contour)
++                area = component_width * component_height
++                if (area >= 80
++                        and component_height >= max(12, int(height * 0.015))
++                        and component_width <= int(width * 0.35)):
++                    digit_like += 1
++            if digit_like >= 4:
++                candidate_samples += 1
++                if first_candidate is None:
++                    first_candidate = {
++                        "components": digit_like,
++                        "frame": frame_number,
++                        "seconds": float(frame_number) / float(sample_step),
++                    }
+         capture.release()
+-        if not ok or frame is None:
+-            return {"candidate": False, "reason": "no_frame"}
+-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+-        _, binary = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+-        contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+-        height, width = gray.shape[:2]
+-        digit_like = 0
+-        for contour in contours:
+-            x, y, w, h = cv2.boundingRect(contour)
+-            area = w * h
+-            if area >= 80 and h >= max(12, int(height * 0.015)) and w <= int(width * 0.35):
+-                digit_like += 1
+-        return {"candidate": digit_like >= 4, "components": digit_like}
++        if first_candidate is not None:
++            first_candidate.update({
++                "candidate": True,
++                "samples": samples,
++                "candidate_samples": candidate_samples,
++                "searched_seconds": max_seconds,
++            })
++            return first_candidate
++        return {"candidate": False, "samples": samples, "searched_seconds": max_seconds}
+     except Exception as exc:
+-        return {"candidate": False, "reason": str(exc)}
++        return {"candidate": False, "reason": str(exc), "samples": 0}
++    finally:
++        try:
++            capture.release()
++        except (NameError, UnboundLocalError):
++            pass
+ 
+ 
+ def validate_title_folder(folder, fps=25):
+@@ -94,6 +133,7 @@ def validate_title_folder(folder, fps=25):
+         "clip": None,
+         "timecodes": {},
+         "clock_candidate": False,
++        "clock_probes": {},
+     }
+     if not os.path.isdir(folder):
+         result["errors"].append("La carpeta seleccionada no existe.")
+@@ -147,15 +187,21 @@ def validate_title_folder(folder, fps=25):
+     if clean_info.get("fps") and program_info.get("fps") and clean_info["fps"] != program_info["fps"]:
+         result["warnings"].append("Los vídeos no tienen la misma cadencia declarada.")
+ 
+-    # The first pass only verifies that the programme contains a plausible
+-    # graphic/clock frame.  Exact clock OCR is the next analysis stage.
+-    result["clock_probe"] = _clock_probe(result["files"]["program"])
+-    result["clock_candidate"] = bool(result["clock_probe"].get("candidate"))
++    # Scan both feeds instead of assuming a clock is visible on their first
++    # frame.  Exact digits and the resulting origin timecode remain OCR work.
++    for key in ("clean", "program"):
++        result["clock_probes"][key] = _clock_probe(result["files"][key], fps=fps)
++    result["clock_probe"] = result["clock_probes"]["program"]
++    result["clock_candidate"] = any(
++        probe.get("candidate") for probe in result["clock_probes"].values())
++    found = [key.upper() for key, probe in result["clock_probes"].items()
++             if probe.get("candidate")]
+     if not result["clock_candidate"]:
+         result["warnings"].append(
+-            "No se ha detectado un reloj visual en el primer fotograma; será necesaria una calibración manual.")
++            "No se ha detectado un reloj visual al rastrear los primeros tres minutos de CLEAN.MP4 y PROGRAMA.MP4.")
+     else:
+         result["warnings"].append(
+-            "Se ha detectado un posible reloj visual; su lectura exacta todavía requiere OCR/calibración.")
++            "Se ha detectado un posible reloj visual en %s; su lectura exacta todavía requiere OCR/calibración." %
++            ", ".join(found))
+     result["valid"] = not result["errors"]
+     return result
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index af7cbe3e3..74ce792d7 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.46"
++SMOUK_VERSION = "0.0.47"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ 
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index e6be27dcb..aa87a828c 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -377,6 +377,19 @@ class VerticalizationDockContent(QWidget):
+             "Folder accepted.\nCorte: %s – %s\nClean Feed: %s\nPrograma: %s") % (
+                 tc.get("clip_in"), tc.get("clip_out"),
+                 os.path.basename(files["clean"]), os.path.basename(files["program"]))
++        clock_probes = result.get("clock_probes") or {}
++        clock_lines = []
++        for key, title in (("clean", "Clean Feed"), ("program", "Programa")):
++            probe = clock_probes.get(key) or {}
++            if probe.get("candidate"):
++                clock_lines.append(
++                    "%s: reloj candidato en %0.0f s (%s muestras)" % (
++                        title, float(probe.get("seconds", 0.0)), probe.get("samples", 0)))
++            else:
++                clock_lines.append(
++                    "%s: sin reloj en los primeros 3 min (%s muestras)" % (
++                        title, probe.get("samples", 0)))
++        summary += "\n" + "\n".join(clock_lines)
+         if warnings:
+             summary += "\n" + _("Avisos: ") + "; ".join(warnings)
+         self.title_folder_results.setText(summary)
+-- 
+2.55.0.windows.3
+

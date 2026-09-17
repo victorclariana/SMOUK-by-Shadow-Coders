@@ -449,6 +449,14 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   del Timeline duplican su altura de 48 a 96 píxeles. El ajuste compacto se
   recalcula una vez para reservar barra, regla y las dos pistas altas.
 
+### 0.0.47
+
+- La validación de la carpeta de títulos recorre los primeros tres minutos de
+  `CLEAN.MP4` y `PROGRAMA.MP4` en muestras de un segundo a 25 fps, en lugar de
+  mirar únicamente el primer fotograma. Busca el patrón gráfico del reloj y
+  muestra por separado el primer instante candidato y las muestras analizadas
+  de cada vídeo. La lectura de los dígitos se incorporará en la fase OCR.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

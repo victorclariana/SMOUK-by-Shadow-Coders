@@ -54,6 +54,7 @@ corresponding repository.
 | `0046-SMOUK-0.0.44-safe-dock-relayout.patch` | **openshot-qt** | Restores all Verticalization sections open by default and prevents Qt dock-state serialization during content-driven resize events, avoiding the `Qt5Core.dll` fail-fast crash. |
 | `0047-SMOUK-0.0.45-two-track-compact-timeline.patch` | **openshot-qt** | Starts new SMOUK projects with two tracks and migrates the default Timeline to the theme-aware height needed for its toolbar, ruler, and two tracks. |
 | `0048-SMOUK-0.0.46-title-folder-legend-tall-tracks.patch` | **openshot-qt** | Displays the required title-analysis filenames in the dock and doubles the default Cosmic Timeline row height, recalibrating the compact two-track layout. |
+| `0049-SMOUK-0.0.47-three-minute-clock-scan.patch` | **openshot-qt** | Scans the first three minutes of both CLEAN.MP4 and PROGRAMA.MP4 at one 25-fps-aligned sample per second, reporting clock candidates for each feed. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply
