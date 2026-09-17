@@ -1,0 +1,64 @@
+From 81c0d0ebe23abb047dba808fcb847fe9d00160a0 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 18 Sep 2026 00:48:43 +0200
+Subject: [PATCH] SMOUK-0.0.50-clock-colour-shape-signature
+
+---
+ src/classes/smouk_titles.py | 15 ++++++++++++---
+ src/windows/main_window.py  |  2 +-
+ 2 files changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/src/classes/smouk_titles.py b/src/classes/smouk_titles.py
+index 2338cd963..2e160eff1 100644
+--- a/src/classes/smouk_titles.py
++++ b/src/classes/smouk_titles.py
+@@ -80,7 +80,10 @@ def _clock_components(frame, cv2):
+     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+     orange = cv2.inRange(hsv, (4, 120, 140), (24, 255, 255))
+     orange_ratio = float(cv2.countNonZero(orange)) / float(max(1, width * height))
+-    return digit_like, orange_ratio
++    _count, _labels, stats, _centres = cv2.connectedComponentsWithStats(orange)
++    largest_orange = max((int(stat[cv2.CC_STAT_AREA]) for stat in stats[1:]), default=0)
++    largest_orange_ratio = float(largest_orange) / float(max(1, width * height))
++    return digit_like, orange_ratio, largest_orange_ratio
+ 
+ 
+ def _clock_probe(path, fps=25, max_seconds=180, progress_callback=None):
+@@ -122,13 +125,19 @@ def _clock_probe(path, fps=25, max_seconds=180, progress_callback=None):
+                     break
+                 frame = numpy.frombuffer(raw_frame, dtype=numpy.uint8)
+                 frame = frame.reshape((output_height, output_width, 3))
+-                digit_like, orange_ratio = _clock_components(frame, cv2)
+-                if digit_like >= 4 and orange_ratio >= 0.30:
++                digit_like, orange_ratio, largest_orange_ratio = _clock_components(frame, cv2)
++                # The clock fills most of the frame with orange and contains
++                # one very large uninterrupted orange panel.  Programme
++                # idents can share the palette, but their small fragments do
++                # not satisfy this combined colour-and-shape signature.
++                if (digit_like >= 4 and orange_ratio >= 0.50
++                        and largest_orange_ratio >= 0.18):
+                     candidate_samples += 1
+                     if first_candidate is None:
+                         first_candidate = {
+                             "components": digit_like,
+                             "orange_ratio": orange_ratio,
++                            "largest_orange_ratio": largest_orange_ratio,
+                             "frame": samples * int(fps),
+                             "seconds": float(samples),
+                         }
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index fd8fb0671..6ac3e49bc 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.49"
++SMOUK_VERSION = "0.0.50"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ 
+ 
+-- 
+2.55.0.windows.3
+

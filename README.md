@@ -477,6 +477,14 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   analiza primero `CLEAN.MP4` y después `PROGRAMA.MP4`, actualizándose mientras
   FFmpeg entrega cada fotograma de la exploración de tres minutos.
 
+### 0.0.50
+
+- Se endurece la firma del reloj frente a las caretas del programa. Además de
+  los dígitos y del naranja, exige que el naranja ocupe al menos el 50 % de la
+  imagen y que exista un panel naranja continuo de al menos el 18 %. En los
+  fotogramas validados, la careta tenía 15,4 % y 5,9 %; el reloj real, 61,7 %
+  y 28,0 % respectivamente.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
