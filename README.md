@@ -430,6 +430,16 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   Qt está recalculando el área desplazable, evitando el cierre nativo en
   `Qt5Core.dll`.
 
+### 0.0.45
+
+- Los proyectos nuevos de SMOUK empiezan con dos pistas. También se corrige la
+  plantilla local antigua de cinco pistas cuando se crea un proyecto en blanco;
+  los proyectos `.osp` existentes conservan sus propias pistas.
+- En la primera apertura tras esta versión, el Timeline se ajusta a la altura
+  de su barra, regla y dos pistas, calculada según el tema activo. El espacio
+  liberado queda disponible para el visor, Project Files y los docks, y el
+  tamaño que el usuario elija después se conserva normalmente.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

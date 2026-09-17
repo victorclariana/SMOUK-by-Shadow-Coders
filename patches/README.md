@@ -52,6 +52,7 @@ corresponding repository.
 | `0044-SMOUK-0.0.42-title-analysis-folder-validation.patch` | **openshot-qt** | Adds the first title-analysis workflow step: validates `CLEAN.MP4`, `DATA.JSON` and `PROGRAMA.MP4`, converts JSON cuts to 25-fps frames, and probes for a visual clock without changing the project. |
 | `0045-SMOUK-0.0.43-stable-verticalization-dock.patch` | **openshot-qt** | Starts Verticalization sections collapsed to avoid an unstable tall-dock relayout while scrolling on the current Windows Qt build. |
 | `0046-SMOUK-0.0.44-safe-dock-relayout.patch` | **openshot-qt** | Restores all Verticalization sections open by default and prevents Qt dock-state serialization during content-driven resize events, avoiding the `Qt5Core.dll` fail-fast crash. |
+| `0047-SMOUK-0.0.45-two-track-compact-timeline.patch` | **openshot-qt** | Starts new SMOUK projects with two tracks and migrates the default Timeline to the theme-aware height needed for its toolbar, ruler, and two tracks. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

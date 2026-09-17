@@ -1,0 +1,130 @@
+From a30da4970da7538db7dc948cace576ac16fa5ea7 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Thu, 17 Sep 2026 22:19:26 +0200
+Subject: [PATCH] SMOUK-0.0.45-compact-default-timeline
+
+---
+ src/classes/project_data.py   | 18 ++++++++++++++++++
+ src/settings/_default.project | 21 ---------------------
+ src/windows/main_window.py    | 30 +++++++++++++++++++++++++++++-
+ 3 files changed, 47 insertions(+), 22 deletions(-)
+
+diff --git a/src/classes/project_data.py b/src/classes/project_data.py
+index a8228678a..a193ce3c0 100644
+--- a/src/classes/project_data.py
++++ b/src/classes/project_data.py
+@@ -351,6 +351,24 @@ class ProjectDataStore(JsonDataStore, UpdateInterface):
+             # Fall back to OpenShot defaults, if user defaults didn't load
+             self._data = self.read_from_file(self.default_project_filepath)
+ 
++        # SMOUK starts each new blank project with a compact two-track stack.
++        # A previous OpenShot user-default project can still contain the old
++        # five-track template, so normalize it here as well as in the bundled
++        # default file.  Opening an existing .osp bypasses this data after
++        # load(), therefore its track layout remains untouched.
++        default_layers = list(self._data.get("layers") or [])
++        default_layers.sort(key=lambda layer: int(layer.get("number", 0)))
++        self._data["layers"] = default_layers[:2]
++        while len(self._data["layers"]) < 2:
++            index = len(self._data["layers"]) + 1
++            self._data["layers"].append({
++                "id": "L%s" % index,
++                "label": "",
++                "number": index * 1000000,
++                "y": 0,
++                "lock": False,
++            })
++
+         self.current_filepath = None
+         self.has_unsaved_changes = False
+ 
+diff --git a/src/settings/_default.project b/src/settings/_default.project
+index 72f288a7d..50fd1a7bc 100644
+--- a/src/settings/_default.project
++++ b/src/settings/_default.project
+@@ -41,27 +41,6 @@
+       "number": 2000000,
+       "y": 0,
+       "lock": false
+-    },
+-    {
+-      "id": "L3",
+-      "label" : "",
+-      "number": 3000000,
+-      "y": 0,
+-      "lock": false
+-    },
+-    {
+-      "id": "L4",
+-      "label" : "",
+-      "number": 4000000,
+-      "y": 0,
+-      "lock": false
+-    },
+-    {
+-      "id": "L5",
+-      "label" : "",
+-      "number": 5000000,
+-      "y": 0,
+-      "lock": false
+     }
+   ],
+   "markers": [  ],
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 8a724c518..13ff095f0 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,8 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.44"
++SMOUK_VERSION = "0.0.45"
++SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v1"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+@@ -4447,6 +4448,11 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         hidden_names = get_app().get_settings().get('hidden_docks') or []
+         self._restore_hidden_docks(hidden_names)
+         QTimer.singleShot(0, self._restore_saved_video_dock_width)
++        if not get_app().get_settings().get(SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION):
++            # One SMOUK migration: earlier layouts used the five-track-sized
++            # Timeline.  Apply the compact two-track height after Qt restores
++            # that old splitter state, then leave later manual resizes alone.
++            QTimer.singleShot(0, self._apply_smouk_compact_timeline_height)
+         QTimer.singleShot(100, lambda: self._save_layout_checkpoint(force=True))
+         log.info("Restored SMOUK UI layout (Qt state accepted=%s)", restored)
+ 
+@@ -4530,6 +4536,28 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+             self.saved_timeline_height,
+             Qt.Vertical)
+ 
++    def _apply_smouk_compact_timeline_height(self):
++        """Fit the default Timeline to its toolbar, ruler, and two tracks."""
++        dock = getattr(self, "dockTimeline", None)
++        timeline = getattr(self, "timeline", None)
++        toolbar = getattr(self, "timelineToolbar", None)
++        if not dock:
++            return
++
++        # Derive the height from the active theme instead of assuming a fixed
++        # row size.  The small allowance covers the dock layout margins and
++        # prevents clipping the horizontal scrollbar.
++        track_height = max(1, int(getattr(timeline, "track_height", 48) or 48))
++        ruler_height = max(1, int(getattr(timeline, "ruler_height", 28) or 28))
++        toolbar_height = toolbar.sizeHint().height() if toolbar else 28
++        target_height = max(150, toolbar_height + ruler_height + (2 * track_height) + 16)
++        self._force_dock_extent_once(dock, target_height, Qt.Vertical)
++
++        settings = get_app().get_settings()
++        settings.set(SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION, True)
++        settings.save()
++        log.info("Applied SMOUK compact Timeline height: %s px", target_height)
++
+     def show_property_timeout(self):
+         """Callback for show property timer"""
+ 
+-- 
+2.55.0.windows.3
+
