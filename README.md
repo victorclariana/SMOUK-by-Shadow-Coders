@@ -440,6 +440,15 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   liberado queda disponible para el visor, Project Files y los docks, y el
   tamaño que el usuario elija después se conserva normalmente.
 
+### 0.0.46
+
+- La sección `Titles` del dock Verticalization muestra junto al selector los
+  tres nombres obligatorios de la carpeta: `CLEAN.MP4`, `DATA.JSON` y
+  `PROGRAMA.MP4`.
+- En el tema predeterminado Cosmic, las filas de pista, clips y transiciones
+  del Timeline duplican su altura de 48 a 96 píxeles. El ajuste compacto se
+  recalcula una vez para reservar barra, regla y las dos pistas altas.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

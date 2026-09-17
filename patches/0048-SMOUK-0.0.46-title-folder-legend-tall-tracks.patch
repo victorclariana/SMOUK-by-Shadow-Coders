@@ -1,0 +1,81 @@
+From 82181928d7d20b8c5aa8c95f3477ed6f30eec542 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Thu, 17 Sep 2026 22:28:34 +0200
+Subject: [PATCH] SMOUK-0.0.46-title-folder-legend-tall-tracks
+
+---
+ src/themes/cosmic/styles.py    | 6 +++---
+ src/windows/main_window.py     | 4 ++--
+ src/windows/verticalization.py | 6 ++++++
+ 3 files changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/src/themes/cosmic/styles.py b/src/themes/cosmic/styles.py
+index 665e51552..67ac024d2 100644
+--- a/src/themes/cosmic/styles.py
++++ b/src/themes/cosmic/styles.py
+@@ -38,14 +38,14 @@ class CosmicDuskTimelineTheme(HumanityDarkTimelineTheme):
+         self.clip.top_overlay2  = QColor()
+         self.clip.border_color  = QColor("#0078FF")
+         self.clip.border_radius = 8
+-        self.clip.height        = 48
++        self.clip.height        = 96
+ 
+         # ── Track ─────────────────────────────────────────────────────────
+         self.track.background               = QColor("#283241")
+         self.track.background2              = QColor()
+         self.track.border_color             = QColor("#283241")
+         self.track.border_radius            = 0
+-        self.track.height                   = 48
++        self.track.height                   = 96
+         self.track.name_background          = QColor("#192332")
+         self.track.name_border_color        = QColor("#0078FF")
+         self.track.name_border_width        = 4
+@@ -59,7 +59,7 @@ class CosmicDuskTimelineTheme(HumanityDarkTimelineTheme):
+         self.track.name_top_overlay2        = QColor()
+ 
+         # ── Transition ────────────────────────────────────────────────────
+-        self.transition.height = 48
++        self.transition.height = 96
+ 
+         # ── Ruler ─────────────────────────────────────────────────────────
+         self.ruler.background  = QColor("#141923")
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 13ff095f0..af7cbe3e3 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,8 +102,8 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.45"
+-SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v1"
++SMOUK_VERSION = "0.0.46"
++SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index bd3491071..e6be27dcb 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -334,11 +334,17 @@ class VerticalizationDockContent(QWidget):
+         self.btn_browse_title_folder.setToolTip(_(
+             "Choose a folder containing CLEAN.MP4, DATA.JSON and PROGRAMA.MP4."))
+         self.btn_browse_title_folder.clicked.connect(self._on_browse_title_folder)
++        self.title_folder_requirements = QLabel(
++            _("Required files in the selected folder: CLEAN.MP4, DATA.JSON and PROGRAMA.MP4."),
++            self)
++        self.title_folder_requirements.setObjectName("verticalizationTitleFolderRequirements")
++        self.title_folder_requirements.setWordWrap(True)
+         self.title_folder_results = QLabel(
+             _("No title-analysis folder has been selected."), self)
+         self.title_folder_results.setObjectName("verticalizationTitleFolderResults")
+         self.title_folder_results.setWordWrap(True)
+         self.sections["titles"].add_widget(self.btn_browse_title_folder)
++        self.sections["titles"].add_widget(self.title_folder_requirements)
+         self.sections["titles"].add_widget(self.title_folder_results)
+         self.title_analysis_data = None
+ 
+-- 
+2.55.0.windows.3
+
