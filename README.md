@@ -416,6 +416,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   los dos vídeos y se marca la posible presencia de un reloj visual para la
   futura calibración OCR, sin modificar todavía el proyecto.
 
+### 0.0.43
+
+- Las secciones del dock Verticalization se abren contraídas. Esto evita el
+  recálculo continuo de un panel muy alto al arrastrar su barra de desplazamiento
+  en esta instalación de Qt para Windows.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

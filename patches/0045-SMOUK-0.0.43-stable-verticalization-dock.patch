@@ -1,0 +1,42 @@
+From 025a98aaaebf244040e1dd10015f5eef268f2e13 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Thu, 17 Sep 2026 20:55:47 +0200
+Subject: [PATCH] SMOUK 0.0.43 stabilize verticalization dock scrolling
+
+---
+ src/windows/main_window.py     | 2 +-
+ src/windows/verticalization.py | 5 +++++
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 89e4e1685..433492f93 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.42"
++SMOUK_VERSION = "0.0.43"
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index bd3491071..2115d6b52 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -150,6 +150,11 @@ class VerticalizationDockContent(QWidget):
+         self.sections = {}
+         for key, title, description in self.SECTIONS:
+             section = CollapsibleSection(_(title))
++            # Keeping every section expanded makes Qt repeatedly relayout a
++            # very tall dock while its scroll bar is dragged.  On this Windows
++            # build that can end in a native Qt shutdown, so expose each tool
++            # on demand instead.
++            section.toggle_button.setChecked(False)
+             placeholder = QLabel(_(description), section.content)
+             placeholder.setObjectName("verticalizationPlaceholder")
+             placeholder.setWordWrap(True)
+-- 
+2.55.0.windows.3
+
