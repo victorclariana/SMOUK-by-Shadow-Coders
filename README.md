@@ -466,6 +466,17 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - El resultado informa del diagnóstico del lector cuando no se ha podido
   obtener una muestra, en vez de presentarlo como un reloj no encontrado.
 
+### 0.0.49
+
+- Se corrige el falso positivo de reloj en el Clean Feed: además de los
+  números blancos, el patrón debe ocupar al menos el 30 % de la imagen con los
+  paneles naranja característicos. Las comprobaciones con el material de
+  referencia midieron un 3,1 % en el falso positivo inicial y un 61,7 % en el
+  reloj real.
+- El apartado `Titles` muestra una barra de 360 muestras y un texto de estado:
+  analiza primero `CLEAN.MP4` y después `PROGRAMA.MP4`, actualizándose mientras
+  FFmpeg entrega cada fotograma de la exploración de tres minutos.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

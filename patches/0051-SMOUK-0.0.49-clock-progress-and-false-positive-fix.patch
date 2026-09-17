@@ -1,0 +1,204 @@
+From 5e798141768f0139806c9503f77e83e1ec9dfa3a Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 18 Sep 2026 00:02:22 +0200
+Subject: [PATCH] SMOUK-0.0.49-clock-progress-false-positive-fix
+
+---
+ src/classes/smouk_titles.py    | 68 ++++++++++++++++++++--------------
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 40 +++++++++++++++++++-
+ 3 files changed, 80 insertions(+), 30 deletions(-)
+
+diff --git a/src/classes/smouk_titles.py b/src/classes/smouk_titles.py
+index 80361e6d6..2338cd963 100644
+--- a/src/classes/smouk_titles.py
++++ b/src/classes/smouk_titles.py
+@@ -83,7 +83,7 @@ def _clock_components(frame, cv2):
+     return digit_like, orange_ratio
+ 
+ 
+-def _clock_probe(path, fps=25, max_seconds=180):
++def _clock_probe(path, fps=25, max_seconds=180, progress_callback=None):
+     """Search the first *max_seconds* for the standard burned-in clock.
+ 
+     The clock's final reading belongs to the OCR stage.  This lightweight
+@@ -107,34 +107,41 @@ def _clock_probe(path, fps=25, max_seconds=180):
+             "-an", "-frames:v", str(requested_samples),
+             "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1",
+         ]
+-        process = subprocess.run(  # nosec B603 -- fixed executable and argv list
+-            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+-            check=False, timeout=300)
+-        if process.returncode != 0:
+-            return {"candidate": False, "reason": "ffmpeg_failed", "samples": 0}
+-
+         frame_size = output_width * output_height * 3
+-        available = len(process.stdout) // frame_size
+-        if not available:
+-            return {"candidate": False, "reason": "no_frame", "samples": 0}
++        process = subprocess.Popen(  # nosec B603 -- fixed executable and argv list
++            # FFmpeg can emit many decoder diagnostics for broadcast sources;
++            # they must not fill a pipe while the UI consumes video frames.
++            command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+         samples = 0
+         first_candidate = None
+         candidate_samples = 0
+-        for sample_index in range(available):
+-            start = sample_index * frame_size
+-            frame = numpy.frombuffer(process.stdout[start:start + frame_size], dtype=numpy.uint8)
+-            frame = frame.reshape((output_height, output_width, 3))
+-            samples += 1
+-            digit_like, orange_ratio = _clock_components(frame, cv2)
+-            if digit_like >= 4 and orange_ratio >= 0.02:
+-                candidate_samples += 1
+-                if first_candidate is None:
+-                    first_candidate = {
+-                        "components": digit_like,
+-                        "orange_ratio": orange_ratio,
+-                        "frame": sample_index * int(fps),
+-                        "seconds": float(sample_index),
+-                    }
++        try:
++            while samples < requested_samples:
++                raw_frame = process.stdout.read(frame_size)
++                if len(raw_frame) != frame_size:
++                    break
++                frame = numpy.frombuffer(raw_frame, dtype=numpy.uint8)
++                frame = frame.reshape((output_height, output_width, 3))
++                digit_like, orange_ratio = _clock_components(frame, cv2)
++                if digit_like >= 4 and orange_ratio >= 0.30:
++                    candidate_samples += 1
++                    if first_candidate is None:
++                        first_candidate = {
++                            "components": digit_like,
++                            "orange_ratio": orange_ratio,
++                            "frame": samples * int(fps),
++                            "seconds": float(samples),
++                        }
++                samples += 1
++                if progress_callback:
++                    progress_callback(samples, requested_samples)
++            return_code = process.wait(timeout=300)
++            if return_code != 0 and not samples:
++                return {"candidate": False, "reason": "ffmpeg_failed", "samples": 0}
++        finally:
++            if process.poll() is None:
++                process.kill()
++
+         if first_candidate is not None:
+             first_candidate.update({
+                 "candidate": True,
+@@ -148,7 +155,7 @@ def _clock_probe(path, fps=25, max_seconds=180):
+         return {"candidate": False, "reason": str(exc), "samples": 0}
+ 
+ 
+-def validate_title_folder(folder, fps=25):
++def validate_title_folder(folder, fps=25, clock_progress=None):
+     """Validate a SMOUK title-analysis folder.
+ 
+     Required names are intentionally strict for the first implementation:
+@@ -221,8 +228,13 @@ def validate_title_folder(folder, fps=25):
+ 
+     # Scan both feeds instead of assuming a clock is visible on their first
+     # frame.  Exact digits and the resulting origin timecode remain OCR work.
+-    for key in ("clean", "program"):
+-        result["clock_probes"][key] = _clock_probe(result["files"][key], fps=fps)
++    for file_index, key in enumerate(("clean", "program")):
++        def update_progress(completed, total, current_key=key, current_index=file_index):
++            if clock_progress:
++                clock_progress(current_key, current_index, completed, total)
++
++        result["clock_probes"][key] = _clock_probe(
++            result["files"][key], fps=fps, progress_callback=update_progress)
+     result["clock_probe"] = result["clock_probes"]["program"]
+     result["clock_candidate"] = any(
+         probe.get("candidate") for probe in result["clock_probes"].values())
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index bb51c83d7..fd8fb0671 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.48"
++SMOUK_VERSION = "0.0.49"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ 
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 1375fe60c..b49a1142e 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -339,12 +339,23 @@ class VerticalizationDockContent(QWidget):
+             self)
+         self.title_folder_requirements.setObjectName("verticalizationTitleFolderRequirements")
+         self.title_folder_requirements.setWordWrap(True)
++        self.title_clock_progress = QProgressBar(self)
++        self.title_clock_progress.setObjectName("verticalizationTitleClockProgress")
++        self.title_clock_progress.setRange(0, 360)
++        self.title_clock_progress.setValue(0)
++        self.title_clock_progress.setVisible(False)
++        self.title_clock_status = QLabel(
++            _("Clock analysis has not been run."), self)
++        self.title_clock_status.setObjectName("verticalizationTitleClockStatus")
++        self.title_clock_status.setWordWrap(True)
+         self.title_folder_results = QLabel(
+             _("No title-analysis folder has been selected."), self)
+         self.title_folder_results.setObjectName("verticalizationTitleFolderResults")
+         self.title_folder_results.setWordWrap(True)
+         self.sections["titles"].add_widget(self.btn_browse_title_folder)
+         self.sections["titles"].add_widget(self.title_folder_requirements)
++        self.sections["titles"].add_widget(self.title_clock_progress)
++        self.sections["titles"].add_widget(self.title_clock_status)
+         self.sections["titles"].add_widget(self.title_folder_results)
+         self.title_analysis_data = None
+ 
+@@ -358,9 +369,34 @@ class VerticalizationDockContent(QWidget):
+             QFileDialog.ShowDirsOnly)
+         if not folder:
+             return
+-        result = validate_title_folder(folder, fps=25)
++        self.title_clock_progress.setVisible(True)
++        self.title_clock_progress.setRange(0, 360)
++        self.title_clock_progress.setValue(0)
++        self.title_clock_status.setText(
++            _("Preparing the three-minute clock scan…"))
++        self.btn_browse_title_folder.setEnabled(False)
++        get_app().processEvents()
++
++        def update_clock_progress(file_key, file_index, completed, total):
++            name = "CLEAN.MP4" if file_key == "clean" else "PROGRAMA.MP4"
++            overall_total = max(1, int(total) * 2)
++            overall_value = min(overall_total, int(file_index) * int(total) + int(completed))
++            self.title_clock_progress.setRange(0, overall_total)
++            self.title_clock_progress.setValue(overall_value)
++            self.title_clock_status.setText(
++                _("Searching for the clock in %s: %s of %s samples.") %
++                (name, completed, total))
++            get_app().processEvents()
++
++        try:
++            result = validate_title_folder(folder, fps=25,
++                                           clock_progress=update_clock_progress)
++        finally:
++            self.btn_browse_title_folder.setEnabled(True)
+         self.title_analysis_data = result
+         if not result.get("valid"):
++            self.title_clock_status.setText(
++                _("Clock analysis was not started because the folder is invalid."))
+             details = "\n".join(result.get("errors") or [])
+             self.title_folder_results.setText(
+                 _("Invalid title-analysis folder:\n%s") % details)
+@@ -395,6 +431,8 @@ class VerticalizationDockContent(QWidget):
+         if warnings:
+             summary += "\n" + _("Avisos: ") + "; ".join(warnings)
+         self.title_folder_results.setText(summary)
++        self.title_clock_status.setText(
++            _("Three-minute clock analysis completed."))
+         QMessageBox.information(self, _("Title analysis"), summary)
+ 
+     def _sync_logo_opacity(self):
+-- 
+2.55.0.windows.3
+
