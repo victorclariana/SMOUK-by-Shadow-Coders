@@ -1,0 +1,261 @@
+From 96179b12935f7fc825ad104a362ded43f4fa85db Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 18 Sep 2026 01:07:47 +0200
+Subject: [PATCH] SMOUK-0.0.51-reference-template-clock-matching
+
+---
+ src/classes/smouk_titles.py | 188 +++++++++++++++++++++++++++---------
+ src/windows/main_window.py  |   2 +-
+ 2 files changed, 144 insertions(+), 46 deletions(-)
+
+diff --git a/src/classes/smouk_titles.py b/src/classes/smouk_titles.py
+index 2e160eff1..782c9f895 100644
+--- a/src/classes/smouk_titles.py
++++ b/src/classes/smouk_titles.py
+@@ -59,41 +59,111 @@ def _ffmpeg_path():
+     return path if os.path.isfile(path) else None
+ 
+ 
+-def _clock_components(frame, cv2):
+-    """Measure the white/orange broadcast-clock graphic in a BGR frame."""
+-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+-    _, binary = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+-    contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+-    height, width = gray.shape[:2]
+-    digit_like = 0
+-    for contour in contours:
+-        _x, _y, component_width, component_height = cv2.boundingRect(contour)
+-        area = component_width * component_height
+-        if (area >= 30
+-                and component_height >= max(8, int(height * 0.015))
+-                and component_width <= int(width * 0.35)):
+-            digit_like += 1
+-
+-    # The supplied reference clock has white numerals on its characteristic
+-    # high-saturation orange panels.  This rejects ordinary white programme
+-    # text that would otherwise look like digit contours alone.
++def _clock_features(frame, cv2):
++    """Return the colour, shape, and visual region used for clock matching."""
++    height, width = frame.shape[:2]
++    frame_area = float(max(1, width * height))
+     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+     orange = cv2.inRange(hsv, (4, 120, 140), (24, 255, 255))
+-    orange_ratio = float(cv2.countNonZero(orange)) / float(max(1, width * height))
+-    _count, _labels, stats, _centres = cv2.connectedComponentsWithStats(orange)
+-    largest_orange = max((int(stat[cv2.CC_STAT_AREA]) for stat in stats[1:]), default=0)
+-    largest_orange_ratio = float(largest_orange) / float(max(1, width * height))
+-    return digit_like, orange_ratio, largest_orange_ratio
++    neutral = cv2.inRange(hsv, (0, 0, 130), (35, 35, 235))
++    colour_region = cv2.bitwise_or(orange, neutral)
++    points = cv2.findNonZero(colour_region)
++    if points is None:
++        bbox = (0, 0, width, height)
++    else:
++        bbox = cv2.boundingRect(points)
++    x, y, region_width, region_height = bbox
++    region_width = max(1, region_width)
++    region_height = max(1, region_height)
++    return {
++        "orange_ratio": float(cv2.countNonZero(orange)) / frame_area,
++        "neutral_ratio": float(cv2.countNonZero(neutral)) / frame_area,
++        "bbox": (x, y, region_width, region_height),
++        "aspect": float(region_width) / float(region_height),
++        "area_ratio": float(region_width * region_height) / frame_area,
++        "region": frame[y:y + region_height, x:x + region_width],
++    }
++
++
++def _similarity(value, reference):
++    """Return a bounded similarity score for positive scalar measurements."""
++    reference = max(float(reference), 0.0001)
++    return max(0.0, 1.0 - abs(float(value) - reference) / reference)
++
++
++def _extract_clock_reference(path, ffmpeg, cv2, numpy, second=83):
++    """Build a visual clock template from CLEAN near the expected 01:23."""
++    output_width, output_height = 640, 360
++    # Inspect a narrow window so an edit boundary around exactly 01:23 does
++    # not prevent finding the stable clock frame.
++    start = max(0, int(second) - 2)
++    command = [
++        ffmpeg, "-v", "error", "-ss", str(start), "-t", "5", "-i", path,
++        "-vf", "fps=1,scale=%s:%s:flags=bilinear" % (output_width, output_height),
++        "-an", "-frames:v", "5", "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1",
++    ]
++    completed = subprocess.run(  # nosec B603 -- fixed executable and argv list
++        command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
++        check=False, timeout=120)
++    frame_size = output_width * output_height * 3
++    available = len(completed.stdout) // frame_size
++    if completed.returncode or not available:
++        return None
++
++    best = None
++    for index in range(available):
++        offset = index * frame_size
++        frame = numpy.frombuffer(completed.stdout[offset:offset + frame_size], dtype=numpy.uint8)
++        frame = frame.reshape((output_height, output_width, 3))
++        features = _clock_features(frame, cv2)
++        # The actual clock fills the view with its orange and neutral panels.
++        quality = features["orange_ratio"] + features["neutral_ratio"]
++        if best is None or quality > best["quality"]:
++            best = {"frame": frame.copy(), "features": features,
++                    "second": float(start + index), "quality": quality}
++    if best is None or best["features"]["orange_ratio"] < 0.20:
++        return None
++
++    region = best["features"]["region"]
++    template = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
++    return {
++        "template": template,
++        "template_width": int(template.shape[1]),
++        "template_height": int(template.shape[0]),
++        "features": best["features"],
++        "second": best["second"],
++    }
+ 
+ 
+-def _clock_probe(path, fps=25, max_seconds=180, progress_callback=None):
++def _clock_score(frame, reference, cv2):
++    """Combine colour, form, template, aspect, and area into one score."""
++    features = _clock_features(frame, cv2)
++    expected = reference["features"]
++    region = features["region"]
++    candidate = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
++    candidate = cv2.resize(
++        candidate, (reference["template_width"], reference["template_height"]),
++        interpolation=cv2.INTER_AREA)
++    template_raw = float(cv2.matchTemplate(
++        candidate, reference["template"], cv2.TM_CCOEFF_NORMED)[0][0])
++    template_score = max(0.0, min(1.0, (template_raw + 1.0) / 2.0))
++    color_score = (
++        _similarity(features["orange_ratio"], expected["orange_ratio"]) +
++        _similarity(features["neutral_ratio"], expected["neutral_ratio"])) / 2.0
++    form_score = _similarity(features["aspect"], expected["aspect"])
++    area_score = _similarity(features["area_ratio"], expected["area_ratio"])
++    score = (0.25 * color_score + 0.15 * form_score + 0.45 * template_score +
++             0.15 * area_score)
++    return score, template_score, features
++
++
++def _clock_probe(path, reference, fps=25, max_seconds=180, progress_callback=None):
+     """Search the first *max_seconds* for the standard burned-in clock.
+ 
+     The clock's final reading belongs to the OCR stage.  This lightweight
+-    detector uses the shared white-numeral/orange-panel appearance to find the
+-    first plausible clock frame.  FFmpeg decodes broadcast MP4 files that
+-    OpenCV cannot always seek reliably, producing one sample per second for
+-    the first three minutes.
++    detector compares every candidate against the reference region with a
++    weighted colour, form, size, aspect, and OpenCV template score.  Three
++    successive sampled frames must agree before a clock is accepted.
+     """
+     try:
+         import cv2
+@@ -118,6 +188,7 @@ def _clock_probe(path, fps=25, max_seconds=180, progress_callback=None):
+         samples = 0
+         first_candidate = None
+         candidate_samples = 0
++        persistence = 0
+         try:
+             while samples < requested_samples:
+                 raw_frame = process.stdout.read(frame_size)
+@@ -125,22 +196,22 @@ def _clock_probe(path, fps=25, max_seconds=180, progress_callback=None):
+                     break
+                 frame = numpy.frombuffer(raw_frame, dtype=numpy.uint8)
+                 frame = frame.reshape((output_height, output_width, 3))
+-                digit_like, orange_ratio, largest_orange_ratio = _clock_components(frame, cv2)
+-                # The clock fills most of the frame with orange and contains
+-                # one very large uninterrupted orange panel.  Programme
+-                # idents can share the palette, but their small fragments do
+-                # not satisfy this combined colour-and-shape signature.
+-                if (digit_like >= 4 and orange_ratio >= 0.50
+-                        and largest_orange_ratio >= 0.18):
++                score, template_score, features = _clock_score(frame, reference, cv2)
++                accepted_frame = score >= 0.78 and template_score >= 0.75
++                if accepted_frame:
+                     candidate_samples += 1
+-                    if first_candidate is None:
++                    persistence += 1
++                    if persistence >= 3 and first_candidate is None:
+                         first_candidate = {
+-                            "components": digit_like,
+-                            "orange_ratio": orange_ratio,
+-                            "largest_orange_ratio": largest_orange_ratio,
+-                            "frame": samples * int(fps),
+-                            "seconds": float(samples),
++                            "score": score,
++                            "template_score": template_score,
++                            "orange_ratio": features["orange_ratio"],
++                            "frame": (samples - 2) * int(fps),
++                            "seconds": float(samples - 2),
++                            "persistence_frames": persistence,
+                         }
++                else:
++                    persistence = 0
+                 samples += 1
+                 if progress_callback:
+                     progress_callback(samples, requested_samples)
+@@ -235,15 +306,42 @@ def validate_title_folder(folder, fps=25, clock_progress=None):
+     if clean_info.get("fps") and program_info.get("fps") and clean_info["fps"] != program_info["fps"]:
+         result["warnings"].append("Los vídeos no tienen la misma cadencia declarada.")
+ 
+-    # Scan both feeds instead of assuming a clock is visible on their first
+-    # frame.  Exact digits and the resulting origin timecode remain OCR work.
++    # Use CLEAN around 01:23 as the source of truth for the shared visual
++    # clock layout before scanning either feed. Exact digits remain OCR work.
++    try:
++        import cv2
++        import numpy
++        ffmpeg = _ffmpeg_path()
++        reference = _extract_clock_reference(
++            result["files"]["clean"], ffmpeg, cv2, numpy) if ffmpeg else None
++    except Exception:
++        reference = None
++    if reference is None:
++        result["warnings"].append(
++            "No se ha podido extraer la plantilla del reloj cerca de 01:23 en CLEAN.MP4.")
++        result["clock_reference"] = {"available": False}
++    else:
++        result["clock_reference"] = {
++            "available": True,
++            "second": reference["second"],
++            "aspect": reference["features"]["aspect"],
++            "area_ratio": reference["features"]["area_ratio"],
++        }
++
++    # Scan both feeds against the CLEAN reference. Exact digits and the
++    # resulting origin timecode remain OCR work.
+     for file_index, key in enumerate(("clean", "program")):
+         def update_progress(completed, total, current_key=key, current_index=file_index):
+             if clock_progress:
+                 clock_progress(current_key, current_index, completed, total)
+ 
+-        result["clock_probes"][key] = _clock_probe(
+-            result["files"][key], fps=fps, progress_callback=update_progress)
++        if reference is None:
++            result["clock_probes"][key] = {
++                "candidate": False, "reason": "reference_unavailable", "samples": 0}
++        else:
++            result["clock_probes"][key] = _clock_probe(
++                result["files"][key], reference, fps=fps,
++                progress_callback=update_progress)
+     result["clock_probe"] = result["clock_probes"]["program"]
+     result["clock_candidate"] = any(
+         probe.get("candidate") for probe in result["clock_probes"].values())
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 6ac3e49bc..8750ec6af 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.50"
++SMOUK_VERSION = "0.0.51"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ 
+ 
+-- 
+2.55.0.windows.3
+

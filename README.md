@@ -485,6 +485,17 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   fotogramas validados, la careta tenía 15,4 % y 5,9 %; el reloj real, 61,7 %
   y 28,0 % respectivamente.
 
+### 0.0.51
+
+- El detector deja de decidir por un umbral de color. Extrae automáticamente
+  de `CLEAN.MP4` una plantilla de referencia en una ventana centrada en
+  01:23 y compara cada muestra mediante color, forma, área, relación de
+  aspecto y `cv2.matchTemplate`.
+- La puntuación compuesta pondera color (25 %), forma (15 %), plantilla
+  (45 %) y área (15 %). Solo acepta el reloj cuando supera los mínimos de
+  puntuación y plantilla durante tres muestras consecutivas, descartando las
+  caretas de aspecto parecido.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

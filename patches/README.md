@@ -58,6 +58,7 @@ corresponding repository.
 | `0050-SMOUK-0.0.48-ffmpeg-clock-reference-detector.patch` | **openshot-qt** | Uses FFmpeg to extract broadcast MP4 samples and detects the reference clock through its white numerals and saturated orange panels. |
 | `0051-SMOUK-0.0.49-clock-progress-and-false-positive-fix.patch` | **openshot-qt** | Adds live two-video clock-scan progress in the Titles dock and requires a large orange clock-panel footprint to reject false positives. |
 | `0052-SMOUK-0.0.50-clock-colour-shape-signature.patch` | **openshot-qt** | Uses the reference clock's total orange coverage and largest contiguous orange panel to reject programme-ident false positives. |
+| `0053-SMOUK-0.0.51-reference-template-clock-matching.patch` | **openshot-qt** | Extracts the CLEAN clock reference near 01:23 and combines colour, geometry, area, aspect, OpenCV template matching, and temporal persistence for final clock detection. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply
