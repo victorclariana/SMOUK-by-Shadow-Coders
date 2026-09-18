@@ -1,0 +1,134 @@
+From 0cdf3b636aef76aee3e70a46dca6e459bdc6927d Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 18 Sep 2026 19:00:28 +0200
+Subject: [PATCH] SMOUK 0.0.59 use corporate-safe project saves
+
+---
+ src/classes/project_data.py    | 32 ++++++++++++++++++++++----------
+ src/tests/test_project_data.py | 24 ++++++++++++++++++++++++
+ src/windows/main_window.py     | 13 +++++++------
+ 3 files changed, 53 insertions(+), 16 deletions(-)
+
+diff --git a/src/classes/project_data.py b/src/classes/project_data.py
+index a193ce3c0..b70938724 100644
+--- a/src/classes/project_data.py
++++ b/src/classes/project_data.py
+@@ -1188,16 +1188,25 @@ class ProjectDataStore(JsonDataStore, UpdateInterface):
+             points[0].get("co", {}).get("Y", default_value) != default_value,
+         ])
+ 
+-    def save(self, file_path, backup_only=False):
+-        """ Save project file to disk """
++    def save(self, file_path, backup_only=False, skip_asset_migration=False):
++        """Save project data, optionally without touching the asset tree.
++
++        ``skip_asset_migration`` is used by SMOUK's corporate-safe save path.
++        A project file only needs its JSON document written; copying the
++        temporary thumbnail/title/proxy trees can look like bulk file
++        encryption to endpoint protection and is not required for SMOUK's
++        externally stored media and generated SVG titles.
++        """
+         import openshot
+ 
+         log.info("Saving project file: %s", file_path)
+ 
+         # Move all temp files (i.e. Blender Animations, Titles, Thumbnails, Protobuf files) to the project folder
+-        if not backup_only:
++        if not backup_only and not skip_asset_migration:
+             self.move_temp_paths_to_project_folder(
+                 file_path, previous_path=self.current_filepath)
++        elif not backup_only:
++            log.info("SMOUK safe save: asset migration skipped for %s", file_path)
+ 
+         # Append version info
+         self._data["version"] = {"openshot-qt": info.VERSION,
+@@ -1215,13 +1224,16 @@ class ProjectDataStore(JsonDataStore, UpdateInterface):
+             self.current_filepath = file_path
+ 
+             # Update info paths to assets folders
+-            info.THUMBNAIL_PATH = os.path.join(get_assets_path(self.current_filepath), "thumbnail")
+-            info.TITLE_PATH = os.path.join(get_assets_path(self.current_filepath), "title")
+-            info.BLENDER_PATH = os.path.join(get_assets_path(self.current_filepath), "blender")
+-            info.PROTOBUF_DATA_PATH = os.path.join(get_assets_path(self.current_filepath), "protobuf_data")
+-            info.CLIPBOARD_PATH = os.path.join(get_assets_path(self.current_filepath), "clipboard")
+-            info.COMFYUI_OUTPUT_PATH = os.path.join(get_assets_path(self.current_filepath), "comfyui-output")
+-            info.PROXY_PATH = os.path.join(get_assets_path(self.current_filepath), "optimized")
++            # Do not create an asset directory as a side effect of saving. The
++            # directories are made on demand by the feature that needs one.
++            assets_path = get_assets_path(self.current_filepath, create_paths=False)
++            info.THUMBNAIL_PATH = os.path.join(assets_path, "thumbnail")
++            info.TITLE_PATH = os.path.join(assets_path, "title")
++            info.BLENDER_PATH = os.path.join(assets_path, "blender")
++            info.PROTOBUF_DATA_PATH = os.path.join(assets_path, "protobuf_data")
++            info.CLIPBOARD_PATH = os.path.join(assets_path, "clipboard")
++            info.COMFYUI_OUTPUT_PATH = os.path.join(assets_path, "comfyui-output")
++            info.PROXY_PATH = os.path.join(assets_path, "optimized")
+ 
+             self.add_to_recent_files(file_path)
+             self.has_unsaved_changes = False
+diff --git a/src/tests/test_project_data.py b/src/tests/test_project_data.py
+index 172427aa6..fa8d8a646 100644
+--- a/src/tests/test_project_data.py
++++ b/src/tests/test_project_data.py
+@@ -1329,3 +1329,27 @@ class ProjectDataTests(unittest.TestCase):
+                 ProjectDataStore.save(store, project_path)
+                 from classes import info
+                 self.assertEqual(info.PROTOBUF_DATA_PATH, os.path.join(asset_path, "protobuf_data"))
++
++    def test_safe_save_skips_asset_migration_and_asset_directory_creation(self):
++        """SMOUK saves only its project JSON on endpoint-protected machines."""
++        store = make_store()
++        project_path = os.path.join(os.getcwd(), "safe-save-test.osp")
++        asset_path = os.path.join(os.getcwd(), "safe-save-test_assets")
++        store._data = {"files": [], "effects": [], "clips": []}
++        calls = []
++
++        def assets_path(path, create_paths=True):
++            calls.append(create_paths)
++            return asset_path
++
++        with ExitStack() as stack:
++            stack.enter_context(patch("classes.project_data.get_assets_path", assets_path))
++            stack.enter_context(patch.object(
++                store, "move_temp_paths_to_project_folder",
++                side_effect=AssertionError("asset migration must not run")))
++            stack.enter_context(patch.object(store, "write_to_file", lambda *args, **kwargs: None))
++            stack.enter_context(patch.object(store, "add_to_recent_files", lambda file_path: None))
++            ProjectDataStore.save(store, project_path, skip_asset_migration=True)
++
++        self.assertEqual(calls, [False])
++        self.assertFalse(os.path.exists(asset_path))
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 070af6722..037f13097 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.58"
++SMOUK_VERSION = "0.0.59"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_RECOVERY_CHYRON_LIMIT = 40
+ 
+@@ -643,11 +643,12 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+                 s = app.get_settings()
+                 app.updates.save_history(app.project, s.get("history-limit"))
+ 
+-                # Save recovery file
+-                self.save_recovery(file_path)
+-
+-                # Save project to file
+-                app.project.save(file_path)
++                # SMOUK keeps media and generated titles at their existing
++                # paths.  Its project save is deliberately a single plain JSON
++                # write: no ZIP recovery archive and no bulk asset migration.
++                # Those write bursts were blocked by corporate endpoint
++                # protection as unauthorised encryption.
++                app.project.save(file_path, skip_asset_migration=True)
+ 
+                 log.info("Saved project %s", file_path)
+                 self.ProjectSaved.emit(file_path)
+-- 
+2.55.0.windows.3
+

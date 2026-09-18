@@ -551,6 +551,18 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - El cursor de espera de **Guardar como** se libera siempre al terminar el
   guardado, incluso si OpenShot informa de un error.
 
+### 0.0.59
+
+- El guardado de SMOUK deja de crear, copiar, mover, comprimir o borrar árboles
+  de recursos. Escribe únicamente el fichero `.osp` JSON y conserva las rutas
+  de los vídeos y SVG generados, evitando la actividad masiva que activaba la
+  protección corporativa contra cifrado no autorizado.
+- Las carpetas de recursos se crearán solamente cuando una función las necesite,
+  nunca como efecto lateral de **Guardar** o **Guardar como**.
+- El lanzador también puede usar `python3.14.exe`, el ejecutable versionado del
+  paquete oficial firmado de MSYS2, si la protección elimina los alias
+  `python.exe` o `python3.exe`.
+
 ### 0.0.57
 
 - Protege New, Open y Save frente a backups generados por las versiones de OCR
