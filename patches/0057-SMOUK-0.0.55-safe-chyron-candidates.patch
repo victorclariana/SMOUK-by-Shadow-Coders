@@ -1,0 +1,230 @@
+From 21e8fd17591cb5b065c7b8da1b9ff2545ee1c8ce Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 18 Sep 2026 04:59:17 +0200
+Subject: [PATCH] SMOUK 0.0.55 prevent false chyron flood
+
+---
+ src/classes/smouk_titles.py    | 22 ++++-----
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 83 +++++++++++++++++++++++-----------
+ 3 files changed, 66 insertions(+), 41 deletions(-)
+
+diff --git a/src/classes/smouk_titles.py b/src/classes/smouk_titles.py
+index 03ab9c409..1273c1673 100644
+--- a/src/classes/smouk_titles.py
++++ b/src/classes/smouk_titles.py
+@@ -11,11 +11,12 @@ import re
+ import shutil
+ import subprocess
+ import sys
+-import uuid
++import threading
+ 
+ 
+ TIMECODE_RE = re.compile(r"^(?P<h>\d{1,2}):(?P<m>[0-5]\d):(?P<s>[0-5]\d)(?::(?P<f>\d{1,2}))?$")
+ CLOCK_OCR_RE = re.compile(r"(?<!\d)([0-2]?\d)\s*[.:]\s*([0-5]\d)\s*[.:]\s*([0-5]\d)(?!\d)")
++_OCR_IMAGE_LOCK = threading.Lock()
+ 
+ 
+ def parse_timecode(value, fps=25):
+@@ -102,14 +103,14 @@ def ocr_image(image, psm=6, language=None):
+         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+         gray = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+         gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
+-        # The bundled Windows Python can inherit a protected TEMP directory
+-        # from the broadcast environment. Keep transient OCR files beside the
+-        # writable SMOUK resources instead.
+-        temporary_root = os.path.normpath(os.path.join(
+-            os.path.dirname(__file__), "..", "resources", "smouk-ocr-tmp"))
++        # Reuse one file in the user's local SMOUK cache. The prior approach
++        # created and deleted a PNG for every frame, which can trip endpoint
++        # protection and is unnecessary because Tesseract runs serially here.
++        temporary_root = os.path.join(
++            os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "SMOUK", "ocr")
+         os.makedirs(temporary_root, exist_ok=True)
+-        image_path = os.path.join(temporary_root, "ocr-%s.png" % uuid.uuid4().hex)
+-        try:
++        image_path = os.path.join(temporary_root, "current-ocr.png")
++        with _OCR_IMAGE_LOCK:
+             if not cv2.imwrite(image_path, gray):
+                 return {"text": "", "reason": "ocr_image_write_failed"}
+             environment = os.environ.copy()
+@@ -120,11 +121,6 @@ def ocr_image(image, psm=6, language=None):
+                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                 encoding="utf-8", errors="replace",
+                 timeout=45, check=False, env=environment)
+-        finally:
+-            try:
+-                os.remove(image_path)
+-            except OSError:
+-                pass
+         return {"text": completed.stdout.strip(), "language": language,
+                 "reason": "" if completed.returncode == 0 else "tesseract_failed: " + completed.stderr.strip()[-500:]}
+     except Exception as exc:
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index e99d9cd12..1dec63ddb 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.54"
++SMOUK_VERSION = "0.0.55"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ 
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index ff3b7db19..da79ef31c 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -31,6 +31,7 @@ import uuid
+ import functools
+ import time
+ import threading
++from difflib import SequenceMatcher
+ 
+ from qt_api import (
+     Qt, QtCore, QWidget, QFrame, QLabel, QScrollArea, QToolButton, QVBoxLayout,
+@@ -53,6 +54,9 @@ from classes.smouk_titles import (
+ 
+ 
+ VERTICALIZATION_DOCK_MIN_WIDTH = 320
++CHYRON_SAMPLE_SECONDS = 5
++MIN_CHYRON_SAMPLES = 2
++MAX_CHYRON_EVENTS = 40
+ 
+ # OpenShot ships these profiles. SMOUK exposes the supported output choices
+ # without changing the 16:9 editing project.
+@@ -706,9 +710,28 @@ class VerticalizationDockContent(QWidget):
+ 
+     @staticmethod
+     def _normalise_chyron_text(text):
+-        lines = [" ".join(line.split()) for line in str(text or "").splitlines()]
+-        lines = [line for line in lines if len(line) >= 3 and not re.fullmatch(r"[\W_]+", line)]
+-        return "\n".join(lines[:2]).strip()
++        """Keep only an OCR line with enough language-like content for a title."""
++        candidates = []
++        for line in str(text or "").splitlines():
++            line = " ".join(line.split()).strip()
++            letters = re.sub(r"[^A-Za-zÀ-ÖØ-öø-ÿ]", "", line)
++            words = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ]{3,}", line)
++            if len(letters) < 8 or not words:
++                continue
++            uppercase = sum(character.isupper() for character in letters)
++            score = len(letters) + 12 * uppercase / max(1, len(letters))
++            candidates.append((score, line))
++        return max(candidates, default=(0, ""))[1]
++
++    @staticmethod
++    def _same_chyron_text(left, right):
++        if not left or not right:
++            return False
++        left = re.sub(r"[^a-zà-öø-ÿ ]", "", left.casefold())
++        right = re.sub(r"[^a-zà-öø-ÿ ]", "", right.casefold())
++        if left == right:
++            return True
++        return SequenceMatcher(None, left, right).ratio() >= 0.82
+ 
+     def _scan_chyrons(self, program_path, program_start, duration, program_origin,
+                       clip_in, assets, progress):
+@@ -717,16 +740,16 @@ class VerticalizationDockContent(QWidget):
+         import numpy
+         ffmpeg = self._ffmpeg_path()
+         width, height = 960, 540
+-        sample_count = max(1, int(duration))
++        sample_count = max(1, int(duration / CHYRON_SAMPLE_SECONDS))
+         command = [ffmpeg, "-v", "error", "-ss", "%.3f" % max(0.0, program_start),
+                    "-t", "%.3f" % max(0.1, duration), "-i", program_path, "-vf",
+-                   "fps=1,scale=%d:%d:flags=bilinear" % (width, height), "-an",
++                   "fps=1/%d,scale=%d:%d:flags=bilinear" %
++                   (CHYRON_SAMPLE_SECONDS, width, height), "-an",
+                    "-frames:v", str(sample_count), "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1"]
+         regions = {"location": (0, 0, int(width * .55), int(height * .38)),
+-                   "lower_third": (0, int(height * .54), width, height)}
+-        os.makedirs(assets, exist_ok=True)
++                   "lower_third": (0, int(height * .66), width, int(height * .94))}
+         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+-        previous_images, active, events = {}, {}, []
++        active, events = {}, []
+         frame_size = width * height * 3
+         try:
+             for index in range(sample_count):
+@@ -741,18 +764,11 @@ class VerticalizationDockContent(QWidget):
+                 if len(raw) != frame_size:
+                     raise RuntimeError("FFmpeg: lectura incompleta en el segundo %s" % index)
+                 frame = numpy.frombuffer(raw, dtype=numpy.uint8).reshape((height, width, 3))
+-                source_second = program_start + index
++                source_second = program_start + index * CHYRON_SAMPLE_SECONDS
+                 absolute_frame = int(program_origin + source_second * 25)
++                sample_frames = CHYRON_SAMPLE_SECONDS * 25
+                 for template, (x1, y1, x2, y2) in regions.items():
+                     crop = frame[y1:y2, x1:x2]
+-                    fingerprint = cv2.resize(cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY), (96, 54))
+-                    previous = previous_images.get(template)
+-                    changed = previous is None or cv2.absdiff(fingerprint, previous).mean() > 7.0
+-                    previous_images[template] = fingerprint
+-                    if not changed:
+-                        if template in active:
+-                            active[template]["end_frame"] = absolute_frame + 25
+-                        continue
+                     progress("OCR %s: segundo %s/%s, leyendo texto…" % (template, index + 1, sample_count),
+                              55 + int(40 * index / sample_count), 100)
+                     reading = ocr_image(crop, psm=6)
+@@ -761,30 +777,43 @@ class VerticalizationDockContent(QWidget):
+                     text = self._normalise_chyron_text(reading.get("text"))
+                     if not text:
+                         if template in active:
+-                            events.append(active.pop(template))
++                            candidate = active.pop(template)
++                            if candidate["samples"] >= MIN_CHYRON_SAMPLES:
++                                events.append(candidate)
+                         continue
+                     old = active.get(template)
+-                    if old and old["normalised"] == text.casefold():
+-                        old["end_frame"] = absolute_frame + 25
++                    if old and self._same_chyron_text(old["text"], text):
++                        old["end_frame"] = absolute_frame + sample_frames
++                        old["samples"] += 1
++                        if len(text) > len(old["text"]):
++                            old["text"] = text
++                            old["normalised"] = text.casefold()
+                         continue
+                     if old:
+-                        events.append(active.pop(template))
+-                    reference_path = os.path.join(assets, "chyron-%s-%06d.png" % (template, index))
+-                    cv2.imwrite(reference_path, crop)
++                        candidate = active.pop(template)
++                        if candidate["samples"] >= MIN_CHYRON_SAMPLES:
++                            events.append(candidate)
+                     active[template] = {"text": text, "normalised": text.casefold(),
+                                         "template": template, "coordinates": [x1, y1, x2, y2],
+-                                        "start_frame": absolute_frame, "end_frame": absolute_frame + 25,
+-                                        "confidence": 0.65, "reference_image": reference_path,
++                                        "start_frame": absolute_frame,
++                                        "end_frame": absolute_frame + sample_frames,
++                                        "samples": 1, "confidence": 0.75,
++                                        "reference_image": "",
+                                         "review_status": "pending"}
+-                if index % 5 == 0:
++                if index % 2 == 0:
+                     progress("OCR de rótulos: %s de %s segundos." % (index + 1, sample_count),
+                                          55 + int(40 * (index + 1) / sample_count), 100)
+-            events.extend(active.values())
++            events.extend(candidate for candidate in active.values()
++                          if candidate["samples"] >= MIN_CHYRON_SAMPLES)
+         finally:
+             if process.poll() is None:
+                 process.kill()
+             process.wait(timeout=10)
+             process.stdout.close()
++        if len(events) > MAX_CHYRON_EVENTS:
++            raise RuntimeError(
++                "Se han detectado %s candidatos; el límite seguro es %s. "
++                "No se han creado títulos." % (len(events), MAX_CHYRON_EVENTS))
+         return events
+ 
+     def _place_chyrons(self, events, duration, clip_in):
+-- 
+2.55.0.windows.3
+

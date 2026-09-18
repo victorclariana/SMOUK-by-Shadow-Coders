@@ -540,6 +540,19 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   la sincronización calcula cortes relativos sin tocar el Timeline hasta que
   ambos relojes y el intervalo han pasado sus comprobaciones.
 
+### 0.0.55
+
+- Corrige el análisis que creó cientos de títulos inválidos. La imagen de vídeo
+  cambiaba en cada segundo y se interpretaba erróneamente como un rótulo nuevo.
+  Ahora el OCR analiza una muestra cada cinco segundos y un texto debe ser
+  consistente durante al menos dos muestras antes de convertirse en chyron.
+- El análisis se realiza completamente en memoria: no guarda recortes de cada
+  candidato. Solo se generan SVG cuando un título ha pasado la validación y el
+  bloque limita el resultado a 40 chyrons; si se supera, no se escribe ninguno.
+- Tesseract reutiliza un único archivo temporal en `%LOCALAPPDATA%\\SMOUK\\ocr`
+  en vez de crear y borrar un PNG por cada lectura. Esto reduce drásticamente
+  la actividad de disco que provocó la alerta de protección del equipo.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:

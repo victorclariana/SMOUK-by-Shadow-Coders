@@ -175,9 +175,9 @@ def real_media_check(folder):
     print('REAL_CLOCK_RESULT', json.dumps(events, ensure_ascii=False), 'UI ticks:', ticks, flush=True)
     assert not events[0].get('error'), events
     worker.wait()
-    # Exercise both cropped OCR regions on real news footage, independent of recognition quality.
+    # Exercise the throttled, in-memory OCR scan on real news footage.
     scan_events = []
-    scan = v.SmoukChyronOcrWorker(dock, (result['files']['program'], 118, 8, 0, 0,
+    scan = v.SmoukChyronOcrWorker(dock, (result['files']['program'], 118, 30, 0, 0,
                                           str(ROOT / 'logs/title-runtime-test-assets/real')))
     scan.stage.connect(lambda message, value, maximum: print(message, flush=True))
     scan.completed.connect(scan_events.append)
@@ -188,6 +188,7 @@ def real_media_check(folder):
         ticks += 1
     scan.wait()
     assert not scan_events[0].get('error'), scan_events
+    assert len(scan_events[0]['events']) <= v.MAX_CHYRON_EVENTS
     print('REAL_CHYRON_RESULT', len(scan_events[0]['events']), 'events; UI ticks:', ticks, flush=True)
     (ROOT / 'logs/title-runtime-result.json').write_text(json.dumps(
         {'clocks': events, 'scan': scan_events,
