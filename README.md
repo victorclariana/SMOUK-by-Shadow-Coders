@@ -540,6 +540,17 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   la sincronización calcula cortes relativos sin tocar el Timeline hasta que
   ambos relojes y el intervalo han pasado sus comprobaciones.
 
+### 0.0.58
+
+- Se corrigió el bloqueo al usar **Guardar como**: el proyecto y sus recursos
+  se guardan en el hilo de la interfaz de Qt, que es el único seguro para
+  OpenShot y libopenshot.
+- El autoguardado de proyectos ya guardados usa el mismo camino seguro, por lo
+  que no inicia una segunda escritura concurrente mientras se está moviendo o
+  registrando un recurso.
+- El cursor de espera de **Guardar como** se libera siempre al terminar el
+  guardado, incluso si OpenShot informa de un error.
+
 ### 0.0.57
 
 - Protege New, Open y Save frente a backups generados por las versiones de OCR

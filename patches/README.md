@@ -65,6 +65,7 @@ corresponding repository.
 | `0057-SMOUK-0.0.55-safe-chyron-candidates.patch` | **openshot-qt** | Prevents per-frame false chyron creation through throttled, persistent text candidates, a hard title limit, and one reusable OCR cache image instead of per-frame temporary files. |
 | `0058-SMOUK-0.0.56-hot-zone-catalan-chyron-ocr.patch` | **openshot-qt** | Restricts title OCR to TNM's upper-left and lower title bands, uses stable visual masks to OCR each title once in Catalan, and bumps SMOUK to 0.0.56. |
 | `0059-SMOUK-0.0.57-isolate-unstable-chyron-backups.patch` | **openshot-qt** | Preserves and isolates recovery backups containing an unsafe number of legacy generated chyrons so New, Open, and Save start from a stable project. |
+| `0060-SMOUK-0.0.58-save-project-on-qt-thread.patch` | **openshot-qt** | Keeps Save As and autosave on the Qt thread because OpenShot project assets are not safe to migrate from detached Python threads, and balances the save cursor. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

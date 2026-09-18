@@ -1,0 +1,67 @@
+From f356f94c2a704903f2f446ce950389ed57355b48 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 18 Sep 2026 17:42:27 +0200
+Subject: [PATCH] SMOUK 0.0.58 save projects on Qt thread
+
+---
+ src/windows/main_window.py | 23 ++++++++++++++++++++---
+ 1 file changed, 20 insertions(+), 3 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 907d1d1f9..070af6722 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.57"
++SMOUK_VERSION = "0.0.58"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_RECOVERY_CHYRON_LIMIT = 40
+ 
+@@ -656,6 +656,21 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+                 log.error("Couldn't save project %s", file_path, exc_info=1)
+                 self.ProjectSaveFailed.emit(file_path, str(ex))
+ 
++    def _save_project_from_dialog(self, file_path):
++        """Save on the Qt thread after a native save dialog closes.
++
++        ProjectData changes its asset paths while saving.  That work touches
++        Qt/libopenshot state and must never run from a detached Python thread.
++        Keeping it here also pairs the temporary cursor with a guaranteed
++        release, including save failures.
++        """
++        log.info("Saving project on GUI thread: %s", file_path)
++        self._acquire_wait_cursor()
++        try:
++            self.save_project(file_path)
++        finally:
++            self._release_wait_cursor()
++
+     @pyqtSlot(str)
+     def _on_project_saved(self, file_path):
+         """Update UI after a project save completes."""
+@@ -978,7 +993,9 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+ 
+             # Save project
+             log.info("Auto save project file: %s", file_path)
+-            threading.Thread(target=self.save_project, args=(file_path,), daemon=True).start()
++            # ProjectData and its asset migration are not thread-safe.  The
++            # autosave timer already runs on the Qt thread, so save directly.
++            self.save_project(file_path)
+ 
+             # Remove backup.osp (if any)
+             if os.path.exists(info.BACKUP_FILE):
+@@ -1010,7 +1027,7 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+             if not path:
+                 return
+             s.setDefaultPath(s.actionType.SAVE, path)
+-            threading.Thread(target=self.save_project, args=(ensure_extension(path, ".osp"),), daemon=True).start()
++            self._save_project_from_dialog(ensure_extension(path, ".osp"))
+ 
+         recommended_folder = s.getDefaultPath(s.actionType.SAVE)
+         show_save_file_dialog(
+-- 
+2.55.0.windows.3
+
