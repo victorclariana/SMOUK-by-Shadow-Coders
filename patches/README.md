@@ -61,6 +61,7 @@ corresponding repository.
 | `0053-SMOUK-0.0.51-reference-template-clock-matching.patch` | **openshot-qt** | Extracts the CLEAN clock reference near 01:23 and combines colour, geometry, area, aspect, OpenCV template matching, and temporal persistence for final clock detection. |
 | `0054-SMOUK-0.0.52-automatic-ocr-title-import.patch` | **openshot-qt** | Runs clock OCR and feed synchronisation after selecting a valid folder, imports the calculated CLEAN interval in Track 2, and reconstructs stable title-region OCR results as editable SVG clips in `CHYRONS`. |
 | `0055-SMOUK-0.0.53-asynchronous-clock-ocr-trace.patch` | **openshot-qt** | Moves FFmpeg and Tesseract clock OCR off the Qt UI thread and adds a visible per-stage Titles trace plus log diagnostics. |
+| `0056-SMOUK-0.0.54-title-statusbar-crash-fix.patch` | **openshot-qt** | Fixes the reproduced non-callable QStatusBar crash before OCR startup, guards Qt callbacks, preserves error diagnostics, moves chyron analysis off the UI thread, and reads the accepted clock frames with local English digit OCR. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

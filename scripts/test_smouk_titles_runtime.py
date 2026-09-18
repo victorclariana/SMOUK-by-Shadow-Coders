@@ -1,0 +1,207 @@
+"""Qt regression checks; optional read-only FFmpeg/Tesseract checks on real media.
+
+Run with the same MinGW Python as run_smouk.bat. No user project is loaded.
+"""
+import argparse
+import json
+import os
+from pathlib import Path
+import sys
+import time
+from types import SimpleNamespace
+import unittest
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+DLL_HANDLES = [os.add_dll_directory(str(path)) for path in (
+    Path(r"C:\msys64\mingw64\bin"), ROOT / "libopenshot/build/src",
+    ROOT / "libopenshot-audio/build") if path.is_dir()]
+sys.path[:0] = [str(ROOT / "openshot-qt/src"), str(ROOT / "libopenshot/build/bindings/python")]
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ["OPENSHOT_QT_API"] = "pyqt5"
+from qt_api import QtCore, QApplication, QWidget, QLabel, QPushButton, QProgressBar, QMainWindow, QStatusBar
+from windows import verticalization as v
+
+APP = QApplication.instance() or QApplication([])
+
+
+class TestDock(v.VerticalizationDockContent):
+    """Real title callbacks/widgets with project writes replaced by observations."""
+    def __init__(self):
+        QWidget.__init__(self)
+        self.title_clock_progress = QProgressBar(self)
+        self.title_clock_status = QLabel(self)
+        self.title_folder_results = QLabel(self)
+        self.btn_browse_title_folder = QPushButton(self)
+        self._title_trace = []
+        self._title_busy = False
+        self._title_workers = []
+        self._title_heartbeat = QtCore.QTimer(self)
+        self._title_heartbeat.setInterval(100)
+        self._title_heartbeat.timeout.connect(self._on_title_heartbeat)
+        self.title_analysis_data = {}
+        self.imports = []
+
+    def _clear_generated_title_import(self):
+        pass
+
+    def _add_clean_feed_clip(self, *args):
+        self.imports.append(args)
+
+    def _subtitle_asset_directory(self):
+        return str(ROOT / 'logs/title-runtime-test-assets')
+
+
+def result_fixture():
+    return {"files": {"clean": "CLEAN.mp4", "program": "PROGRAMA.mp4"},
+            "clock_probes": {key: {"candidate": True, "seconds": 0} for key in ("clean", "program")},
+            "timecodes": {"clip_in_frames": 100, "clip_out_frames": 150}}
+
+
+def wait_for_workers(dock, seconds=240):
+    deadline = time.monotonic() + seconds
+    ticks = 0
+    while (dock._title_workers or dock._title_busy) and time.monotonic() < deadline:
+        APP.processEvents()
+        time.sleep(.01)
+        ticks += 1
+    assert not dock._title_workers, 'Worker timeout'
+    assert not dock._title_busy, 'Pipeline did not release busy state'
+    return ticks
+
+
+class TitleRuntimeTests(unittest.TestCase):
+    def setUp(self):
+        self.window = QMainWindow()
+        self.window.statusBar = QStatusBar(self.window)  # OpenShot stores a widget, not a method.
+        self.window.setStatusBar(self.window.statusBar)
+        self.window.refreshFilesSignal = SimpleNamespace(emit=lambda: None)
+        self.window.refreshFrameSignal = SimpleNamespace(emit=lambda: None)
+        self.context = SimpleNamespace(
+            window=self.window, _tr=lambda value: value,
+            project=SimpleNamespace(current_filepath=''))
+        self.patch_app = patch.object(v, 'get_app', return_value=self.context)
+        self.patch_app.start()
+        self.dock = TestDock()
+
+    def tearDown(self):
+        self.patch_app.stop()
+        self.dock.deleteLater()
+        self.window.deleteLater()
+        APP.processEvents()
+
+    def test_progress_accepts_openshot_status_widget(self):
+        self.dock._title_progress('CLEAN: reading clock', 0, 100)
+        self.assertEqual(self.window.statusBar.currentMessage(), 'CLEAN: reading clock')
+        self.assertIn('CLEAN: reading clock', self.dock.title_folder_results.text())
+
+    def test_button_signal_boolean_is_accepted(self):
+        with patch.object(v.QFileDialog, 'getExistingDirectory', return_value=''):
+            self.dock._on_browse_title_folder(False)
+        self.assertFalse(self.dock._title_busy)
+
+    def test_callback_error_is_visible_and_releases_ui(self):
+        self.dock._title_pending_result = {}  # Deliberate malformed worker payload.
+        self.dock._title_busy = True
+        self.dock.btn_browse_title_folder.setEnabled(False)
+        self.dock._on_title_clock_ocr_completed({})
+        self.assertIn("Error en _on_title_clock_ocr_completed", self.dock.title_folder_results.text())
+        self.assertFalse(self.dock._title_busy)
+        self.assertTrue(self.dock.btn_browse_title_folder.isEnabled())
+
+    def test_clock_failure_preserves_reason(self):
+        self.dock._title_pending_result = result_fixture()
+        self.dock._on_title_clock_ocr_completed({'error': 'Tesseract timeout'})
+        self.assertIn('Tesseract timeout', self.dock.title_folder_results.text())
+        self.assertFalse(self.dock.imports)
+
+    def test_title_scan_error_is_not_reported_as_success(self):
+        self.dock._on_title_chyrons_completed({'error': 'FFmpeg incomplete frame'})
+        self.assertIn('FFmpeg incomplete frame', self.dock.title_folder_results.text())
+        self.assertNotIn('Proceso terminado:', self.dock.title_folder_results.text())
+
+    def test_clock_and_chyron_work_are_off_ui_thread(self):
+        worker_threads = []
+        def clock(*args):
+            worker_threads.append(QtCore.QThread.currentThread() != APP.thread())
+            time.sleep(.15)
+            return {'frames': 0, 'text': '00:00:00'}
+        def scan(*args, **kwargs):
+            worker_threads.append(QtCore.QThread.currentThread() != APP.thread())
+            time.sleep(.15)
+            return []
+        with patch.object(v, 'available_ocr_language', return_value='cat'), \
+                patch.object(self.dock, '_ocr_clock_at', side_effect=clock), \
+                patch.object(self.dock, '_scan_chyrons', side_effect=scan), \
+                patch.object(self.dock, '_place_chyrons', return_value=([], 0)):
+            self.dock._run_title_reconstruction(result_fixture())
+            self.assertFalse(self.dock.btn_browse_title_folder.isEnabled())
+            ticks = wait_for_workers(self.dock)
+        self.assertGreater(ticks, 10)
+        self.assertEqual(worker_threads, [True, True, True])
+        self.assertEqual(len(self.dock.imports), 1)
+        self.assertIn('Proceso terminado', self.dock.title_folder_results.text())
+
+    def test_media_bounds_prevent_import(self):
+        result = result_fixture()
+        result['files']['clean_info'] = {'duration': 2}
+        self.dock._title_pending_result = result
+        clock = {'frames': 0, 'text': '00:00:00'}
+        self.dock._on_title_clock_ocr_completed({'clean': clock, 'program': clock})
+        self.assertFalse(self.dock.imports)
+        self.assertIn('fuera de CLEAN', self.dock.title_folder_results.text())
+
+
+def real_media_check(folder):
+    from classes.smouk_titles import validate_title_folder
+    import cv2
+    result = validate_title_folder(str(folder), clock_progress=lambda key, idx, n, total:
+                                   print(key, n, '/', total, flush=True) if n % 60 == 0 else None)
+    for key, probe in result['clock_probes'].items():
+        frame = probe.get('clock_frame')
+        if frame is not None:
+            cv2.imwrite(str(ROOT / ('logs/accepted-clock-%s.png' % key)), frame)
+    dock = TestDock()
+    events = []
+    worker = v.SmoukClockOcrWorker(dock, result['files'], result['clock_probes'])
+    worker.stage.connect(lambda message: print(message, flush=True))
+    worker.completed.connect(events.append)
+    worker.start()
+    ticks = 0
+    while worker.isRunning() or not events:
+        APP.processEvents()
+        time.sleep(.01)
+        ticks += 1
+    print('REAL_CLOCK_RESULT', json.dumps(events, ensure_ascii=False), 'UI ticks:', ticks, flush=True)
+    assert not events[0].get('error'), events
+    worker.wait()
+    # Exercise both cropped OCR regions on real news footage, independent of recognition quality.
+    scan_events = []
+    scan = v.SmoukChyronOcrWorker(dock, (result['files']['program'], 118, 8, 0, 0,
+                                          str(ROOT / 'logs/title-runtime-test-assets/real')))
+    scan.stage.connect(lambda message, value, maximum: print(message, flush=True))
+    scan.completed.connect(scan_events.append)
+    scan.start()
+    while scan.isRunning() or not scan_events:
+        APP.processEvents()
+        time.sleep(.01)
+        ticks += 1
+    scan.wait()
+    assert not scan_events[0].get('error'), scan_events
+    print('REAL_CHYRON_RESULT', len(scan_events[0]['events']), 'events; UI ticks:', ticks, flush=True)
+    (ROOT / 'logs/title-runtime-result.json').write_text(json.dumps(
+        {'clocks': events, 'scan': scan_events,
+         'validation': {'valid': result['valid'], 'timecodes': result['timecodes']}},
+        ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--media-folder', type=Path)
+    args = parser.parse_args()
+    suite = unittest.defaultTestLoader.loadTestsFromTestCase(TitleRuntimeTests)
+    outcome = unittest.TextTestRunner(verbosity=2).run(suite)
+    if not outcome.wasSuccessful():
+        raise SystemExit(1)
+    if args.media_folder:
+        real_media_check(args.media_folder)

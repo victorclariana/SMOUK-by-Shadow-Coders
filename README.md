@@ -519,6 +519,27 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   de CLEAN, fotograma de PROGRAMA, sincronizaciÃ³n, importaciÃ³n y OCR de
   rÃ³tulos) y cada una se registra tambiÃ©n en `openshot-qt.log`.
 
+### 0.0.54
+
+- Corrige el cierre al comenzar el OCR: `MainWindow.statusBar` es un widget
+  `QStatusBar`, y el código anterior lo llamaba como una función. La excepción
+  se producía al mostrar el primer mensaje, antes de iniciar el trabajador OCR.
+- Protege las entradas y respuestas del proceso de títulos: los errores quedan
+  en el dock y en el log, y se vuelve a habilitar la selección de carpeta.
+  Los mensajes incluyen fase, hora y segundos de espera sin borrar el motivo
+  del fallo. Se impiden ejecuciones simultáneas y el cierre durante el análisis.
+- También ejecuta el análisis de rótulos en segundo plano; mantiene la escritura
+  de clips en el hilo de Qt. Elimina código inalcanzable y un uso de traducción
+  sin definir que ocultaba fallos como si el resultado fuese cero rótulos.
+- Incluye el modelo inglés de Tesseract para los dígitos del reloj y conserva
+  el modelo catalán para texto. El detector entrega al OCR las tres muestras
+  exactas que validó, en lugar de volver a buscar un keyframe distinto.
+- Validación: siete pruebas con widgets y señales reales de Qt, lectura de ambos
+  vídeos y OCR de ocho segundos de PROGRAMA con la interfaz reactiva. Con el
+  material de prueba se han leído `14:28:23` en CLEAN y `14:29:00` en PROGRAMA;
+  la sincronización calcula cortes relativos sin tocar el Timeline hasta que
+  ambos relojes y el intervalo han pasado sus comprobaciones.
+
 ## Desarrollo local
 
 Para iniciar la versión de desarrollo en Windows:
