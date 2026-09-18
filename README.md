@@ -540,6 +540,13 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   la sincronización calcula cortes relativos sin tocar el Timeline hasta que
   ambos relojes y el intervalo han pasado sus comprobaciones.
 
+### 0.0.57
+
+- Protege New, Open y Save frente a backups generados por las versiones de OCR
+  que crearon cientos de chyrons falsos. Si `backup.osp` contiene más de 40
+  assets SMOUK, se conserva en `recovery/smouk-quarantine` y se inicia un
+  proyecto vacío, evitando cargar cientos de lectores SVG en la Timeline.
+
 ### 0.0.56
 
 - El OCR de rótulos ahora ignora la imagen central y analiza solamente la banda

@@ -1,0 +1,86 @@
+From 8c3d551f09f9dc6de5a7ba717b4d8e3a943946e3 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 18 Sep 2026 16:28:27 +0200
+Subject: [PATCH] SMOUK 0.0.57 isolate unstable title backups
+
+---
+ src/windows/main_window.py | 45 ++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 43 insertions(+), 2 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 443351147..907d1d1f9 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,8 +102,9 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.56"
++SMOUK_VERSION = "0.0.57"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
++SMOUK_RECOVERY_CHYRON_LIMIT = 40
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+@@ -310,9 +311,50 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+     def recover_backup(self):
+         """Recover the backup file (if any)"""
+         log.info("recover_backup")
++        _ = get_app()._tr
+ 
+         # Check for backup.osp file
+         if os.path.exists(info.BACKUP_FILE):
++            # Versions before SMOUK 0.0.55 could create hundreds of false
++            # chyron clips. Recovering such a backup creates hundreds of SVG
++            # readers before a user can start a clean project, which makes the
++            # native preview/timeline unstable during New, Open, or Save.
++            # Preserve the backup in Recovery rather than loading it again.
++            try:
++                with open(info.BACKUP_FILE, encoding="utf-8") as backup_file:
++                    backup_data = json.load(backup_file)
++                chyron_assets = sum(
++                    bool(file_data.get("smouk_chyron_asset"))
++                    for file_data in backup_data.get("files", [])
++                    if isinstance(file_data, dict))
++            except (OSError, ValueError, TypeError):
++                chyron_assets = 0
++
++            if chyron_assets > SMOUK_RECOVERY_CHYRON_LIMIT:
++                quarantine_dir = os.path.join(info.RECOVERY_PATH, "smouk-quarantine")
++                os.makedirs(quarantine_dir, exist_ok=True)
++                quarantine_path = os.path.join(
++                    quarantine_dir, "backup-%s-%s-chyrons.osp" %
++                    (int(time()), chyron_assets))
++                try:
++                    shutil.move(info.BACKUP_FILE, quarantine_path)
++                    log.warning(
++                        "SMOUK skipped unstable backup with %s chyrons; preserved at %s",
++                        chyron_assets, quarantine_path)
++                    get_app().project.load("")
++                    self.actionUndo.setEnabled(False)
++                    self.actionRedo.setEnabled(False)
++                    self.actionClearHistory.setEnabled(False)
++                    self.SetWindowTitle()
++                    QMessageBox.warning(
++                        self, _("Recovered backup isolated"),
++                        _("A backup with %s generated titles was isolated because it can "
++                          "destabilize New, Open, and Save. It was preserved at:\n%s") %
++                        (chyron_assets, quarantine_path))
++                    return
++                except OSError:
++                    log.error("Unable to isolate unstable SMOUK backup", exc_info=True)
++
+             # Load recovery project
+             log.info("Recovering backup file: %s" % info.BACKUP_FILE)
+             self.open_project(info.BACKUP_FILE, clear_thumbnails=False)
+@@ -327,7 +369,6 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+ 
+             # Show message to user
+             msg = QMessageBox()
+-            _ = get_app()._tr
+             msg.setWindowTitle(_("Backup Recovered"))
+             msg.setText(_("Your most recent unsaved project has been recovered."))
+             msg.exec_()
+-- 
+2.55.0.windows.3
+
