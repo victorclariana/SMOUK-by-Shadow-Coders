@@ -95,6 +95,13 @@ class TitleRuntimeTests(unittest.TestCase):
         self.assertEqual(self.window.statusBar.currentMessage(), 'CLEAN: reading clock')
         self.assertIn('CLEAN: reading clock', self.dock.title_folder_results.text())
 
+    def test_chyron_hot_zones_exclude_the_central_picture(self):
+        regions = self.dock._chyron_regions(960, 540)
+        self.assertEqual(regions['location'], (19, 32, 537, 167))
+        self.assertEqual(regions['lower_third'], (38, 394, 921, 507))
+        self.assertLess(regions['location'][3], 270)
+        self.assertGreater(regions['lower_third'][1], 360)
+
     def test_button_signal_boolean_is_accepted(self):
         with patch.object(v.QFileDialog, 'getExistingDirectory', return_value=''):
             self.dock._on_browse_title_folder(False)

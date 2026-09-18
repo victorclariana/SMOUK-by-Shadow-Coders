@@ -540,6 +540,17 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   la sincronización calcula cortes relativos sin tocar el Timeline hasta que
   ambos relojes y el intervalo han pasado sus comprobaciones.
 
+### 0.0.56
+
+- El OCR de rótulos ahora ignora la imagen central y analiza solamente la banda
+  superior izquierda de localización/fecha (2–56% × 6–31%) y la banda inferior
+  editorial (4–96% × 73–94%).
+- Se inspecciona visualmente cada segundo, exige dos muestras estables y llama
+  a Tesseract en catalán una sola vez por cada imagen nueva de rótulo estable.
+  Esto reduce radicalmente el número de OCR sin perder los títulos cortos.
+- El lanzador de Windows usa `python3.exe` de MSYS2 si el alias `python.exe`
+  ha sido retirado por el antivirus.
+
 ### 0.0.55
 
 - Corrige el análisis que creó cientos de títulos inválidos. La imagen de vídeo

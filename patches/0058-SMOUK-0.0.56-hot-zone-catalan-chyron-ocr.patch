@@ -1,0 +1,187 @@
+From b88e6fca1a725a443b2bc59fbbcd5087ab13964a Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 18 Sep 2026 13:42:22 +0200
+Subject: [PATCH] SMOUK 0.0.56 optimize Catalan chyron OCR
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 99 +++++++++++++++++++++++++++-------
+ 2 files changed, 81 insertions(+), 20 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 1dec63ddb..443351147 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.55"
++SMOUK_VERSION = "0.0.56"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ 
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index da79ef31c..5e4ad5648 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -54,8 +54,14 @@ from classes.smouk_titles import (
+ 
+ 
+ VERTICALIZATION_DOCK_MIN_WIDTH = 320
+-CHYRON_SAMPLE_SECONDS = 5
+-MIN_CHYRON_SAMPLES = 2
++# The programme feed is visually sampled every second, but Tesseract is only
++# invoked once a title-shaped image has remained stable in its broadcast area.
++# This keeps the detector responsive to short lower thirds without launching an
++# OCR process for every analysed frame.
++CHYRON_VISUAL_SAMPLE_SECONDS = 1
++CHYRON_STABLE_VISUAL_SAMPLES = 2
++CHYRON_SIGNATURE_STABLE_DELTA = 0.012
++CHYRON_SIGNATURE_CHANGE_DELTA = 0.025
+ MAX_CHYRON_EVENTS = 40
+ 
+ # OpenShot ships these profiles. SMOUK exposes the supported output choices
+@@ -733,6 +739,39 @@ class VerticalizationDockContent(QWidget):
+             return True
+         return SequenceMatcher(None, left, right).ratio() >= 0.82
+ 
++    @staticmethod
++    def _chyron_regions(width, height):
++        """Return the two TNM title-safe areas in a 16:9 programme frame.
++
++        TNM locations and dates live in the upper-left banner. Names, credits,
++        lower thirds, and the persistent headline live in the lower band. The
++        central picture is deliberately excluded: it contains interviews and
++        video content, not editorial titles.
++        """
++        return {
++            "location": (int(width * .02), int(height * .06),
++                         int(width * .56), int(height * .31)),
++            "lower_third": (int(width * .04), int(height * .73),
++                            int(width * .96), int(height * .94)),
++        }
++
++    @staticmethod
++    def _chyron_signature(crop, cv2):
++        """Make a small mask of white/orange TNM title graphics, not video."""
++        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
++        white = cv2.inRange(hsv, (0, 0, 175), (180, 95, 255))
++        orange = cv2.inRange(hsv, (2, 115, 115), (28, 255, 255))
++        signature = cv2.bitwise_or(white, orange)
++        return cv2.resize(signature, (96, 24), interpolation=cv2.INTER_AREA)
++
++    @staticmethod
++    def _chyron_signature_distance(left, right, numpy):
++        """Return the normalized visual difference between two title masks."""
++        if left is None or right is None:
++            return 1.0
++        return float(numpy.mean(numpy.abs(left.astype(numpy.int16) -
++                                           right.astype(numpy.int16)))) / 255.0
++
+     def _scan_chyrons(self, program_path, program_start, duration, program_origin,
+                       clip_in, assets, progress):
+         """Analyse cropped frames without reading or changing Qt/project objects."""
+@@ -740,16 +779,18 @@ class VerticalizationDockContent(QWidget):
+         import numpy
+         ffmpeg = self._ffmpeg_path()
+         width, height = 960, 540
+-        sample_count = max(1, int(duration / CHYRON_SAMPLE_SECONDS))
++        sample_count = max(1, int(duration / CHYRON_VISUAL_SAMPLE_SECONDS))
+         command = [ffmpeg, "-v", "error", "-ss", "%.3f" % max(0.0, program_start),
+                    "-t", "%.3f" % max(0.1, duration), "-i", program_path, "-vf",
+                    "fps=1/%d,scale=%d:%d:flags=bilinear" %
+-                   (CHYRON_SAMPLE_SECONDS, width, height), "-an",
++                   (CHYRON_VISUAL_SAMPLE_SECONDS, width, height), "-an",
+                    "-frames:v", str(sample_count), "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1"]
+-        regions = {"location": (0, 0, int(width * .55), int(height * .38)),
+-                   "lower_third": (0, int(height * .66), width, int(height * .94))}
++        regions = self._chyron_regions(width, height)
+         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+         active, events = {}, []
++        visual_state = {template: {"previous": None, "stable_samples": 0,
++                                   "last_ocr": None}
++                        for template in regions}
+         frame_size = width * height * 3
+         try:
+             for index in range(sample_count):
+@@ -764,22 +805,43 @@ class VerticalizationDockContent(QWidget):
+                 if len(raw) != frame_size:
+                     raise RuntimeError("FFmpeg: lectura incompleta en el segundo %s" % index)
+                 frame = numpy.frombuffer(raw, dtype=numpy.uint8).reshape((height, width, 3))
+-                source_second = program_start + index * CHYRON_SAMPLE_SECONDS
++                source_second = program_start + index * CHYRON_VISUAL_SAMPLE_SECONDS
+                 absolute_frame = int(program_origin + source_second * 25)
+-                sample_frames = CHYRON_SAMPLE_SECONDS * 25
++                sample_frames = CHYRON_VISUAL_SAMPLE_SECONDS * 25
+                 for template, (x1, y1, x2, y2) in regions.items():
+                     crop = frame[y1:y2, x1:x2]
+-                    progress("OCR %s: segundo %s/%s, leyendo texto…" % (template, index + 1, sample_count),
++                    state = visual_state[template]
++                    signature = self._chyron_signature(crop, cv2)
++                    previous_distance = self._chyron_signature_distance(
++                        state["previous"], signature, numpy)
++                    if previous_distance <= CHYRON_SIGNATURE_STABLE_DELTA:
++                        state["stable_samples"] += 1
++                    else:
++                        state["stable_samples"] = 1
++                    state["previous"] = signature
++                    if template in active:
++                        active[template]["end_frame"] = absolute_frame + sample_frames
++
++                    # A title must hold its visual form for two adjacent samples.
++                    # The OCR is then performed once in Catalan for that stable
++                    # image; unchanged title images never start another OCR call.
++                    if state["stable_samples"] < CHYRON_STABLE_VISUAL_SAMPLES:
++                        continue
++                    if self._chyron_signature_distance(
++                            state["last_ocr"], signature, numpy) < CHYRON_SIGNATURE_CHANGE_DELTA:
++                        continue
++                    progress("OCR català %s: segon %s/%s…" %
++                             (template, index + 1, sample_count),
+                              55 + int(40 * index / sample_count), 100)
+-                    reading = ocr_image(crop, psm=6)
++                    reading = ocr_image(crop, psm=6, language="cat")
+                     if reading.get("reason"):
+                         raise RuntimeError("Tesseract: " + reading["reason"])
++                    state["last_ocr"] = signature
+                     text = self._normalise_chyron_text(reading.get("text"))
+                     if not text:
+                         if template in active:
+                             candidate = active.pop(template)
+-                            if candidate["samples"] >= MIN_CHYRON_SAMPLES:
+-                                events.append(candidate)
++                            events.append(candidate)
+                         continue
+                     old = active.get(template)
+                     if old and self._same_chyron_text(old["text"], text):
+@@ -791,20 +853,19 @@ class VerticalizationDockContent(QWidget):
+                         continue
+                     if old:
+                         candidate = active.pop(template)
+-                        if candidate["samples"] >= MIN_CHYRON_SAMPLES:
+-                            events.append(candidate)
++                        events.append(candidate)
+                     active[template] = {"text": text, "normalised": text.casefold(),
+                                         "template": template, "coordinates": [x1, y1, x2, y2],
+                                         "start_frame": absolute_frame,
+                                         "end_frame": absolute_frame + sample_frames,
+-                                        "samples": 1, "confidence": 0.75,
++                                        "samples": CHYRON_STABLE_VISUAL_SAMPLES,
++                                        "confidence": 0.80,
+                                         "reference_image": "",
+                                         "review_status": "pending"}
+-                if index % 2 == 0:
+-                    progress("OCR de rótulos: %s de %s segundos." % (index + 1, sample_count),
++                if index % 5 == 0:
++                    progress("Analizando zonas de títulos: %s de %s segundos." % (index + 1, sample_count),
+                                          55 + int(40 * (index + 1) / sample_count), 100)
+-            events.extend(candidate for candidate in active.values()
+-                          if candidate["samples"] >= MIN_CHYRON_SAMPLES)
++            events.extend(active.values())
+         finally:
+             if process.poll() is None:
+                 process.kill()
+-- 
+2.55.0.windows.3
+
