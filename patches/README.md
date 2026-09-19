@@ -67,6 +67,7 @@ corresponding repository.
 | `0059-SMOUK-0.0.57-isolate-unstable-chyron-backups.patch` | **openshot-qt** | Preserves and isolates recovery backups containing an unsafe number of legacy generated chyrons so New, Open, and Save start from a stable project. |
 | `0060-SMOUK-0.0.58-save-project-on-qt-thread.patch` | **openshot-qt** | Keeps Save As and autosave on the Qt thread because OpenShot project assets are not safe to migrate from detached Python threads, and balances the save cursor. |
 | `0061-SMOUK-0.0.59-corporate-safe-project-save.patch` | **openshot-qt** | Makes SMOUK save only its plain JSON project file, without ZIP recovery archives or bulk temporary-asset migration that endpoint protection can classify as unauthorised encryption. |
+| `0062-SMOUK-0.0.60-release-title-import-wait-cursor.patch` | **openshot-qt** | Completes the Timeline refresh transaction after individual CLEAN and logo insertion so the global wait cursor cannot remain active after title analysis. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

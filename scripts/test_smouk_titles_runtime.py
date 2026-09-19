@@ -158,6 +158,51 @@ class TitleRuntimeTests(unittest.TestCase):
         self.assertFalse(self.dock.imports)
         self.assertIn('fuera de CLEAN', self.dock.title_folder_results.text())
 
+    def test_clean_feed_import_completes_timeline_refresh(self):
+        """A single title-pipeline import must not retain the wait cursor."""
+        calls = []
+
+        class FakeFile:
+            id = 'F1'
+            data = {'id': 'F1', 'path': 'CLEAN.MP4'}
+
+            @staticmethod
+            def get(**_kwargs):
+                return FakeFile()
+
+            def absolute_path(self):
+                return self.data['path']
+
+        class FakeStoredClip:
+            data = {}
+
+            def save(self):
+                pass
+
+        class FakeClip:
+            @staticmethod
+            def get(**_kwargs):
+                return FakeStoredClip()
+
+        class FakeReader:
+            def __init__(self, _path):
+                pass
+
+            def Json(self):
+                return '{"id": "C1", "reader": {}}'
+
+        self.context.project = SimpleNamespace(get=lambda _key: 1920)
+        self.window.timeline = SimpleNamespace(
+            addClip=lambda *args, **kwargs: calls.append(kwargs) or {'id': 'C1'})
+        with patch.object(v, 'File', FakeFile), \
+                patch.object(v, 'Clip', FakeClip), \
+                patch.object(v.openshot, 'Clip', FakeReader):
+            v.VerticalizationDockContent._add_clean_feed_clip(
+                self.dock, 'CLEAN.MP4', 1, 2, 0)
+
+        self.assertEqual(len(calls), 1)
+        self.assertFalse(calls[0]['ignore_refresh'])
+
 
 def real_media_check(folder):
     from classes.smouk_titles import validate_title_folder

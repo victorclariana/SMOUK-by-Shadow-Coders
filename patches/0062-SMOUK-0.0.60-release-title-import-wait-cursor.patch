@@ -1,0 +1,56 @@
+From 97ffa4ee2295ffdaeeaf20d15ebc37f2eb694972 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 19 Sep 2026 02:47:34 +0200
+Subject: [PATCH] SMOUK 0.0.60 release title import cursor
+
+---
+ src/windows/main_window.py     | 2 +-
+ src/windows/verticalization.py | 9 +++++++--
+ 2 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 037f13097..dca05ebc7 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.59"
++SMOUK_VERSION = "0.0.60"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_RECOVERY_CHYRON_LIMIT = 40
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 5e4ad5648..d706f067a 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -662,8 +662,11 @@ class VerticalizationDockContent(QWidget):
+             file_obj = File()
+             file_obj.data = data
+             file_obj.save()
++        # This is a single insertion.  Leaving ``ignore_refresh`` true tells
++        # TimelineView to keep UI updates suspended, which also leaves its
++        # wait cursor active after the title pipeline has completed.
+         clip_data = window.timeline.addClip(file_obj.id, QtCore.QPoint(0, 0), layer,
+-                                            ignore_refresh=True, call_manual_move=False)
++                                            ignore_refresh=False, call_manual_move=False)
+         if not clip_data:
+             raise RuntimeError("OpenShot could not add CLEAN.MP4 to Track 2")
+         clip = Clip.get(id=clip_data.get("id"))
+@@ -1069,9 +1072,11 @@ class VerticalizationDockContent(QWidget):
+         track = self._logo_track_number()
+         # Use OpenShot's normal insertion path so the clip has all standard
+         # reader, transform, selection, and undo metadata.
++        # A logo is also inserted once, so it must finish the Timeline update
++        # transaction instead of retaining the global wait cursor.
+         clip_data = window.timeline.addClip(
+             file_obj.id, QtCore.QPoint(0, 0), track,
+-            ignore_refresh=True, call_manual_move=False)
++            ignore_refresh=False, call_manual_move=False)
+         if not clip_data:
+             raise RuntimeError("OpenShot could not create the logo clip")
+         clip = Clip.get(id=clip_data.get("id"))
+-- 
+2.55.0.windows.3
+

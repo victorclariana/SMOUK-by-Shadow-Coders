@@ -563,6 +563,13 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   paquete oficial firmado de MSYS2, si la protección elimina los alias
   `python.exe` o `python3.exe`.
 
+### 0.0.60
+
+- Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4
+  durante el análisis de títulos. La inserción individual termina ahora la
+  transacción de Timeline y restablece el cursor; se aplica el mismo ajuste a
+  la inserción individual del logotipo.
+
 ### 0.0.57
 
 - Protege New, Open y Save frente a backups generados por las versiones de OCR
