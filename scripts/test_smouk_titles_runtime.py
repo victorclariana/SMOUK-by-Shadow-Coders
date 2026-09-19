@@ -127,8 +127,8 @@ class TitleRuntimeTests(unittest.TestCase):
         self.assertEqual(regions['live_location'], (28, 48, 297, 91))
         self.assertEqual(regions['presenter_left'], (96, 421, 432, 486))
         self.assertEqual(regions['presenter_right'], (528, 421, 825, 486))
-        self.assertEqual(regions['pretitle'], (240, 383, 691, 426))
-        self.assertEqual(regions['story_headline'], (0, 421, 864, 502))
+        self.assertEqual(regions['pretitle'], (240, 399, 691, 453))
+        self.assertEqual(regions['story_headline'], (0, 442, 864, 507))
         self.assertEqual(regions['persistent_headline'], (28, 475, 576, 518))
         for left, top, right, bottom in regions.values():
             self.assertLess(right, 900)  # Leave the TN bug and clock untouched.
@@ -150,6 +150,26 @@ class TitleRuntimeTests(unittest.TestCase):
             'pretitle', black, cv2, numpy))
         self.assertFalse(self.dock._chyron_graphic_present(
             'location', orange, cv2, numpy))
+
+    def test_identity_filter_rejects_a_duplicate_all_caps_headline(self):
+        self.assertEqual(
+            self.dock._normalise_chyron_text('ILLA DEMANA GENEROSITAT EN L\'ACOLLIDA', 'credit'), '')
+        self.assertEqual(
+            self.dock._normalise_chyron_text('ILLA DEMANA GENEROSITAT EN L\'ACOLLIDA', 'presenter_left'), '')
+        self.assertEqual(
+            self.dock._normalise_chyron_text('Pilar Abril\nCorresponsal', 'name_cargo'),
+            'Pilar Abril\nCorresponsal')
+
+    def test_full_width_orange_banner_is_not_a_presenter_label(self):
+        import cv2
+        import numpy
+        banner = numpy.full((48, 180, 3), (0, 128, 255), dtype=numpy.uint8)
+        label = numpy.zeros((48, 180, 3), dtype=numpy.uint8)
+        label[:, 32:138] = (0, 128, 255)
+        self.assertTrue(self.dock._orange_spans_crop(cv2.inRange(
+            cv2.cvtColor(banner, cv2.COLOR_BGR2HSV), (2, 115, 115), (28, 255, 255)), numpy))
+        self.assertFalse(self.dock._orange_spans_crop(cv2.inRange(
+            cv2.cvtColor(label, cv2.COLOR_BGR2HSV), (2, 115, 115), (28, 255, 255)), numpy))
 
     def test_clock_phase_uses_repeated_native_second_transitions(self):
         scores = [(frame, 0.0) for frame in range(1, 80)]

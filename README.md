@@ -602,6 +602,18 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - Se desactiva la recuperación basada en ZIP. El guardado normal sigue siendo
   un único JSON `.osp`, sin migración masiva de assets.
 
+### 0.0.64
+
+- Separa el pretítulo del titular principal en sus bandas reales: el OCR ya no
+  mezcla la pastilla negra superior con la barra naranja o el titular de
+  sumario.
+- Las zonas de firma, nombre/cargo y presentadores rechazan líneas en
+  mayúsculas y una barra naranja que cruza de lado a lado. Con ello un titular
+  principal no se vuelve a importar como un segundo crédito o presentador.
+- Recupera el modo OCR de bloque que usaba la versión previa para los rótulos
+  TNM; mejora la lectura de titulares como `ILLA DEMANA GENEROSITAT EN
+  L'ACOLLIDA`.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4

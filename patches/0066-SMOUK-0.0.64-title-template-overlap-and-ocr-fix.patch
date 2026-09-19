@@ -1,0 +1,115 @@
+From e1c0fb164b655aed6a1cb315599d0312c6a125d3 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 19 Sep 2026 23:19:49 +0200
+Subject: [PATCH] SMOUK 0.0.64 title template overlap fix
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 49 ++++++++++++++++++++++++++++------
+ 2 files changed, 42 insertions(+), 9 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 16e82d218..a62d1ec96 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.63"
++SMOUK_VERSION = "0.0.64"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index f64cae218..c986d1274 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -812,7 +812,21 @@ class VerticalizationDockContent(QWidget):
+             uppercase = sum(character.isupper() for character in letters)
+             score = len(letters) + 12 * uppercase / max(1, len(letters))
+             candidates.append((score, line))
+-        if template in ("name_cargo", "credit") and candidates:
++        if template in ("presenter_left", "presenter_right", "name_cargo", "credit") and candidates:
++            # Identity and byline captions use people names in title case.
++            # An all-caps line in their overlapping lower-third areas is the
++            # story headline, not a second person/byline title.
++            readable = []
++            for score, line in candidates:
++                letters = re.sub(r"[^A-Za-zÀ-ÖØ-öø-ÿ]", "", line)
++                uppercase_ratio = sum(character.isupper() for character in letters) / max(1, len(letters))
++                if uppercase_ratio < .72:
++                    readable.append((score, line))
++            candidates = readable
++            all_words = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ]{2,}", " ".join(
++                line for _score, line in candidates))
++            if len(all_words) < 2:
++                return ""
+             # Preserve the reading order (name first, then role) while keeping
+             # only the two strongest lines.  Sorting the returned lines by
+             # confidence can otherwise turn a lower-third into "role\nname".
+@@ -852,10 +866,10 @@ class VerticalizationDockContent(QWidget):
+                            int(width * .62), int(height * .89)),
+             "credit": (int(width * .03), int(height * .80),
+                        int(width * .42), int(height * .89)),
+-            "pretitle": (int(width * .25), int(height * .71),
+-                         int(width * .72), int(height * .79)),
+-            "story_headline": (0, int(height * .78),
+-                               int(width * .90), int(height * .93)),
++            "pretitle": (int(width * .25), int(height * .74),
++                         int(width * .72), int(height * .84)),
++            "story_headline": (0, int(height * .82),
++                               int(width * .90), int(height * .94)),
+             "persistent_headline": (int(width * .03), int(height * .88),
+                                     int(width * .60), int(height * .96)),
+         }
+@@ -878,7 +892,8 @@ class VerticalizationDockContent(QWidget):
+         if template in ("presenter_left", "presenter_right"):
+             # A presenter's compact orange label never fills its whole zone;
+             # this prevents the full-width story banner becoming two names.
+-            return .012 <= orange_ratio <= .65
++            return .012 <= orange_ratio <= .65 and not VerticalizationDockContent._orange_spans_crop(
++                orange, numpy)
+         if template == "live_location":
+             # DIRECTE combines an orange tab with the dark location pill.
+             return orange_ratio >= .006 and dark_ratio >= .20 and white_ratio >= .012
+@@ -890,16 +905,34 @@ class VerticalizationDockContent(QWidget):
+             return dark_ratio >= .20 and white_ratio >= .012
+         if template == "name_cargo":
+             # Interview/presenter identity has an orange accent or panel.
+-            return .003 <= orange_ratio <= .40 and white_ratio >= .025
++            return .003 <= orange_ratio <= .40 and white_ratio >= .025 and \
++                   not VerticalizationDockContent._orange_spans_crop(orange, numpy)
+         if template == "credit":
+             # Reporter credits sit in a dark band and do not use the orange
+             # identity panel, which stops a name/cargo clip being duplicated.
+             return orange_ratio < .003 and dark_ratio >= .28 and white_ratio >= .025
+         return False
+ 
++    @staticmethod
++    def _orange_spans_crop(orange, numpy):
++        """True when an orange band crosses both sides of a title crop.
++
++        The story banner crosses the whole lower-third and can overlap a
++        presenter's or interviewee's smaller label vertically. A compact
++        identity panel always leaves at least one horizontal side uncovered.
++        """
++        if orange.size == 0:
++            return False
++        active_columns = numpy.count_nonzero(orange, axis=0) >= max(2, orange.shape[0] // 30)
++        edge = max(2, min(8, orange.shape[1] // 12))
++        return bool(numpy.any(active_columns[:edge]) and numpy.any(active_columns[-edge:]))
++
+     @staticmethod
+     def _chyron_ocr_psm(template):
+-        return 6 if template in ("name_cargo", "credit", "live_location", "location") else 7
++        # The original lower-third pass used PSM 6. It handles the broad TNM
++        # title strips better than PSM 7, which merged the pretitle with the
++        # headline and introduced errors such as trailing "dd".
++        return 6
+ 
+     @staticmethod
+     def _chyron_signature(crop, cv2):
+-- 
+2.55.0.windows.3
+
