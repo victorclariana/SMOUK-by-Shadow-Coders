@@ -125,8 +125,8 @@ class TitleRuntimeTests(unittest.TestCase):
     def test_chyron_hot_zones_exclude_the_central_picture(self):
         regions = self.dock._chyron_regions(960, 540)
         self.assertEqual(regions['live_location'], (28, 48, 297, 91))
-        self.assertEqual(regions['presenter_left'], (96, 421, 432, 486))
-        self.assertEqual(regions['presenter_right'], (528, 421, 825, 486))
+        self.assertEqual(regions['presenter_left'], (96, 442, 432, 486))
+        self.assertEqual(regions['presenter_right'], (528, 442, 825, 486))
         self.assertEqual(regions['pretitle'], (240, 399, 691, 453))
         self.assertEqual(regions['story_headline'], (0, 442, 864, 507))
         self.assertEqual(regions['persistent_headline'], (28, 475, 576, 518))
@@ -178,10 +178,32 @@ class TitleRuntimeTests(unittest.TestCase):
             cv2.cvtColor(label, cv2.COLOR_BGR2HSV), (2, 115, 115), (28, 255, 255)), numpy))
 
     def test_title_templates_are_assigned_to_separate_review_tracks(self):
-        self.assertEqual(self.dock._chyron_track_key('story_headline'), 'headlines')
-        self.assertEqual(self.dock._chyron_track_key('pretitle'), 'pretitles')
-        self.assertEqual(self.dock._chyron_track_key('name_cargo'), 'identities')
-        self.assertEqual(self.dock._chyron_track_key('location'), 'locations')
+        self.assertEqual(self.dock._chyron_track_key('story_headline'), 'story_headline')
+        self.assertEqual(self.dock._chyron_track_key('persistent_headline'), 'persistent_headline')
+        self.assertEqual(self.dock._chyron_track_key('pretitle'), 'pretitle')
+        self.assertEqual(self.dock._chyron_track_key('presenter_left'), 'presenter_left')
+        self.assertEqual(self.dock._chyron_track_key('presenter_right'), 'presenter_right')
+        self.assertEqual(self.dock._chyron_track_key('name_cargo'), 'name_cargo')
+        self.assertEqual(self.dock._chyron_track_key('location'), 'location')
+
+    def test_presenter_signature_ignores_yellow_picture_content(self):
+        import cv2
+        import numpy
+        first = numpy.zeros((60, 180, 3), dtype=numpy.uint8)
+        second = first.copy()
+        # Stable saturated TNM orange label in both samples.
+        cv2.rectangle(first, (42, 30), (150, 54), (0, 128, 255), -1)
+        cv2.rectangle(second, (42, 30), (150, 54), (0, 128, 255), -1)
+        # A moving yellow garment appears only in the second picture sample.
+        cv2.rectangle(second, (0, 0), (90, 30), (0, 220, 240), -1)
+        presenter_distance = self.dock._chyron_signature_distance(
+            self.dock._chyron_signature(first, cv2, 'presenter_left'),
+            self.dock._chyron_signature(second, cv2, 'presenter_left'), numpy)
+        generic_distance = self.dock._chyron_signature_distance(
+            self.dock._chyron_signature(first, cv2),
+            self.dock._chyron_signature(second, cv2), numpy)
+        self.assertLessEqual(presenter_distance, v.CHYRON_SIGNATURE_STABLE_DELTA)
+        self.assertGreater(generic_distance, presenter_distance)
 
     def test_clock_phase_uses_repeated_native_second_transitions(self):
         scores = [(frame, 0.0) for frame in range(1, 80)]

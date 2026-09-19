@@ -624,6 +624,22 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   `CHYRONS · Pretítulos`, `CHYRONS · Personas` y `CHYRONS · Localización`.
   Así, los elementos simultáneos se ven y revisan por separado.
 
+### 0.0.66
+
+- La detección de las cartelas de presentador usa exclusivamente el naranja
+  saturado de su gráfica. Ya no toma como parte del rótulo la ropa amarilla o
+  la imagen que se mueve detrás, por lo que espera dos muestras de la cartela
+  ya completa antes de ejecutar OCR en catalán. Esto recupera las
+  identificaciones de Anna Garnatxe Masmitjà y Xavi Coral Trullàs de
+  `PROGRAMA.MP4` alrededor de `03:36`.
+- Una cartela grande de presentador no se duplica como `Nombre y cargo`: esa
+  plantilla queda reservada para el rótulo de entrevistado, con su acento
+  naranja pequeño.
+- Cada plantilla editorial tiene ahora su propia pista de revisión: titular,
+  titular persistente, pretítulo, presentador izquierdo, presentador derecho,
+  nombre y cargo, firma, directo y localización. Las capas simultáneas ya no
+  quedan superpuestas en una sola pista.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4
