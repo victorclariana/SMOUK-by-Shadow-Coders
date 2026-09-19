@@ -97,10 +97,32 @@ class TitleRuntimeTests(unittest.TestCase):
 
     def test_chyron_hot_zones_exclude_the_central_picture(self):
         regions = self.dock._chyron_regions(960, 540)
-        self.assertEqual(regions['location'], (19, 32, 537, 167))
-        self.assertEqual(regions['lower_third'], (0, 421, 960, 507))
-        self.assertLess(regions['location'][3], 270)
-        self.assertGreater(regions['lower_third'][1], 360)
+        self.assertEqual(regions['live_location'], (28, 48, 297, 91))
+        self.assertEqual(regions['presenter_left'], (96, 421, 432, 486))
+        self.assertEqual(regions['presenter_right'], (528, 421, 825, 486))
+        self.assertEqual(regions['pretitle'], (240, 383, 691, 426))
+        self.assertEqual(regions['story_headline'], (0, 421, 864, 502))
+        self.assertEqual(regions['persistent_headline'], (28, 475, 576, 518))
+        for left, top, right, bottom in regions.values():
+            self.assertLess(right, 900)  # Leave the TN bug and clock untouched.
+            self.assertTrue(0 <= left < right <= 960)
+            self.assertTrue(0 <= top < bottom <= 540)
+
+    def test_chyron_graphic_gate_requires_the_expected_template_style(self):
+        import cv2
+        import numpy
+        orange = numpy.full((48, 180, 3), (0, 128, 255), dtype=numpy.uint8)
+        black = numpy.zeros((48, 180, 3), dtype=numpy.uint8)
+        cv2.putText(black, 'TITOL', (8, 33), cv2.FONT_HERSHEY_SIMPLEX,
+                    .8, (255, 255, 255), 2)
+        self.assertTrue(self.dock._chyron_graphic_present(
+            'story_headline', orange, cv2, numpy))
+        self.assertFalse(self.dock._chyron_graphic_present(
+            'story_headline', black, cv2, numpy))
+        self.assertTrue(self.dock._chyron_graphic_present(
+            'pretitle', black, cv2, numpy))
+        self.assertFalse(self.dock._chyron_graphic_present(
+            'location', orange, cv2, numpy))
 
     def test_clock_phase_uses_repeated_native_second_transitions(self):
         scores = [(frame, 0.0) for frame in range(1, 80)]

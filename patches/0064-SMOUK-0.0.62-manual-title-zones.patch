@@ -1,0 +1,226 @@
+From 1637bc7ac8be964490811226a4571161ba12f2fb Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 19 Sep 2026 22:36:48 +0200
+Subject: [PATCH] SMOUK 0.0.62 manual title zones
+
+---
+ src/windows/main_window.py     |   2 +-
+ src/windows/verticalization.py | 125 +++++++++++++++++++++++++++------
+ 2 files changed, 104 insertions(+), 23 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index e88bcba68..b0713ac0b 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.61"
++SMOUK_VERSION = "0.0.62"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_RECOVERY_CHYRON_LIMIT = 40
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index a5630687a..f64cae218 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -760,11 +760,19 @@ class VerticalizationDockContent(QWidget):
+ 
+     def _title_svg(self, text, template, width, height):
+         """Build an editable transparent SVG for a detected broadcast chyron."""
+-        top = template == "location"
+-        y = height * (0.16 if top else 0.84)
+-        x = width * (0.16 if top else 0.50)
+-        anchor = "start" if top else "middle"
+-        font_size = 45 if top else 56
++        styles = {
++            "live_location": (.04, .14, "start", 42),
++            "location": (.04, .14, "start", 42),
++            "presenter_left": (.10, .84, "start", 44),
++            "presenter_right": (.56, .84, "start", 44),
++            "name_cargo": (.04, .83, "start", 40),
++            "credit": (.04, .84, "start", 38),
++            "pretitle": (.50, .76, "middle", 38),
++            "story_headline": (.50, .86, "middle", 54),
++            "persistent_headline": (.04, .92, "start", 38),
++        }
++        x_ratio, y_ratio, anchor, font_size = styles.get(template, styles["story_headline"])
++        x, y = width * x_ratio, height * y_ratio
+         lines = [html.escape(line.strip()) for line in str(text).splitlines() if line.strip()][:2]
+         rendered = "".join('<text x="%.1f" y="%.1f" text-anchor="%s" font-family="Arial, sans-serif" font-size="%d" font-weight="bold" fill="white" stroke="black" stroke-width="1.5" paint-order="stroke">%s</text>' % (x, y + index * font_size * 1.12, anchor, font_size, line) for index, line in enumerate(lines))
+         return '<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">%s</svg>' % (width, height, width, height, rendered)
+@@ -792,7 +800,7 @@ class VerticalizationDockContent(QWidget):
+         clip.save()
+ 
+     @staticmethod
+-    def _normalise_chyron_text(text):
++    def _normalise_chyron_text(text, template=""):
+         """Keep only an OCR line with enough language-like content for a title."""
+         candidates = []
+         for line in str(text or "").splitlines():
+@@ -804,6 +812,12 @@ class VerticalizationDockContent(QWidget):
+             uppercase = sum(character.isupper() for character in letters)
+             score = len(letters) + 12 * uppercase / max(1, len(letters))
+             candidates.append((score, line))
++        if template in ("name_cargo", "credit") and candidates:
++            # Preserve the reading order (name first, then role) while keeping
++            # only the two strongest lines.  Sorting the returned lines by
++            # confidence can otherwise turn a lower-third into "role\nname".
++            selected = {line for _score, line in sorted(candidates, reverse=True)[:2]}
++            return "\n".join(line for _score, line in candidates if line in selected)
+         return max(candidates, default=(0, ""))[1]
+ 
+     @staticmethod
+@@ -818,22 +832,75 @@ class VerticalizationDockContent(QWidget):
+ 
+     @staticmethod
+     def _chyron_regions(width, height):
+-        """Return the two TNM title-safe areas in a 16:9 programme frame.
++        """Return the TNM title zones from the editorial graphics manual.
+ 
+-        TNM locations and dates live in the upper-left banner. Names, credits,
+-        lower thirds, and the persistent headline live in the lower band. The
+-        central picture is deliberately excluded: it contains interviews and
+-        video content, not editorial titles.
++        Coordinates intentionally leave out the picture, the right-side TN
++        bug, the clock, and the central subtitle band.  Several graphic layers
++        may coexist, so each is scanned independently and becomes an editable
++        Timeline clip of its own.
+         """
+         return {
+-            "location": (int(width * .02), int(height * .06),
+-                         int(width * .56), int(height * .31)),
+-            # Start at the upper edge of the graphic itself. Including the
+-            # moving picture above it made a stable lower-third appear to
+-            # change every second and delayed its OCR recognition.
+-            "lower_third": (0, int(height * .78), width, int(height * .94)),
++            "live_location": (int(width * .03), int(height * .09),
++                              int(width * .31), int(height * .17)),
++            "location": (int(width * .03), int(height * .09),
++                         int(width * .35), int(height * .18)),
++            "presenter_left": (int(width * .10), int(height * .78),
++                               int(width * .45), int(height * .90)),
++            "presenter_right": (int(width * .55), int(height * .78),
++                                int(width * .86), int(height * .90)),
++            "name_cargo": (int(width * .03), int(height * .78),
++                           int(width * .62), int(height * .89)),
++            "credit": (int(width * .03), int(height * .80),
++                       int(width * .42), int(height * .89)),
++            "pretitle": (int(width * .25), int(height * .71),
++                         int(width * .72), int(height * .79)),
++            "story_headline": (0, int(height * .78),
++                               int(width * .90), int(height * .93)),
++            "persistent_headline": (int(width * .03), int(height * .88),
++                                    int(width * .60), int(height * .96)),
+         }
+ 
++    @staticmethod
++    def _chyron_graphic_present(template, crop, cv2, numpy):
++        """Reject picture content and subtitles before invoking Catalan OCR."""
++        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
++        value = hsv[:, :, 2]
++        saturation = hsv[:, :, 1]
++        orange = cv2.inRange(hsv, (2, 115, 115), (28, 255, 255))
++        white = cv2.inRange(hsv, (0, 0, 175), (180, 95, 255))
++        orange_ratio = float(numpy.count_nonzero(orange)) / orange.size
++        white_ratio = float(numpy.count_nonzero(white)) / white.size
++        dark_ratio = float(numpy.count_nonzero((value < 75) & (saturation < 120))) / value.size
++        if template == "story_headline":
++            # Orange is present in the TNM headline bar and presenter labels;
++            # ordinary subtitles never carry this graphic accent.
++            return orange_ratio >= .012
++        if template in ("presenter_left", "presenter_right"):
++            # A presenter's compact orange label never fills its whole zone;
++            # this prevents the full-width story banner becoming two names.
++            return .012 <= orange_ratio <= .65
++        if template == "live_location":
++            # DIRECTE combines an orange tab with the dark location pill.
++            return orange_ratio >= .006 and dark_ratio >= .20 and white_ratio >= .012
++        if template == "location":
++            # A regular location/date has the same dark pill but no DIRECTE
++            # tab, so it must not duplicate a live location.
++            return orange_ratio < .006 and dark_ratio >= .20 and white_ratio >= .012
++        if template in ("pretitle", "persistent_headline"):
++            return dark_ratio >= .20 and white_ratio >= .012
++        if template == "name_cargo":
++            # Interview/presenter identity has an orange accent or panel.
++            return .003 <= orange_ratio <= .40 and white_ratio >= .025
++        if template == "credit":
++            # Reporter credits sit in a dark band and do not use the orange
++            # identity panel, which stops a name/cargo clip being duplicated.
++            return orange_ratio < .003 and dark_ratio >= .28 and white_ratio >= .025
++        return False
++
++    @staticmethod
++    def _chyron_ocr_psm(template):
++        return 6 if template in ("name_cargo", "credit", "live_location", "location") else 7
++
+     @staticmethod
+     def _chyron_signature(crop, cv2):
+         """Make a small mask of white/orange TNM title graphics, not video."""
+@@ -872,7 +939,7 @@ class VerticalizationDockContent(QWidget):
+         exit frames. It is deliberately read-only and has no Qt/project work.
+         """
+         reference = event.pop("_signature", None)
+-        if reference is None or event.get("template") != "lower_third":
++        if reference is None:
+             return event
+         ffmpeg = self._ffmpeg_path()
+         if not ffmpeg:
+@@ -970,6 +1037,12 @@ class VerticalizationDockContent(QWidget):
+                 for template, (x1, y1, x2, y2) in regions.items():
+                     crop = frame[y1:y2, x1:x2]
+                     state = visual_state[template]
++                    if not self._chyron_graphic_present(template, crop, cv2, numpy):
++                        if template in active:
++                            events.append(active.pop(template))
++                        state.update({"previous": None, "stable_samples": 0,
++                                      "last_ocr": None})
++                        continue
+                     signature = self._chyron_signature(crop, cv2)
+                     previous_distance = self._chyron_signature_distance(
+                         state["previous"], signature, numpy)
+@@ -993,11 +1066,11 @@ class VerticalizationDockContent(QWidget):
+                     progress("OCR català %s: segon %s/%s…" %
+                              (template, index + 1, sample_count),
+                              55 + int(40 * index / sample_count), 100)
+-                    reading = ocr_image(crop, psm=6, language="cat")
++                    reading = ocr_image(crop, psm=self._chyron_ocr_psm(template), language="cat")
+                     if reading.get("reason"):
+                         raise RuntimeError("Tesseract: " + reading["reason"])
+                     state["last_ocr"] = signature
+-                    text = self._normalise_chyron_text(reading.get("text"))
++                    text = self._normalise_chyron_text(reading.get("text"), template)
+                     if not text:
+                         if template in active:
+                             candidate = active.pop(template)
+@@ -1035,8 +1108,14 @@ class VerticalizationDockContent(QWidget):
+                 process.kill()
+             process.wait(timeout=10)
+             process.stdout.close()
+-        events = [self._refine_chyron_boundaries(program_path, event, cv2, numpy)
+-                  for event in events]
++        total_events = len(events)
++        refined_events = []
++        for number, event in enumerate(events, start=1):
++            progress("Afinando entrada y salida: título %s de %s…" % (number, total_events),
++                     95 + int(3 * number / max(1, total_events)), 100)
++            refined_events.append(self._refine_chyron_boundaries(
++                program_path, event, cv2, numpy))
++        events = refined_events
+         if len(events) > MAX_CHYRON_EVENTS:
+             raise RuntimeError(
+                 "Se han detectado %s candidatos; el límite seguro es %s. "
+@@ -1052,6 +1131,8 @@ class VerticalizationDockContent(QWidget):
+         os.makedirs(asset_dir, exist_ok=True)
+         added = 0
+         for index, event in enumerate(events, start=1):
++            self._title_progress("Creando títulos editables: %s de %s…" % (index, len(events)),
++                                 96 + int(3 * index / max(1, len(events))), 100)
+             event["timecode_start"] = format_timecode(event["start_frame"])
+             event["timecode_end"] = format_timecode(event["end_frame"])
+             position = (event["start_frame"] - clip_in) / 25.0
+-- 
+2.55.0.windows.3
+

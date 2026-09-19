@@ -576,6 +576,19 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - Verificado con `ILLA DEMANA GENEROSITAT EN L'ACOLLIDA`: la entrada y salida
   de PROGRAMA se traducen a `00:00:05,18` y `00:00:17,21` en CHYRONS.
 
+### 0.0.62
+
+- El OCR de chyrons adopta el mapa editorial de TNM: analiza por separado
+  DIRECTE/localización, identificaciones de presentadores, nombre y cargo,
+  firma, pretítulo, titular principal y rótulo persistente. Las capas que
+  coinciden en pantalla se conservan como clips editables independientes.
+- Excluye la imagen central, el logotipo TN, el reloj y la banda de
+  transcripción. Las validaciones de color y forma distinguen DIRECTE de una
+  localización ordinaria y una identificación de nombre/cargo de una firma,
+  reduciendo títulos duplicados antes de ejecutar OCR en catalán.
+- El Dock informa ahora durante el refinado de entrada/salida de cada rótulo y
+  durante la creación de los SVG editables, además del análisis OCR.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4
