@@ -70,6 +70,7 @@ corresponding repository.
 | `0062-SMOUK-0.0.60-release-title-import-wait-cursor.patch` | **openshot-qt** | Completes the Timeline refresh transaction after individual CLEAN and logo insertion so the global wait cursor cannot remain active after title analysis. |
 | `0063-SMOUK-0.0.61-frame-accurate-title-sync.patch` | **openshot-qt** | Calibrates the native clock phase in CLEAN and PROGRAMA, restricts lower-third OCR to the actual graphic, and refines each confirmed chyron's entry and exit with 25-fps template matching. |
 | `0064-SMOUK-0.0.62-manual-title-zones.patch` | **openshot-qt** | Applies TNM's manual title zones, excludes picture/logo/clock/subtitle areas, separates simultaneous title templates with graphic gates, and reports title-boundary refinement and editable-clip creation. |
+| `0065-SMOUK-0.0.63-nondestructive-project-lifecycle.patch` | **openshot-qt** | Removes recursive runtime cleanup and ZIP recovery from startup/New/Open flows, skips automatic recovery of generated-title backups without relocating them, and records an explicit New Project safely. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

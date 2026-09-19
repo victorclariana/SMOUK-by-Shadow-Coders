@@ -1,0 +1,200 @@
+From 261f65678be15dbc6a3f471a1da177ba2f1886e2 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 19 Sep 2026 22:55:10 +0200
+Subject: [PATCH] SMOUK 0.0.63 non-destructive project lifecycle
+
+---
+ src/windows/main_window.py | 124 ++++++++++++++++---------------------
+ 1 file changed, 52 insertions(+), 72 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index b0713ac0b..16e82d218 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,9 +102,9 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.62"
++SMOUK_VERSION = "0.0.63"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+-SMOUK_RECOVERY_CHYRON_LIMIT = 40
++SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+ 
+ class MainWindow(updates.UpdateWatcher, QMainWindow):
+@@ -313,13 +313,24 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         log.info("recover_backup")
+         _ = get_app()._tr
+ 
++        # An explicit New Project must never revive the discarded backup after
++        # an interrupted shutdown. The marker records only that intent; it
++        # does not delete or traverse any asset tree.
++        if os.path.exists(SMOUK_NEW_PROJECT_MARKER):
++            log.info("SMOUK starts a blank project after an explicit New Project")
++            get_app().project.load("")
++            self.actionUndo.setEnabled(False)
++            self.actionRedo.setEnabled(False)
++            self.actionClearHistory.setEnabled(False)
++            self.SetWindowTitle()
++            return
++
+         # Check for backup.osp file
+         if os.path.exists(info.BACKUP_FILE):
+-            # Versions before SMOUK 0.0.55 could create hundreds of false
+-            # chyron clips. Recovering such a backup creates hundreds of SVG
+-            # readers before a user can start a clean project, which makes the
+-            # native preview/timeline unstable during New, Open, or Save.
+-            # Preserve the backup in Recovery rather than loading it again.
++            # Generated title projects are deliberately not recovered at
++            # startup. Opening their SVG readers before the user chooses a
++            # project can make New/Open unstable. Leave the backup in place:
++            # do not move, copy, compress, or delete it.
+             try:
+                 with open(info.BACKUP_FILE, encoding="utf-8") as backup_file:
+                     backup_data = json.load(backup_file)
+@@ -330,30 +341,15 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+             except (OSError, ValueError, TypeError):
+                 chyron_assets = 0
+ 
+-            if chyron_assets > SMOUK_RECOVERY_CHYRON_LIMIT:
+-                quarantine_dir = os.path.join(info.RECOVERY_PATH, "smouk-quarantine")
+-                os.makedirs(quarantine_dir, exist_ok=True)
+-                quarantine_path = os.path.join(
+-                    quarantine_dir, "backup-%s-%s-chyrons.osp" %
+-                    (int(time()), chyron_assets))
+-                try:
+-                    shutil.move(info.BACKUP_FILE, quarantine_path)
+-                    log.warning(
+-                        "SMOUK skipped unstable backup with %s chyrons; preserved at %s",
+-                        chyron_assets, quarantine_path)
+-                    get_app().project.load("")
+-                    self.actionUndo.setEnabled(False)
+-                    self.actionRedo.setEnabled(False)
+-                    self.actionClearHistory.setEnabled(False)
+-                    self.SetWindowTitle()
+-                    QMessageBox.warning(
+-                        self, _("Recovered backup isolated"),
+-                        _("A backup with %s generated titles was isolated because it can "
+-                          "destabilize New, Open, and Save. It was preserved at:\n%s") %
+-                        (chyron_assets, quarantine_path))
+-                    return
+-                except OSError:
+-                    log.error("Unable to isolate unstable SMOUK backup", exc_info=True)
++            if chyron_assets:
++                log.warning("SMOUK skipped automatic recovery of backup with %s chyrons",
++                            chyron_assets)
++                get_app().project.load("")
++                self.actionUndo.setEnabled(False)
++                self.actionRedo.setEnabled(False)
++                self.actionClearHistory.setEnabled(False)
++                self.SetWindowTitle()
++                return
+ 
+             # Load recovery project
+             log.info("Recovering backup file: %s" % info.BACKUP_FILE)
+@@ -459,7 +455,18 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         # Process all events
+         QCoreApplication.processEvents()
+ 
+-        # Clear any previous thumbnails
++        # Persist the user's New Project choice without touching the old
++        # backup or its asset folders. This prevents an interrupted shutdown
++        # from reviving the discarded project on the next launch.
++        try:
++            with open(SMOUK_NEW_PROJECT_MARKER, "w", encoding="utf-8") as marker:
++                marker.write("new-project\n")
++        except OSError:
++            log.warning("Unable to mark explicit New Project", exc_info=True)
++
++        # Only ensure runtime directories exist. Recursive cleanup used to
++        # delete entire thumbnail/title/proxy trees here, a pattern corporate
++        # endpoint protection can classify as unauthorised file encryption.
+         self.clear_temporary_files()
+ 
+         # clear data and start new project
+@@ -685,30 +692,8 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         QMessageBox.warning(self, _("Error Saving Project"), error_message)
+ 
+     def save_recovery(self, file_path):
+-        """Saves the project and manages recovery files based on configured limits."""
+-        app = get_app()
+-        s = app.get_settings()
+-        max_files = s.get("recovery-limit")
+-        daily_limit = int(max_files * 0.7)
+-        historical_limit = max_files - daily_limit  # Remaining for previous days
+-
+-        if not os.path.exists(file_path):
+-            return
+-
+-        folder_path, file_name = os.path.split(file_path)
+-        file_name, file_ext = os.path.splitext(file_name)
+-
+-        timestamp = int(time())
+-        recovery_filename = f"{timestamp}-{file_name}.zip"
+-        recovery_path = os.path.join(info.RECOVERY_PATH, recovery_filename)
+-
+-        try:
+-            with zipfile.ZipFile(recovery_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+-                zipf.write(file_path, os.path.basename(file_path))
+-            log.debug(f"Zipped recovery file created: {recovery_path}")
+-            self.manage_recovery_files(daily_limit, historical_limit, file_name)
+-        except Exception as e:
+-            log.error(f"Failed to create zipped recovery file {recovery_path}: {e}")
++        """Disable archive-based recovery in the corporate-safe SMOUK build."""
++        log.info("SMOUK recovery archive disabled for %s", file_path)
+ 
+     def manage_recovery_files(self, daily_limit, historical_limit, file_name):
+         """Ensures recovery files adhere to the configured daily and historical limits."""
+@@ -870,7 +855,7 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         app.restoreOverrideCursor()
+ 
+     def clear_temporary_files(self):
+-        """Clear all user thumbnails"""
++        """Ensure runtime folders exist without deleting user or cache data."""
+         for temp_dir in [
+                 info.get_default_path("THUMBNAIL_PATH"),
+                 info.get_default_path("BLENDER_PATH"),
+@@ -880,22 +865,9 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+                 info.get_default_path("PROXY_PATH"),
+                 ]:
+             try:
+-                if os.path.exists(temp_dir):
+-                    shutil.rmtree(temp_dir)
+-                    log.info("Cleared temporary files: %s", temp_dir)
+-                os.mkdir(temp_dir)
++                os.makedirs(temp_dir, exist_ok=True)
+             except Exception:
+-                log.warning("Failed to clear %s", temp_dir, exc_info=1)
+-
+-            # Clear any backups
+-            if os.path.exists(info.BACKUP_FILE):
+-                try:
+-                    # Remove backup file
+-                    os.unlink(info.BACKUP_FILE)
+-                    log.info("Cleared backup: %s", info.BACKUP_FILE)
+-                except Exception:
+-                    log.warning("Could not delete backup file %s",
+-                                info.BACKUP_FILE, exc_info=1)
++                log.warning("Failed to initialize %s", temp_dir, exc_info=1)
+ 
+ 
+     def actionOpen_trigger(self):
+@@ -1013,6 +985,14 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+             # No saved project found
+             log.info("Creating backup of project file: %s", info.BACKUP_FILE)
+             app.project.save(info.BACKUP_FILE, backup_only=True)
++            # The backup now belongs to this new project, so the marker is no
++            # longer needed. This is a single file operation, never a tree
++            # cleanup or archive operation.
++            try:
++                if os.path.exists(SMOUK_NEW_PROJECT_MARKER):
++                    os.unlink(SMOUK_NEW_PROJECT_MARKER)
++            except OSError:
++                log.warning("Unable to clear SMOUK New Project marker", exc_info=True)
+ 
+         self.last_auto_save_data_version = current_data_version
+ 
+-- 
+2.55.0.windows.3
+

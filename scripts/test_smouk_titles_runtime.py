@@ -3,6 +3,7 @@
 Run with the same MinGW Python as run_smouk.bat. No user project is loaded.
 """
 import argparse
+import ast
 import json
 import os
 from pathlib import Path
@@ -94,6 +95,32 @@ class TitleRuntimeTests(unittest.TestCase):
         self.dock._title_progress('CLEAN: reading clock', 0, 100)
         self.assertEqual(self.window.statusBar.currentMessage(), 'CLEAN: reading clock')
         self.assertIn('CLEAN: reading clock', self.dock.title_folder_results.text())
+
+    def test_new_project_runtime_cleanup_cannot_delete_a_directory_tree(self):
+        source = (ROOT / 'openshot-qt/src/windows/main_window.py').read_text(encoding='utf-8')
+        module = ast.parse(source)
+        main_window = next(node for node in module.body
+                           if isinstance(node, ast.ClassDef) and node.name == 'MainWindow')
+        cleanup = next(node for node in main_window.body
+                       if isinstance(node, ast.FunctionDef) and node.name == 'clear_temporary_files')
+        calls = {node.func.attr for node in ast.walk(cleanup)
+                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)}
+        self.assertIn('makedirs', calls)
+        self.assertNotIn('rmtree', calls)
+        self.assertNotIn('unlink', calls)
+
+    def test_recovery_paths_do_not_archive_or_relocate_project_data(self):
+        source = (ROOT / 'openshot-qt/src/windows/main_window.py').read_text(encoding='utf-8')
+        module = ast.parse(source)
+        main_window = next(node for node in module.body
+                           if isinstance(node, ast.ClassDef) and node.name == 'MainWindow')
+        methods = {node.name: node for node in main_window.body if isinstance(node, ast.FunctionDef)}
+        recovery_calls = {node.func.attr for node in ast.walk(methods['recover_backup'])
+                          if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)}
+        archive_calls = {node.func.attr for node in ast.walk(methods['save_recovery'])
+                         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)}
+        self.assertNotIn('move', recovery_calls)
+        self.assertNotIn('ZipFile', archive_calls)
 
     def test_chyron_hot_zones_exclude_the_central_picture(self):
         regions = self.dock._chyron_regions(960, 540)

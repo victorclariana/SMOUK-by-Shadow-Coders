@@ -589,6 +589,19 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - El Dock informa ahora durante el refinado de entrada/salida de cada rótulo y
   durante la creación de los SVG editables, además del análisis OCR.
 
+### 0.0.63
+
+- **New Project**, el inicio normal y la apertura de proyectos dejan de borrar
+  recursivamente las carpetas de miniaturas, títulos y proxies. Ahora sólo se
+  comprueba que existan; no se borra, mueve, copia ni comprime un árbol de
+  archivos desde esos flujos.
+- La recuperación automática no carga proyectos de backup que contengan
+  chyrons SMOUK y tampoco los mueve. Un nuevo proyecto registra sólo la
+  intención de no recuperar el backup anterior si el programa se interrumpe
+  antes del siguiente autosave.
+- Se desactiva la recuperación basada en ZIP. El guardado normal sigue siendo
+  un único JSON `.osp`, sin migración masiva de assets.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4
