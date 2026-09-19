@@ -98,9 +98,17 @@ class TitleRuntimeTests(unittest.TestCase):
     def test_chyron_hot_zones_exclude_the_central_picture(self):
         regions = self.dock._chyron_regions(960, 540)
         self.assertEqual(regions['location'], (19, 32, 537, 167))
-        self.assertEqual(regions['lower_third'], (38, 394, 921, 507))
+        self.assertEqual(regions['lower_third'], (0, 421, 960, 507))
         self.assertLess(regions['location'][3], 270)
         self.assertGreater(regions['lower_third'][1], 360)
+
+    def test_clock_phase_uses_repeated_native_second_transitions(self):
+        scores = [(frame, 0.0) for frame in range(1, 80)]
+        for first in (8, 33, 58):
+            for frame in range(first, first + 6):
+                scores[frame - 1] = (frame, 10.0)
+        self.assertEqual(self.dock._clock_phase_from_differences(scores), 6)
+        self.assertEqual(self.dock._clock_phase_from_differences([(1, 2.0)]), 0)
 
     def test_button_signal_boolean_is_accepted(self):
         with patch.object(v.QFileDialog, 'getExistingDirectory', return_value=''):

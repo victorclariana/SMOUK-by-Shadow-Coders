@@ -1,0 +1,282 @@
+From 274fef278269266f22e1bda060ce78250a33cd00 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 19 Sep 2026 18:01:48 +0200
+Subject: [PATCH] SMOUK 0.0.61 frame-accurate title sync
+
+---
+ src/windows/main_window.py     |   2 +-
+ src/windows/verticalization.py | 177 ++++++++++++++++++++++++++++++++-
+ 2 files changed, 173 insertions(+), 6 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index dca05ebc7..e88bcba68 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.60"
++SMOUK_VERSION = "0.0.61"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_RECOVERY_CHYRON_LIMIT = 40
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index d706f067a..a5630687a 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -62,6 +62,11 @@ CHYRON_VISUAL_SAMPLE_SECONDS = 1
+ CHYRON_STABLE_VISUAL_SAMPLES = 2
+ CHYRON_SIGNATURE_STABLE_DELTA = 0.012
+ CHYRON_SIGNATURE_CHANGE_DELTA = 0.025
++# OCR identifies the text only after its graphic has settled. A short native
++# frame pass then recovers the first and last visual frame of that same graphic,
++# without applying OCR to every frame of a programme.
++CHYRON_BOUNDARY_REFINE_MARGIN_FRAMES = 15 * 25
++CHYRON_BOUNDARY_MATCH_THRESHOLD = 0.60
+ MAX_CHYRON_EVENTS = 40
+ 
+ # OpenShot ships these profiles. SMOUK exposes the supported output choices
+@@ -614,7 +619,11 @@ class VerticalizationDockContent(QWidget):
+             parsed = parse_clock_ocr(candidate, fps=25)
+             if parsed is not None:
+                 result = {"text": candidate, "language": "panel", "reason": "",
+-                          "frames": parsed}
++                          "frames": parsed,
++                          "source_frame": int(probe.get("frame", round(
++                              float(probe.get("seconds", 0.0)) * 25))),
++                          "presentation_phase_frames": self._clock_presentation_phase(
++                              path, probe, progress)}
+                 log.info("SMOUK clock OCR %s panels: %s -> %s", name, candidate, parsed)
+                 return result
+ 
+@@ -629,9 +638,74 @@ class VerticalizationDockContent(QWidget):
+             result = ocr_image(frame, psm=6, language="eng")
+         frames = parse_clock_ocr(result.get("text"), fps=25)
+         result["frames"] = frames
++        result["source_frame"] = int(probe.get("frame", round(
++            float(probe.get("seconds", 0.0)) * 25)))
++        result["presentation_phase_frames"] = self._clock_presentation_phase(
++            path, probe, progress)
+         log.info("SMOUK clock OCR %s: %r -> %s; reason=%s", name, result.get("text"), frames, result.get("reason"))
+         return result
+ 
++    @staticmethod
++    def _clock_phase_from_differences(differences):
++        """Return the displayed-clock phase from native-frame change scores."""
++        starts, in_transition = [], False
++        for frame, score in differences:
++            changed = score >= 1.0
++            if changed and not in_transition:
++                starts.append(frame)
++            in_transition = changed
++        repeated = [later for earlier, later in zip(starts, starts[1:])
++                    if 22 <= later - earlier <= 28]
++        if not repeated:
++            return 0
++        # The standard TNM clock begins its digit animation two frames after
++        # the actual second boundary. This offset is measured from the video;
++        # it is never guessed from the OCR text.
++        return max(0, (repeated[0] - 2) % 25)
++
++    def _clock_presentation_phase(self, path, probe, progress=None):
++        """Measure the clock's frame phase without running OCR per frame."""
++        try:
++            import cv2
++            import numpy
++            ffmpeg = self._ffmpeg_path()
++            if not ffmpeg:
++                return 0
++            source_frame = int(probe.get("frame", round(
++                float(probe.get("seconds", 0.0)) * 25)))
++            width, height, samples = 640, 360, 80
++            if progress:
++                progress("%s: calibrando los fotogramas del reloj…" % os.path.basename(path))
++            command = [ffmpeg, "-v", "error", "-ss", "%.3f" % (source_frame / 25.0),
++                       "-i", path, "-vf", "fps=25,scale=%d:%d:flags=bilinear" %
++                       (width, height), "-an", "-frames:v", str(samples), "-f", "rawvideo",
++                       "-pix_fmt", "bgr24", "pipe:1"]
++            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
++            frame_size = width * height * 3
++            previous, differences = None, []
++            try:
++                for index in range(samples):
++                    raw = process.stdout.read(frame_size)
++                    if len(raw) != frame_size:
++                        break
++                    frame = numpy.frombuffer(raw, dtype=numpy.uint8).reshape((height, width, 3))
++                    panel = cv2.cvtColor(frame[int(height * .08):int(height * .78),
++                                               int(width * .68):], cv2.COLOR_BGR2GRAY)
++                    if previous is not None:
++                        differences.append((index, float(numpy.mean(cv2.absdiff(panel, previous)))))
++                    previous = panel
++            finally:
++                if process.poll() is None:
++                    process.kill()
++                process.wait(timeout=10)
++                process.stdout.close()
++            phase = self._clock_phase_from_differences(differences)
++            log.info("SMOUK clock phase %s: %s frames", os.path.basename(path), phase)
++            return phase
++        except Exception:
++            log.exception("Could not calibrate SMOUK clock frame phase")
++            return 0
++
+     @staticmethod
+     def _ensure_chyron_track():
+         for track in Track.filter():
+@@ -754,8 +828,10 @@ class VerticalizationDockContent(QWidget):
+         return {
+             "location": (int(width * .02), int(height * .06),
+                          int(width * .56), int(height * .31)),
+-            "lower_third": (int(width * .04), int(height * .73),
+-                            int(width * .96), int(height * .94)),
++            # Start at the upper edge of the graphic itself. Including the
++            # moving picture above it made a stable lower-third appear to
++            # change every second and delayed its OCR recognition.
++            "lower_third": (0, int(height * .78), width, int(height * .94)),
+         }
+ 
+     @staticmethod
+@@ -775,6 +851,86 @@ class VerticalizationDockContent(QWidget):
+         return float(numpy.mean(numpy.abs(left.astype(numpy.int16) -
+                                            right.astype(numpy.int16)))) / 255.0
+ 
++    @staticmethod
++    def _chyron_signature_similarity(candidate, reference, cv2, numpy):
++        """Score a title graphic against an OCR-confirmed reference image."""
++        if candidate is None or reference is None:
++            return 0.0
++        correlation = float(cv2.matchTemplate(
++            candidate, reference, cv2.TM_CCOEFF_NORMED)[0][0])
++        reference_pixels = max(1, int(numpy.count_nonzero(reference)))
++        overlap = float(numpy.count_nonzero(cv2.bitwise_and(
++            candidate, reference))) / reference_pixels
++        return max(0.0, min(1.0, 0.75 * correlation + 0.25 * overlap))
++
++    def _refine_chyron_boundaries(self, program_path, event, cv2, numpy):
++        """Replace coarse OCR timestamps with the native visual title span.
++
++        The title scan samples one frame per second so it remains fast. Once
++        OCR has confirmed a title, this reads only its nearby lower-third crop
++        at 25 fps and uses template matching to preserve its real entry and
++        exit frames. It is deliberately read-only and has no Qt/project work.
++        """
++        reference = event.pop("_signature", None)
++        if reference is None or event.get("template") != "lower_third":
++            return event
++        ffmpeg = self._ffmpeg_path()
++        if not ffmpeg:
++            return event
++        x1, y1, x2, y2 = event["coordinates"]
++        source_event_start = int(event.pop("_source_start_frame", event["start_frame"]))
++        source_event_end = int(event.pop("_source_end_frame", event["end_frame"]))
++        absolute_origin = int(event["start_frame"]) - source_event_start
++        start_frame = max(0, source_event_start - CHYRON_BOUNDARY_REFINE_MARGIN_FRAMES)
++        end_frame = source_event_end + CHYRON_BOUNDARY_REFINE_MARGIN_FRAMES
++        frame_count = max(1, end_frame - start_frame + 1)
++        crop_width, crop_height = x2 - x1, y2 - y1
++        command = [ffmpeg, "-v", "error", "-ss", "%.3f" % (start_frame / 25.0),
++                   "-i", program_path, "-vf",
++                   "scale=960:540:flags=bilinear,crop=%d:%d:%d:%d,fps=25" %
++                   (crop_width, crop_height, x1, y1), "-an", "-frames:v", str(frame_count),
++                   "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1"]
++        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
++        frame_size = crop_width * crop_height * 3
++        matching_frames = []
++        try:
++            for index in range(frame_count):
++                raw = process.stdout.read(frame_size)
++                if len(raw) != frame_size:
++                    break
++                crop = numpy.frombuffer(raw, dtype=numpy.uint8).reshape(
++                    (crop_height, crop_width, 3))
++                signature = self._chyron_signature(crop, cv2)
++                score = self._chyron_signature_similarity(signature, reference, cv2, numpy)
++                if score >= CHYRON_BOUNDARY_MATCH_THRESHOLD:
++                    matching_frames.append(start_frame + index)
++        finally:
++            if process.poll() is None:
++                process.kill()
++            process.wait(timeout=10)
++            process.stdout.close()
++        if not matching_frames:
++            return event
++        reference_frame = source_event_start
++        # Do not merge a later title that happens to use the same lower-third
++        # geometry. Keep the matching run that contains, or is closest to,
++        # the OCR-confirmed frame.
++        runs, run_start, previous = [], matching_frames[0], matching_frames[0]
++        for frame in matching_frames[1:]:
++            if frame > previous + 1:
++                runs.append((run_start, previous))
++                run_start = frame
++            previous = frame
++        runs.append((run_start, previous))
++        refined_start, refined_end = min(
++            runs, key=lambda run: 0 if run[0] <= reference_frame <= run[1]
++            else min(abs(reference_frame - run[0]), abs(reference_frame - run[1])))
++        event["start_frame"] = absolute_origin + refined_start
++        # OpenShot clip end is exclusive, so retain the last visible frame.
++        event["end_frame"] = absolute_origin + refined_end + 1
++        event["confidence"] = max(float(event.get("confidence", 0.0)), 0.90)
++        return event
++
+     def _scan_chyrons(self, program_path, program_start, duration, program_origin,
+                       clip_in, assets, progress):
+         """Analyse cropped frames without reading or changing Qt/project objects."""
+@@ -824,6 +980,7 @@ class VerticalizationDockContent(QWidget):
+                     state["previous"] = signature
+                     if template in active:
+                         active[template]["end_frame"] = absolute_frame + sample_frames
++                        active[template]["_source_end_frame"] = int(round(source_second * 25)) + sample_frames
+ 
+                     # A title must hold its visual form for two adjacent samples.
+                     # The OCR is then performed once in Catalan for that stable
+@@ -849,6 +1006,7 @@ class VerticalizationDockContent(QWidget):
+                     old = active.get(template)
+                     if old and self._same_chyron_text(old["text"], text):
+                         old["end_frame"] = absolute_frame + sample_frames
++                        old["_source_end_frame"] = int(round(source_second * 25)) + sample_frames
+                         old["samples"] += 1
+                         if len(text) > len(old["text"]):
+                             old["text"] = text
+@@ -861,8 +1019,11 @@ class VerticalizationDockContent(QWidget):
+                                         "template": template, "coordinates": [x1, y1, x2, y2],
+                                         "start_frame": absolute_frame,
+                                         "end_frame": absolute_frame + sample_frames,
++                                        "_source_start_frame": int(round(source_second * 25)),
++                                        "_source_end_frame": int(round(source_second * 25)) + sample_frames,
+                                         "samples": CHYRON_STABLE_VISUAL_SAMPLES,
+                                         "confidence": 0.80,
++                                        "_signature": signature.copy(),
+                                         "reference_image": "",
+                                         "review_status": "pending"}
+                 if index % 5 == 0:
+@@ -874,6 +1035,8 @@ class VerticalizationDockContent(QWidget):
+                 process.kill()
+             process.wait(timeout=10)
+             process.stdout.close()
++        events = [self._refine_chyron_boundaries(program_path, event, cv2, numpy)
++                  for event in events]
+         if len(events) > MAX_CHYRON_EVENTS:
+             raise RuntimeError(
+                 "Se han detectado %s candidatos; el límite seguro es %s. "
+@@ -938,8 +1101,12 @@ class VerticalizationDockContent(QWidget):
+             log.warning("SMOUK title pipeline: clock OCR unusable: %s", details)
+             return
+         self._title_progress(_("Clock OCR completed. Calculating the Clean Feed cut…"), 35, 100)
+-        clean_origin = int(clean_clock["frames"] - float(probes["clean"]["seconds"]) * 25)
+-        program_origin = int(program_clock["frames"] - float(probes["program"]["seconds"]) * 25)
++        clean_origin = int(clean_clock["frames"] - clean_clock.get(
++            "source_frame", round(float(probes["clean"]["seconds"]) * 25)) -
++            clean_clock.get("presentation_phase_frames", 0))
++        program_origin = int(program_clock["frames"] - program_clock.get(
++            "source_frame", round(float(probes["program"]["seconds"]) * 25)) -
++            program_clock.get("presentation_phase_frames", 0))
+         clip_in, clip_out = timecodes["clip_in_frames"], timecodes["clip_out_frames"]
+         clean_start, clean_end = (clip_in - clean_origin) / 25.0, (clip_out - clean_origin) / 25.0
+         program_start, program_end = (clip_in - program_origin) / 25.0, (clip_out - program_origin) / 25.0
+-- 
+2.55.0.windows.3
+

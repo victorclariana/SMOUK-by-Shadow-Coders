@@ -563,6 +563,19 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   paquete oficial firmado de MSYS2, si la protección elimina los alias
   `python.exe` o `python3.exe`.
 
+### 0.0.61
+
+- Sincroniza los vídeos CLEAN y PROGRAMA hasta el fotograma: mide la fase de
+  las transiciones nativas del reloj, además de leer sus dígitos. En el bloque
+  de prueba ambos relojes tienen una fase de seis fotogramas, que se aplica al
+  corte y a los chyrons en lugar de redondear el reloj al segundo completo.
+- El OCR de títulos limita la banda inferior al gráfico real. Tras reconocer
+  un texto en catalán, contrasta sólo su recorte cercano a 25 fps mediante
+  `matchTemplate`, conservando los fotogramas de entrada y salida sin hacer
+  OCR fotograma a fotograma en todo el programa.
+- Verificado con `ILLA DEMANA GENEROSITAT EN L'ACOLLIDA`: la entrada y salida
+  de PROGRAMA se traducen a `00:00:05,18` y `00:00:17,21` en CHYRONS.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4
