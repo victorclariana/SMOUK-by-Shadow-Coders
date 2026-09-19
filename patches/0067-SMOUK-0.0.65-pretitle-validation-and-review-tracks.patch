@@ -1,0 +1,144 @@
+From 90a7cac1794d6aed47c8956652e543551251529a Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sun, 20 Sep 2026 00:22:32 +0200
+Subject: [PATCH] SMOUK 0.0.65 pretitle validation and review tracks
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 70 +++++++++++++++++++++++++++++-----
+ 2 files changed, 61 insertions(+), 11 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index a62d1ec96..da60df2c1 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.64"
++SMOUK_VERSION = "0.0.65"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index c986d1274..624952f39 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -68,6 +68,13 @@ CHYRON_SIGNATURE_CHANGE_DELTA = 0.025
+ CHYRON_BOUNDARY_REFINE_MARGIN_FRAMES = 15 * 25
+ CHYRON_BOUNDARY_MATCH_THRESHOLD = 0.60
+ MAX_CHYRON_EVENTS = 40
++CHYRON_TRACKS = {
++    "headlines": ("CHYRONS · Titulares", {"story_headline", "persistent_headline"}),
++    "pretitles": ("CHYRONS · Pretítulos", {"pretitle"}),
++    "identities": ("CHYRONS · Personas", {
++        "presenter_left", "presenter_right", "name_cargo", "credit"}),
++    "locations": ("CHYRONS · Localización", {"live_location", "location"}),
++}
+ 
+ # OpenShot ships these profiles. SMOUK exposes the supported output choices
+ # without changing the 16:9 editing project.
+@@ -707,17 +714,45 @@ class VerticalizationDockContent(QWidget):
+             return 0
+ 
+     @staticmethod
+-    def _ensure_chyron_track():
++    def _chyron_track_key(template):
++        for key, (_label, templates) in CHYRON_TRACKS.items():
++            if template in templates:
++                return key
++        return "headlines"
++
++    @staticmethod
++    def _ensure_chyron_tracks():
++        """Create stable, separately reviewable Timeline tracks by title type."""
++        existing = {}
++        legacy_track = None
+         for track in Track.filter():
+-            if track.data.get("smouk_chyron_track"):
+-                return int(track.data.get("number", 0))
++            if not track.data.get("smouk_chyron_track"):
++                continue
++            key = track.data.get("smouk_chyron_track_key")
++            if key in CHYRON_TRACKS:
++                existing[key] = track
++            elif legacy_track is None:
++                legacy_track = track
+         layers = get_app().project.get("layers") or []
+-        number = max([int(layer.get("number", 0)) for layer in layers] or [0]) + 1000000
+-        track = Track()
+-        track.data = {"number": number, "y": 0, "label": "CHYRONS", "lock": False,
+-                      "smouk_chyron_track": True}
+-        track.save()
+-        return number
++        next_number = max([int(layer.get("number", 0)) for layer in layers] or [0]) + 1000000
++        result = {}
++        for key, (label, _templates) in CHYRON_TRACKS.items():
++            track = existing.get(key)
++            if track is None and legacy_track is not None:
++                # Upgrade the former single CHYRONS track in place, preserving
++                # its layer number and avoiding an orphan track on reanalysis.
++                track, legacy_track = legacy_track, None
++                track.data.update({"label": label, "smouk_chyron_track_key": key})
++                track.save()
++            if track is None:
++                track = Track()
++                track.data = {"number": next_number, "y": 0, "label": label, "lock": False,
++                              "smouk_chyron_track": True,
++                              "smouk_chyron_track_key": key}
++                track.save()
++                next_number += 1000000
++            result[key] = int(track.data.get("number", 0))
++        return result
+ 
+     @staticmethod
+     def _clear_generated_title_import():
+@@ -902,6 +937,12 @@ class VerticalizationDockContent(QWidget):
+             # tab, so it must not duplicate a live location.
+             return orange_ratio < .006 and dark_ratio >= .20 and white_ratio >= .012
+         if template in ("pretitle", "persistent_headline"):
++            if template == "pretitle":
++                # A pretitle is a compact centred dark pill.  A full-width
++                # dark story banner combined with white text in the picture
++                # (the Barça stadium signs were one example) is not one.
++                return dark_ratio >= .20 and white_ratio >= .012 and \
++                       not VerticalizationDockContent._dark_spans_crop(value, saturation, numpy)
+             return dark_ratio >= .20 and white_ratio >= .012
+         if template == "name_cargo":
+             # Interview/presenter identity has an orange accent or panel.
+@@ -927,6 +968,14 @@ class VerticalizationDockContent(QWidget):
+         edge = max(2, min(8, orange.shape[1] // 12))
+         return bool(numpy.any(active_columns[:edge]) and numpy.any(active_columns[-edge:]))
+ 
++    @staticmethod
++    def _dark_spans_crop(value, saturation, numpy):
++        """Detect a full-width dark banner where a compact pill is expected."""
++        dark = (value < 75) & (saturation < 120)
++        active_columns = numpy.count_nonzero(dark, axis=0) >= max(2, dark.shape[0] // 8)
++        edge = max(2, min(8, dark.shape[1] // 12))
++        return bool(numpy.any(active_columns[:edge]) and numpy.any(active_columns[-edge:]))
++
+     @staticmethod
+     def _chyron_ocr_psm(template):
+         # The original lower-third pass used PSM 6. It handles the broad TNM
+@@ -1157,7 +1206,7 @@ class VerticalizationDockContent(QWidget):
+ 
+     def _place_chyrons(self, events, duration, clip_in):
+         """Create the analysed assets on the Qt thread."""
+-        layer = self._ensure_chyron_track()
++        layers = self._ensure_chyron_tracks()
+         project_width = int(get_app().project.get("width") or 1920)
+         project_height = int(get_app().project.get("height") or 1080)
+         asset_dir = os.path.join(self._subtitle_asset_directory(), "chyron-assets")
+@@ -1179,6 +1228,7 @@ class VerticalizationDockContent(QWidget):
+             svg_path = os.path.join(asset_dir, "chyron-%s-%03d.svg" % (uuid.uuid4().hex[:8], index))
+             with open(svg_path, "w", encoding="utf-8") as stream:
+                 stream.write(svg)
++            layer = layers[self._chyron_track_key(event["template"])]
+             self._add_chyron_clip(svg_path, layer, position, event_duration, event)
+             added += 1
+         return events, added
+-- 
+2.55.0.windows.3
+

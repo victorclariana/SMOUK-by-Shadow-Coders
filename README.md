@@ -614,6 +614,16 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   TNM; mejora la lectura de titulares como `ILLA DEMANA GENEROSITAT EN
   L'ACOLLIDA`.
 
+### 0.0.65
+
+- Un pretítulo sólo se acepta si su banda oscura es una pastilla compacta. La
+  barra completa del titular, combinada con letras presentes en la imagen,
+  queda excluida antes de OCR. En el caso del Barça a `00:01:19,13` se rechaza
+  el falso `l BE MmLE…` y se conserva únicamente el titular real.
+- Los rótulos editables se distribuyen en cuatro pistas: `CHYRONS · Titulares`,
+  `CHYRONS · Pretítulos`, `CHYRONS · Personas` y `CHYRONS · Localización`.
+  Así, los elementos simultáneos se ven y revisan por separado.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4

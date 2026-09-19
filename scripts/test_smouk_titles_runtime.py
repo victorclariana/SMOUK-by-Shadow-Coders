@@ -142,11 +142,17 @@ class TitleRuntimeTests(unittest.TestCase):
         black = numpy.zeros((48, 180, 3), dtype=numpy.uint8)
         cv2.putText(black, 'TITOL', (8, 33), cv2.FONT_HERSHEY_SIMPLEX,
                     .8, (255, 255, 255), 2)
+        pretitle = numpy.full((48, 180, 3), (140, 140, 140), dtype=numpy.uint8)
+        cv2.rectangle(pretitle, (38, 7), (142, 41), (35, 35, 35), -1)
+        cv2.putText(pretitle, 'TITOL', (48, 32), cv2.FONT_HERSHEY_SIMPLEX,
+                    .65, (255, 255, 255), 2)
         self.assertTrue(self.dock._chyron_graphic_present(
             'story_headline', orange, cv2, numpy))
         self.assertFalse(self.dock._chyron_graphic_present(
             'story_headline', black, cv2, numpy))
         self.assertTrue(self.dock._chyron_graphic_present(
+            'pretitle', pretitle, cv2, numpy))
+        self.assertFalse(self.dock._chyron_graphic_present(
             'pretitle', black, cv2, numpy))
         self.assertFalse(self.dock._chyron_graphic_present(
             'location', orange, cv2, numpy))
@@ -170,6 +176,12 @@ class TitleRuntimeTests(unittest.TestCase):
             cv2.cvtColor(banner, cv2.COLOR_BGR2HSV), (2, 115, 115), (28, 255, 255)), numpy))
         self.assertFalse(self.dock._orange_spans_crop(cv2.inRange(
             cv2.cvtColor(label, cv2.COLOR_BGR2HSV), (2, 115, 115), (28, 255, 255)), numpy))
+
+    def test_title_templates_are_assigned_to_separate_review_tracks(self):
+        self.assertEqual(self.dock._chyron_track_key('story_headline'), 'headlines')
+        self.assertEqual(self.dock._chyron_track_key('pretitle'), 'pretitles')
+        self.assertEqual(self.dock._chyron_track_key('name_cargo'), 'identities')
+        self.assertEqual(self.dock._chyron_track_key('location'), 'locations')
 
     def test_clock_phase_uses_repeated_native_second_transitions(self):
         scores = [(frame, 0.0) for frame in range(1, 80)]

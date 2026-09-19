@@ -72,6 +72,7 @@ corresponding repository.
 | `0064-SMOUK-0.0.62-manual-title-zones.patch` | **openshot-qt** | Applies TNM's manual title zones, excludes picture/logo/clock/subtitle areas, separates simultaneous title templates with graphic gates, and reports title-boundary refinement and editable-clip creation. |
 | `0065-SMOUK-0.0.63-nondestructive-project-lifecycle.patch` | **openshot-qt** | Removes recursive runtime cleanup and ZIP recovery from startup/New/Open flows, skips automatic recovery of generated-title backups without relocating them, and records an explicit New Project safely. |
 | `0066-SMOUK-0.0.64-title-template-overlap-and-ocr-fix.patch` | **openshot-qt** | Separates TNM pretitle/headline bands, restores block OCR for title strips, and rejects all-caps/full-width-banner results from person and byline templates to prevent duplicate chyrons. |
+| `0067-SMOUK-0.0.65-pretitle-validation-and-review-tracks.patch` | **openshot-qt** | Rejects full-width headline bands masquerading as compact pretitles and places headline, pretitle, people, and location chyrons on separate Timeline review tracks. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply
