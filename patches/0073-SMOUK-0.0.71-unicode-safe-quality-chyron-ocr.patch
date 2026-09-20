@@ -1,0 +1,171 @@
+From 187e9eefec3b73bb37fb269c7787ae6f682e8b7b Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sun, 20 Sep 2026 20:55:11 +0200
+Subject: [PATCH] SMOUK 0.0.71 improve chyron OCR quality
+
+---
+ src/classes/smouk_ppocr.py     |  6 +++-
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 59 +++++++++++++++++++++++++++++-----
+ 3 files changed, 57 insertions(+), 10 deletions(-)
+
+diff --git a/src/classes/smouk_ppocr.py b/src/classes/smouk_ppocr.py
+index aee76f9ac..1e719a6f5 100644
+--- a/src/classes/smouk_ppocr.py
++++ b/src/classes/smouk_ppocr.py
+@@ -8,7 +8,11 @@ import sys
+ 
+ 
+ def _reply(payload):
+-    sys.__stdout__.write(json.dumps(payload, ensure_ascii=False) + "\n")
++    # The helper runs under a Windows Python whose console encoding can be
++    # CP-1252, while SMOUK deliberately reads this pipe as UTF-8.  Keeping the
++    # JSON transport ASCII-only protects Catalan characters such as ç, à and í
++    # from being decoded as U+FFFD before they reach the Timeline.
++    sys.__stdout__.write(json.dumps(payload, ensure_ascii=True) + "\n")
+     sys.__stdout__.flush()
+ 
+ 
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 19793f85f..92971e3ea 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.70"
++SMOUK_VERSION = "0.0.71"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 36de077a7..92e1b5278 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -61,6 +61,20 @@ CHYRON_VISUAL_SAMPLE_SECONDS = 1
+ CHYRON_STABLE_VISUAL_SAMPLES = 2
+ CHYRON_SIGNATURE_STABLE_DELTA = 0.012
+ CHYRON_SIGNATURE_CHANGE_DELTA = 0.025
++# A recognition score describes text quality.  It must survive duration
++# refinement unchanged so a visually well-bounded but unreadable banner never
++# becomes an apparently reliable chyron.
++CHYRON_MIN_CONFIDENCE = {
++    "story_headline": .90,
++    "persistent_headline": .90,
++    "pretitle": .90,
++    "presenter_left": .88,
++    "presenter_right": .88,
++    "name_cargo": .88,
++    "credit": .88,
++    "live_location": .85,
++    "location": .85,
++}
+ # OCR identifies the text only after its graphic has settled. A short native
+ # frame pass then recovers the first and last visual frame of that same graphic,
+ # without applying OCR to every frame of a programme.
+@@ -868,6 +882,13 @@ class VerticalizationDockContent(QWidget):
+         candidates = []
+         for line in str(text or "").splitlines():
+             line = " ".join(line.split()).strip()
++            # A Unicode replacement character proves that the source text was
++            # damaged in transit. Never turn it into an editable title.
++            if "\ufffd" in line:
++                continue
++            # PP-OCR can occasionally retain a graphic edge as asterisks.
++            # TNM editorial labels do not contain them.
++            line = re.sub(r"[*_]+", "", line).strip()
+             if template in ("presenter_left", "presenter_right"):
+                 # PSM 13 can retain a small fragment of the decorative bullet
+                 # before the name, or a dash after it. They are not part of
+@@ -881,6 +902,14 @@ class VerticalizationDockContent(QWidget):
+             uppercase = sum(character.isupper() for character in letters)
+             score = len(letters) + 12 * uppercase / max(1, len(letters))
+             candidates.append((score, line))
++        if template in ("story_headline", "persistent_headline", "pretitle"):
++            # These TNM editorial strips are all-uppercase. This excludes
++            # speech subtitles and picture text that overlap their areas.
++            candidates = [
++                (score, line) for score, line in candidates
++                if sum(char.isupper() for char in re.sub(r"[^A-Za-zÀ-ÖØ-öø-ÿ]", "", line)) /
++                max(1, len(re.sub(r"[^A-Za-zÀ-ÖØ-öø-ÿ]", "", line))) >= .72
++            ]
+         if template in ("presenter_left", "presenter_right", "name_cargo", "credit") and candidates:
+             # Identity and byline captions use people names in title case.
+             # An all-caps line in their overlapping lower-third areas is the
+@@ -900,7 +929,12 @@ class VerticalizationDockContent(QWidget):
+             # only the two strongest lines.  Sorting the returned lines by
+             # confidence can otherwise turn a lower-third into "role\nname".
+             selected = {line for _score, line in sorted(candidates, reverse=True)[:2]}
+-            return "\n".join(line for _score, line in candidates if line in selected)
++            result = "\n".join(line for _score, line in candidates if line in selected)
++            if template == "credit":
++                names = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ]{2,}", result)
++                if sum(name[0].isupper() for name in names) < 2:
++                    return ""
++            return result
+         return max(candidates, default=(0, ""))[1]
+ 
+     @staticmethod
+@@ -937,8 +971,11 @@ class VerticalizationDockContent(QWidget):
+                        int(width * .42), int(height * .89)),
+             "pretitle": (int(width * .25), int(height * .74),
+                          int(width * .72), int(height * .84)),
++            # A full-width headline can finish immediately before the TN bug.
++            # 90% clipped the final glyph in “ACOLLIDA”; 93% keeps that glyph
++            # while the clock remains below this band.
+             "story_headline": (0, int(height * .82),
+-                               int(width * .90), int(height * .94)),
++                               int(width * .93), int(height * .94)),
+             "persistent_headline": (int(width * .03), int(height * .88),
+                                     int(width * .60), int(height * .96)),
+         }
+@@ -955,9 +992,10 @@ class VerticalizationDockContent(QWidget):
+         white_ratio = float(numpy.count_nonzero(white)) / white.size
+         dark_ratio = float(numpy.count_nonzero((value < 75) & (saturation < 120))) / value.size
+         if template == "story_headline":
+-            # Orange is present in the TNM headline bar and presenter labels;
+-            # ordinary subtitles never carry this graphic accent.
+-            return orange_ratio >= .012
++            # Orange is present in the TNM headline bar, but an entering or
++            # leaving banner can still be empty. Require its white lettering
++            # as well so PP-OCR never reads the dark panel or picture behind it.
++            return orange_ratio >= .012 and white_ratio >= .020
+         if template in ("presenter_left", "presenter_right"):
+             # A presenter's compact orange label never fills its whole zone;
+             # this prevents the full-width story banner becoming two names.
+@@ -1122,7 +1160,6 @@ class VerticalizationDockContent(QWidget):
+         event["start_frame"] = absolute_origin + refined_start
+         # OpenShot clip end is exclusive, so retain the last visible frame.
+         event["end_frame"] = absolute_origin + refined_end + 1
+-        event["confidence"] = max(float(event.get("confidence", 0.0)), 0.90)
+         return event
+ 
+     def _scan_chyrons(self, program_path, program_start, duration, program_origin,
+@@ -1196,6 +1233,13 @@ class VerticalizationDockContent(QWidget):
+                     reading = reader.read(crop)
+                     if reading.get("reason"):
+                         raise RuntimeError("PP-OCRv5: " + reading["reason"])
++                    confidence = max(0.0, min(1.0, float(
++                        reading.get("confidence", 0.0) or 0.0)))
++                    if confidence < CHYRON_MIN_CONFIDENCE.get(template, .90):
++                        # Keep an existing title alive and retry the next
++                        # settled sample. A transition frame must never become
++                        # a new low-quality editable title.
++                        continue
+                     state["last_ocr"] = signature
+                     text = self._normalise_chyron_text(reading.get("text"), template)
+                     if not text:
+@@ -1222,8 +1266,7 @@ class VerticalizationDockContent(QWidget):
+                                         "_source_start_frame": int(round(source_second * 25)),
+                                         "_source_end_frame": int(round(source_second * 25)) + sample_frames,
+                                         "samples": CHYRON_STABLE_VISUAL_SAMPLES,
+-                                        "confidence": max(0.0, min(1.0, float(
+-                                            reading.get("confidence", 0.0) or 0.0))),
++                                        "confidence": confidence,
+                                         "_signature": signature.copy(),
+                                         "reference_image": "",
+                                         "review_status": "pending"}
+-- 
+2.55.0.windows.3
+

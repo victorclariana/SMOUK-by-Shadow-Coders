@@ -690,6 +690,22 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   de solo lectura en `MATERIAL PER TRACTAR` detecta los relojes de CLEAN y
   PROGRAMA y entra en el análisis de las zonas de títulos.
 
+### 0.0.71
+
+- Se corrige el protocolo local de PP-OCRv5 en Windows: sus respuestas se
+  codifican ahora como JSON ASCII escapado antes de cruzar el pipe UTF-8 de
+  SMOUK. Así se conservan `ç`, `à`, `í`, `ñ` y el resto de caracteres
+  catalanes en los SVG editables, en vez de guardarse como `�`.
+- El área del titular TNM se extiende del 90% al 93% del ancho: el límite
+  anterior podía truncar el último glifo de titulares largos, como
+  `ACOLLIDA`. El reloj continúa excluido por estar debajo de esa banda.
+- Los titulares, pretítulos y cintillos persistentes solo se aceptan cuando
+  contienen su combinación gráfica de banda naranja y texto blanco y superan
+  una confianza mínima real de PP-OCRv5. Las transiciones vacías, subtítulos
+  de imagen y lecturas corruptas ya no se convierten en chyrons editables.
+  El refinado de entrada/salida conserva la confianza original y no puede
+  inflarla artificialmente.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4

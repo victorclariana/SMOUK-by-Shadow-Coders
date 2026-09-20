@@ -23,6 +23,7 @@ os.environ["OPENSHOT_QT_API"] = "pyqt5"
 from qt_api import QtCore, QApplication, QWidget, QLabel, QPushButton, QProgressBar, QMainWindow, QStatusBar
 from windows import verticalization as v
 from classes import smouk_titles
+from classes import smouk_ppocr
 
 APP = QApplication.instance() or QApplication([])
 
@@ -129,7 +130,7 @@ class TitleRuntimeTests(unittest.TestCase):
         self.assertEqual(regions['presenter_left'], (96, 442, 432, 486))
         self.assertEqual(regions['presenter_right'], (528, 442, 825, 486))
         self.assertEqual(regions['pretitle'], (240, 399, 691, 453))
-        self.assertEqual(regions['story_headline'], (0, 442, 864, 507))
+        self.assertEqual(regions['story_headline'], (0, 442, 892, 507))
         self.assertEqual(regions['persistent_headline'], (28, 475, 576, 518))
         for left, top, right, bottom in regions.values():
             self.assertLess(right, 900)  # Leave the TN bug and clock untouched.
@@ -140,6 +141,8 @@ class TitleRuntimeTests(unittest.TestCase):
         import cv2
         import numpy
         orange = numpy.full((48, 180, 3), (0, 128, 255), dtype=numpy.uint8)
+        cv2.putText(orange, 'TITOL', (8, 33), cv2.FONT_HERSHEY_SIMPLEX,
+                    .8, (255, 255, 255), 2)
         black = numpy.zeros((48, 180, 3), dtype=numpy.uint8)
         cv2.putText(black, 'TITOL', (8, 33), cv2.FONT_HERSHEY_SIMPLEX,
                     .8, (255, 255, 255), 2)
@@ -166,6 +169,15 @@ class TitleRuntimeTests(unittest.TestCase):
         self.assertEqual(
             self.dock._normalise_chyron_text('Pilar Abril\nCorresponsal', 'name_cargo'),
             'Pilar Abril\nCorresponsal')
+
+    def test_title_text_filter_rejects_subtitles_and_corrupt_characters(self):
+        self.assertEqual(
+            self.dock._normalise_chyron_text('i no els traficants de persones.', 'pretitle'), '')
+        self.assertEqual(
+            self.dock._normalise_chyron_text('EL BAR\ufffdA VOL SEGUIR L\u00cdDER', 'story_headline'), '')
+        self.assertEqual(
+            self.dock._normalise_chyron_text('CONSELL DE SEGURETAT EUROPEU**', 'persistent_headline'),
+            'CONSELL DE SEGURETAT EUROPEU')
 
     def test_full_width_orange_banner_is_not_a_presenter_label(self):
         import cv2
@@ -240,6 +252,21 @@ class TitleRuntimeTests(unittest.TestCase):
         with patch.object(smouk_titles.shutil, 'which', return_value=r'C:\\ffmpeg.exe'), \
                 patch.object(smouk_titles.os.path, 'isfile', return_value=True):
             self.assertEqual(smouk_titles._ffmpeg_path(), r'C:\\ffmpeg.exe')
+
+    def test_ppocr_protocol_preserves_catalan_characters(self):
+        """The helper pipe must not depend on the Windows console code page."""
+        class Capture:
+            value = ''
+            def write(self, text):
+                self.value += text
+            def flush(self):
+                pass
+        capture = Capture()
+        with patch.object(smouk_ppocr.sys, '__stdout__', capture):
+            smouk_ppocr._reply({'text': 'Barça, Masmitjà i Trullàs'})
+        self.assertIn('\\u00e7', capture.value)
+        self.assertIn('\\u00e0', capture.value)
+        self.assertNotIn('ç', capture.value)
 
     def test_button_signal_boolean_is_accepted(self):
         with patch.object(v.QFileDialog, 'getExistingDirectory', return_value=''):
