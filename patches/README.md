@@ -76,6 +76,7 @@ corresponding repository.
 | `0068-SMOUK-0.0.66-settled-identity-ocr-and-template-tracks.patch` | **openshot-qt** | Uses the saturated TNM graphic to OCR settled presenter labels without moving picture content, prevents presenter/name-cargo duplicates, and assigns every chyron template its own review track. |
 | `0069-SMOUK-0.0.67-safe-chyron-selection-and-presenter-ocr.patch` | **openshot-qt** | Keeps SVG chyron selections out of the video reframe path and uses tailored OCR modes to read both TNM presenter labels reliably. |
 | `0070-SMOUK-0.0.68-ppocrv5-title-recognition.patch` | **openshot-qt** | Replaces the prior title and clock recognizer with the isolated local PP-OCRv5 Latin model, preserving TNM visual gates and 25-fps boundaries while sending crops over an in-memory helper protocol. |
+| `0071-SMOUK-0.0.69-608x1080-native-height-output.patch` | **openshot-qt** | Adds 608×1080 nominal 9:16 profiles at 25/30 fps, makes 25 fps the default dock selection, and uses the exact 608:1080 canvas ratio in preview and export. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

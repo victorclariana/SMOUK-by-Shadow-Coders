@@ -669,6 +669,16 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   repositorio oficial de Paddle y sus hashes locales quedan en la caché para
   detectar cualquier modificación posterior.
 
+### 0.0.69
+
+- Se añaden al desplegable `Vertical output profile` los perfiles
+  `608 x 1080 (9:16)`, a 25 y a 30 fps. El renderizador usa el lienzo exacto
+  de 608×1080 y una guía con esa misma proporción, de modo que una fuente HD
+  de 1920×1080 puede encuadrarse a su altura nativa sin ampliación vertical.
+- `608 x 1080 (9:16) - 25 fps` pasa a ser el valor inicial de SMOUK. Las
+  instalaciones existentes se actualizan una única vez al abrir el dock;
+  después, cualquier selección del editor se conserva como preferencia.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4

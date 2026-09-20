@@ -1,0 +1,157 @@
+From aabb15647115515b35696885f7839b419afa92a8 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sun, 20 Sep 2026 10:24:18 +0200
+Subject: [PATCH] SMOUK 0.0.69 add native-height output profiles
+
+---
+ src/profiles/00608x1080p0025_09-16 | 10 ++++++++++
+ src/profiles/00608x1080p0030_09-16 | 10 ++++++++++
+ src/profiles/definitions/FB.json   |  7 ++++++-
+ src/settings/_default.settings     |  9 ++++++++-
+ src/windows/export.py              |  2 ++
+ src/windows/main_window.py         |  2 +-
+ src/windows/verticalization.py     | 13 ++++++++++++-
+ 7 files changed, 49 insertions(+), 4 deletions(-)
+ create mode 100644 src/profiles/00608x1080p0025_09-16
+ create mode 100644 src/profiles/00608x1080p0030_09-16
+
+diff --git a/src/profiles/00608x1080p0025_09-16 b/src/profiles/00608x1080p0025_09-16
+new file mode 100644
+index 000000000..f519c0a34
+--- /dev/null
++++ b/src/profiles/00608x1080p0025_09-16
+@@ -0,0 +1,10 @@
++description=HD Vertical 608x1080 25 fps
++frame_rate_num=25
++frame_rate_den=1
++width=608
++height=1080
++progressive=1
++sample_aspect_num=1
++sample_aspect_den=1
++display_aspect_num=76
++display_aspect_den=135
+diff --git a/src/profiles/00608x1080p0030_09-16 b/src/profiles/00608x1080p0030_09-16
+new file mode 100644
+index 000000000..6c25e2a27
+--- /dev/null
++++ b/src/profiles/00608x1080p0030_09-16
+@@ -0,0 +1,10 @@
++description=HD Vertical 608x1080 30 fps
++frame_rate_num=30
++frame_rate_den=1
++width=608
++height=1080
++progressive=1
++sample_aspect_num=1
++sample_aspect_den=1
++display_aspect_num=76
++display_aspect_den=135
+diff --git a/src/profiles/definitions/FB.json b/src/profiles/definitions/FB.json
+index f31166775..018de92d2 100644
+--- a/src/profiles/definitions/FB.json
++++ b/src/profiles/definitions/FB.json
+@@ -28,6 +28,11 @@
+                 {"num": 60, "den": 1, "progressive": true, "dar": {"num": 1, "den": 1}, "notes": "", "sar": {"num": 1, "den": 1}}
+             ]
+         },
++        { "width": 608, "height": 1080, "notes": "HD Vertical 608x1080", "fps": [
++                {"num": 25, "den": 1, "progressive": true, "dar": {"num": 76, "den": 135}, "notes": "", "sar": {"num": 1, "den": 1}},
++                {"num": 30, "den": 1, "progressive": true, "dar": {"num": 76, "den": 135}, "notes": "", "sar": {"num": 1, "den": 1}}
++            ]
++        },
+         { "width": 1080, "height": 1350, "notes": "HD Vertical", "fps": [
+                 {"num": 24, "den": 1, "progressive": true, "dar": {"num": 4, "den": 5}, "notes": "", "sar": {"num": 1, "den": 1}},
+                 {"num": 25, "den": 1, "progressive": true, "dar": {"num": 4, "den": 5}, "notes": "", "sar": {"num": 1, "den": 1}},
+@@ -48,4 +53,4 @@
+             ]
+         }
+     ]
+-}
+\ No newline at end of file
++}
+diff --git a/src/settings/_default.settings b/src/settings/_default.settings
+index 96706ab55..2704d3047 100644
+--- a/src/settings/_default.settings
++++ b/src/settings/_default.settings
+@@ -73,12 +73,19 @@
+     "setting": "smouk-pal-default-profile-v1"
+   },
+   {
+-    "value": "01080x1350p0025_04-05",
++    "value": "00608x1080p0025_09-16",
+     "title": "",
+     "type": "hidden",
+     "category": "General",
+     "setting": "smouk_vertical_output_profile"
+   },
++  {
++    "value": false,
++    "title": "",
++    "type": "hidden",
++    "category": "General",
++    "setting": "smouk_vertical_output_profile_608_default_v1"
++  },
+   {
+     "value": "",
+     "title": "",
+diff --git a/src/windows/export.py b/src/windows/export.py
+index f889a9b62..5eba6566e 100644
+--- a/src/windows/export.py
++++ b/src/windows/export.py
+@@ -64,6 +64,8 @@ MAX_FPS_SPINBOX_VALUE = 2147483647
+ # SMOUK output profiles. The editing project remains 16:9; these settings are
+ # applied only to the isolated Timeline created by this export dialog.
+ SMOUK_OUTPUT_PROFILES = {
++    "00608x1080p0025_09-16": (608, 1080, 25),
++    "00608x1080p0030_09-16": (608, 1080, 30),
+     "01080x1350p0025_04-05": (1080, 1350, 25),
+     "01080x1350p0030_04-05": (1080, 1350, 30),
+     "01080x1920p0025_09-16": (1080, 1920, 25),
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index bcba0fb08..c2691676a 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.68"
++SMOUK_VERSION = "0.0.69"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 3d17fccab..36de077a7 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -94,6 +94,8 @@ LEGACY_CHYRON_TRACK_KEYS = {
+ # OpenShot ships these profiles. SMOUK exposes the supported output choices
+ # without changing the 16:9 editing project.
+ OUTPUT_PROFILES = (
++    ("608 x 1080 (9:16) - 25 fps", "00608x1080p0025_09-16", 608.0 / 1080.0),
++    ("608 x 1080 (9:16) - 30 fps", "00608x1080p0030_09-16", 608.0 / 1080.0),
+     ("1080 x 1350 (4:5) - 25 fps", "01080x1350p0025_04-05", 4.0 / 5.0),
+     ("1080 x 1350 (4:5) - 30 fps", "01080x1350p0030_04-05", 4.0 / 5.0),
+     ("1080 x 1920 (9:16) - 25 fps", "01080x1920p0025_09-16", 9.0 / 16.0),
+@@ -2443,7 +2445,16 @@ class VerticalizationDockContent(QWidget):
+         self.output_profile.setObjectName("verticalizationOutputProfile")
+         for title, profile_id, _ratio in OUTPUT_PROFILES:
+             self.output_profile.addItem(_(title), profile_id)
+-        saved_profile = get_app().get_settings().get("smouk_vertical_output_profile")
++        settings = get_app().get_settings()
++        # 0.0.69 changes SMOUK's shipped default to the native-height preset.
++        # Migrate existing installs once so an unmodified old default does not
++        # hide the new choice on first launch after upgrading.
++        if not settings.get("smouk_vertical_output_profile_608_default_v1"):
++            settings.set("smouk_vertical_output_profile", "00608x1080p0025_09-16")
++            settings.set("smouk_vertical_output_profile_608_default_v1", True)
++            if hasattr(settings, "save"):
++                settings.save()
++        saved_profile = settings.get("smouk_vertical_output_profile")
+         saved_index = self.output_profile.findData(saved_profile)
+         if saved_index >= 0:
+             self.output_profile.setCurrentIndex(saved_index)
+-- 
+2.55.0.windows.3
+
