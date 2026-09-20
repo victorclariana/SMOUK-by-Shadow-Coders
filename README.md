@@ -651,6 +651,24 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   reencuadre de vídeo. El deslizador vuelve a cero y no evalúa keyframes de un
   overlay, evitando el bloqueo observado al seleccionar el título de Anna.
 
+### 0.0.68
+
+- El reconocimiento de los relojes y de los rótulos TNM se realiza ahora con
+  **PP-OCRv5 Latin**, el modelo neuronal local de PaddleOCR que incluye
+  alfabetos latinos y catalán. Se elimina del código de análisis cualquier
+  llamada, comprobación de idioma o archivo temporal del motor anterior.
+- SMOUK conserva el detector visual, las zonas editoriales TNM, las exclusiones
+  de logo/reloj/subtítulos y el refinado a 25 fps. PP-OCRv5 sólo recibe el
+  recorte de una gráfica ya estable y devuelve texto y confianza, por lo que
+  no analiza todos los fotogramas ni genera PNG temporales por lectura.
+- El modelo se ejecuta en un entorno Python 3.12 aislado en
+  `.third_party/paddleocr`, mientras la aplicación mantiene su Python 3.14.
+  La instalación verificada usa `PaddlePaddle 3.3.1` y `PaddleOCR 3.7.0` desde
+  PyPI: los 69 wheels se comprobaron contra sus SHA-256 publicados antes de
+  instalarse sin red. El modelo `latin_PP-OCRv5_mobile_rec` procede del
+  repositorio oficial de Paddle y sus hashes locales quedan en la caché para
+  detectar cualquier modificación posterior.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4

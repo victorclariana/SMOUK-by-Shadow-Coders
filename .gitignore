@@ -18,3 +18,6 @@ __pycache__/
 .smouk-transcription/
 .smouk-models/
 .smouk-transcriptions/
+
+# Audited local PP-OCRv5 runtime, downloaded wheels and model cache.
+/.third_party/paddleocr/

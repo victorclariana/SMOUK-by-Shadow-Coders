@@ -1,4 +1,4 @@
-"""Qt regression checks; optional read-only FFmpeg/Tesseract checks on real media.
+"""Qt regression checks; optional read-only FFmpeg/PP-OCRv5 checks on real media.
 
 Run with the same MinGW Python as run_smouk.bat. No user project is loaded.
 """
@@ -205,9 +205,7 @@ class TitleRuntimeTests(unittest.TestCase):
         self.assertLessEqual(presenter_distance, v.CHYRON_SIGNATURE_STABLE_DELTA)
         self.assertGreater(generic_distance, presenter_distance)
 
-    def test_presenter_ocr_modes_and_cleanup_keep_both_names(self):
-        self.assertEqual(self.dock._chyron_ocr_psm('presenter_left'), 7)
-        self.assertEqual(self.dock._chyron_ocr_psm('presenter_right'), 13)
+    def test_presenter_cleanup_keeps_both_names(self):
         self.assertEqual(
             self.dock._normalise_chyron_text('LE Xavi Coral Trullàs —', 'presenter_right'),
             'Xavi Coral Trullàs')
@@ -252,8 +250,8 @@ class TitleRuntimeTests(unittest.TestCase):
 
     def test_clock_failure_preserves_reason(self):
         self.dock._title_pending_result = result_fixture()
-        self.dock._on_title_clock_ocr_completed({'error': 'Tesseract timeout'})
-        self.assertIn('Tesseract timeout', self.dock.title_folder_results.text())
+        self.dock._on_title_clock_ocr_completed({'error': 'PP-OCRv5 timeout'})
+        self.assertIn('PP-OCRv5 timeout', self.dock.title_folder_results.text())
         self.assertFalse(self.dock.imports)
 
     def test_title_scan_error_is_not_reported_as_success(self):
@@ -271,7 +269,15 @@ class TitleRuntimeTests(unittest.TestCase):
             worker_threads.append(QtCore.QThread.currentThread() != APP.thread())
             time.sleep(.15)
             return []
-        with patch.object(v, 'available_ocr_language', return_value='cat'), \
+        class FakePaddleSession:
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                pass
+            def read(self, _image):
+                return {'text': '14:30:00', 'confidence': 1.0, 'reason': ''}
+        with patch.object(v, 'ppocr_runtime_status', return_value={'available': True}), \
+                patch.object(v, 'PaddleOcrSession', FakePaddleSession), \
                 patch.object(self.dock, '_ocr_clock_at', side_effect=clock), \
                 patch.object(self.dock, '_scan_chyrons', side_effect=scan), \
                 patch.object(self.dock, '_place_chyrons', return_value=([], 0)):
