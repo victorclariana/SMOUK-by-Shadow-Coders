@@ -22,6 +22,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ["OPENSHOT_QT_API"] = "pyqt5"
 from qt_api import QtCore, QApplication, QWidget, QLabel, QPushButton, QProgressBar, QMainWindow, QStatusBar
 from windows import verticalization as v
+from classes import smouk_titles
 
 APP = QApplication.instance() or QApplication([])
 
@@ -233,6 +234,12 @@ class TitleRuntimeTests(unittest.TestCase):
                 scores[frame - 1] = (frame, 10.0)
         self.assertEqual(self.dock._clock_phase_from_differences(scores), 6)
         self.assertEqual(self.dock._clock_phase_from_differences([(1, 2.0)]), 0)
+
+    def test_clock_ffmpeg_resolver_is_available(self):
+        """A resolver error must not masquerade as an absent visual clock."""
+        with patch.object(smouk_titles.shutil, 'which', return_value=r'C:\\ffmpeg.exe'), \
+                patch.object(smouk_titles.os.path, 'isfile', return_value=True):
+            self.assertEqual(smouk_titles._ffmpeg_path(), r'C:\\ffmpeg.exe')
 
     def test_button_signal_boolean_is_accepted(self):
         with patch.object(v.QFileDialog, 'getExistingDirectory', return_value=''):

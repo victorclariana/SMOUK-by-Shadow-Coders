@@ -679,6 +679,17 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   instalaciones existentes se actualizan una única vez al abrir el dock;
   después, cualquier selección del editor se conserva como preferencia.
 
+### 0.0.70
+
+- Se corrige el localizador de FFmpeg de la validación de carpeta de títulos.
+  Un error interno al crear la plantilla visual de CLEAN.MP4 se interpretaba
+  como si el reloj no existiera y detenía la cadena antes de PP-OCRv5. Ahora
+  el error se informa como tal y la detección vuelve a crear la referencia
+  cerca de 01:23 para rastrear ambos feeds y continuar al OCR de chyrons.
+- Se añade una prueba de regresión para el localizador de FFmpeg. La validación
+  de solo lectura en `MATERIAL PER TRACTAR` detecta los relojes de CLEAN y
+  PROGRAMA y entra en el análisis de las zonas de títulos.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4

@@ -1,0 +1,74 @@
+From dbc12a64a9d559e769baa73a3fdcb6cc706b78bb Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sun, 20 Sep 2026 10:35:39 +0200
+Subject: [PATCH] SMOUK 0.0.70 fix visual clock detection
+
+---
+ src/classes/smouk_titles.py | 15 +++++++++++----
+ src/windows/main_window.py  |  2 +-
+ 2 files changed, 12 insertions(+), 5 deletions(-)
+
+diff --git a/src/classes/smouk_titles.py b/src/classes/smouk_titles.py
+index b9a650035..dfb1945cf 100644
+--- a/src/classes/smouk_titles.py
++++ b/src/classes/smouk_titles.py
+@@ -9,6 +9,7 @@ import base64
+ import json
+ import os
+ import re
++import shutil
+ import subprocess
+ import sys
+ import threading
+@@ -446,17 +447,21 @@ def validate_title_folder(folder, fps=25, clock_progress=None):
+ 
+     # Use CLEAN around 01:23 as the source of truth for the shared visual
+     # clock layout before scanning either feed. Exact digits remain OCR work.
++    reference_error = ""
+     try:
+         import cv2
+         import numpy
+         ffmpeg = _ffmpeg_path()
+         reference = _extract_clock_reference(
+             result["files"]["clean"], ffmpeg, cv2, numpy) if ffmpeg else None
+-    except Exception:
++    except Exception as exc:
+         reference = None
++        reference_error = str(exc)
+     if reference is None:
+-        result["warnings"].append(
+-            "No se ha podido extraer la plantilla del reloj cerca de 01:23 en CLEAN.MP4.")
++        warning = "No se ha podido extraer la plantilla del reloj cerca de 01:23 en CLEAN.MP4."
++        if reference_error:
++            warning = "%s Detalle: %s" % (warning, reference_error)
++        result["warnings"].append(warning)
+         result["clock_reference"] = {"available": False}
+     else:
+         result["clock_reference"] = {
+@@ -475,7 +480,9 @@ def validate_title_folder(folder, fps=25, clock_progress=None):
+ 
+         if reference is None:
+             result["clock_probes"][key] = {
+-                "candidate": False, "reason": "reference_unavailable", "samples": 0}
++                "candidate": False,
++                "reason": reference_error or "reference_unavailable",
++                "samples": 0}
+         else:
+             result["clock_probes"][key] = _clock_probe(
+                 result["files"][key], reference, fps=fps,
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index c2691676a..19793f85f 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.69"
++SMOUK_VERSION = "0.0.70"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+-- 
+2.55.0.windows.3
+
