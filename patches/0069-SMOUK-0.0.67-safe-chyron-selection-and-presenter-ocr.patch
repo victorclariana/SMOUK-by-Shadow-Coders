@@ -1,0 +1,72 @@
+From fba07e3914dd7002215025091ca03c00c48b6888 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sun, 20 Sep 2026 02:10:23 +0200
+Subject: [PATCH] SMOUK 0.0.67 stabilize chyron selection
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 21 +++++++++++++++++++++
+ 2 files changed, 22 insertions(+), 1 deletion(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 55f597405..5ac13a0b2 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.66"
++SMOUK_VERSION = "0.0.67"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 1629d32ff..7f7293e0b 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -861,6 +861,12 @@ class VerticalizationDockContent(QWidget):
+         candidates = []
+         for line in str(text or "").splitlines():
+             line = " ".join(line.split()).strip()
++            if template in ("presenter_left", "presenter_right"):
++                # PSM 13 can retain a small fragment of the decorative bullet
++                # before the name, or a dash after it. They are not part of
++                # the editable caption.
++                line = re.sub(r"^(?:[A-ZÀ-Ö]{1,2}\s+)+(?=[A-ZÀ-Ö][a-zà-öø-ÿ])", "", line)
++                line = re.sub(r"\s*[-–—]+\s*$", "", line).strip()
+             letters = re.sub(r"[^A-Za-zÀ-ÖØ-öø-ÿ]", "", line)
+             words = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ]{3,}", line)
+             if len(letters) < 8 or not words:
+@@ -1011,6 +1017,13 @@ class VerticalizationDockContent(QWidget):
+         # The original lower-third pass used PSM 6. It handles the broad TNM
+         # title strips better than PSM 7, which merged the pretitle with the
+         # headline and introduced errors such as trailing "dd".
++        if template == "presenter_left":
++            return 7
++        if template == "presenter_right":
++            # The right TNM name bar begins after a large empty crop margin.
++            # Sparse-line mode reads it reliably, where the block mode returns
++            # no text on the broadcast frame at 03:36.
++            return 13
+         return 6
+ 
+     @staticmethod
+@@ -2579,6 +2592,14 @@ class VerticalizationDockContent(QWidget):
+             return
+         window = get_app().window
+         clip = self._selected_clip()
++        if clip is not None and clip.data.get("smouk_chyron_clip"):
++            # Chyrons are full-canvas SVG overlays. They cannot be reframed,
++            # and forcing their image-reader keyframes through the 16:9 crop
++            # control during Timeline selection can leave the UI unstable.
++            self.reframe_slider.blockSignals(True)
++            self.reframe_slider.setValue(0)
++            self.reframe_slider.blockSignals(False)
++            return
+         value = 0.0
+         if window is not None and clip is not None:
+             value = self._reframe_value_at_frame(clip, self._clip_frame(clip, window))
+-- 
+2.55.0.windows.3
+

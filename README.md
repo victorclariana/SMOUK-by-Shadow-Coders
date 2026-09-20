@@ -640,6 +640,17 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   nombre y cargo, firma, directo y localización. Las capas simultáneas ya no
   quedan superpuestas en una sola pista.
 
+### 0.0.67
+
+- Las dos cartelas de presentadores se leen con el modo OCR que corresponde a
+  su geometría: línea única a la izquierda y línea escasa a la derecha. En el
+  plano de `03:36` se generan `Anna Garnatxe Masmitjà` y `Xavi Coral Trullàs`;
+  se elimina el fragmento decorativo previo y la raya final que puede devolver
+  el OCR de la cartela derecha.
+- Seleccionar un SVG de chyron en la Timeline ya no lo envía al control de
+  reencuadre de vídeo. El deslizador vuelve a cero y no evalúa keyframes de un
+  overlay, evitando el bloqueo observado al seleccionar el título de Anna.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4

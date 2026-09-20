@@ -205,6 +205,29 @@ class TitleRuntimeTests(unittest.TestCase):
         self.assertLessEqual(presenter_distance, v.CHYRON_SIGNATURE_STABLE_DELTA)
         self.assertGreater(generic_distance, presenter_distance)
 
+    def test_presenter_ocr_modes_and_cleanup_keep_both_names(self):
+        self.assertEqual(self.dock._chyron_ocr_psm('presenter_left'), 7)
+        self.assertEqual(self.dock._chyron_ocr_psm('presenter_right'), 13)
+        self.assertEqual(
+            self.dock._normalise_chyron_text('LE Xavi Coral Trullàs —', 'presenter_right'),
+            'Xavi Coral Trullàs')
+
+    def test_chyron_selection_does_not_evaluate_reframe_keyframes(self):
+        class Slider:
+            def __init__(self):
+                self.value = None
+            def blockSignals(self, _blocked):
+                pass
+            def setValue(self, value):
+                self.value = value
+        title = SimpleNamespace(data={'smouk_chyron_clip': True})
+        self.dock._reframe_dragging = False
+        self.dock.reframe_slider = Slider()
+        with patch.object(self.dock, '_selected_clip', return_value=title), \
+                patch.object(self.dock, '_clip_frame', side_effect=AssertionError):
+            self.dock._sync_reframe_slider()
+        self.assertEqual(self.dock.reframe_slider.value, 0)
+
     def test_clock_phase_uses_repeated_native_second_transitions(self):
         scores = [(frame, 0.0) for frame in range(1, 80)]
         for first in (8, 33, 58):

@@ -74,6 +74,7 @@ corresponding repository.
 | `0066-SMOUK-0.0.64-title-template-overlap-and-ocr-fix.patch` | **openshot-qt** | Separates TNM pretitle/headline bands, restores block OCR for title strips, and rejects all-caps/full-width-banner results from person and byline templates to prevent duplicate chyrons. |
 | `0067-SMOUK-0.0.65-pretitle-validation-and-review-tracks.patch` | **openshot-qt** | Rejects full-width headline bands masquerading as compact pretitles and places headline, pretitle, people, and location chyrons on separate Timeline review tracks. |
 | `0068-SMOUK-0.0.66-settled-identity-ocr-and-template-tracks.patch` | **openshot-qt** | Uses the saturated TNM graphic to OCR settled presenter labels without moving picture content, prevents presenter/name-cargo duplicates, and assigns every chyron template its own review track. |
+| `0069-SMOUK-0.0.67-safe-chyron-selection-and-presenter-ocr.patch` | **openshot-qt** | Keeps SVG chyron selections out of the video reframe path and uses tailored OCR modes to read both TNM presenter labels reliably. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply
