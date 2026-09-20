@@ -80,6 +80,7 @@ corresponding repository.
 | `0072-SMOUK-0.0.70-fix-clock-reference-ffmpeg-resolver.patch` | **openshot-qt** | Restores the FFmpeg resolver used by visual-clock reference extraction, reports a resolver error rather than a false absent-clock result, and adds a regression test. |
 | `0073-SMOUK-0.0.71-unicode-safe-quality-chyron-ocr.patch` | **openshot-qt** | Preserves Catalan Unicode through the local PP-OCRv5 pipe, prevents final-glyph clipping in the TNM headline zone, and accepts only settled, confident title graphics. |
 | `0074-SMOUK-0.0.72-segmented-tnm-title-bands.patch` | **openshot-qt** | Segments the fixed TNM headline and pretitle bands into individual words before PP-OCRv5 recognition, includes the full large-title geometry, and tolerates their settled entrance animation. |
+| `0075-SMOUK-0.0.73-persistent-title-continuity.patch` | **openshot-qt** | Bridges brief OCR blind spots in a same-topic persistent TNM label and removes the `àas` presenter-name artifact. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

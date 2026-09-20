@@ -722,6 +722,16 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   muestras estables y los filtros gráficos. Los nombres y otras etiquetas
   compactas conservan el umbral estricto anterior.
 
+### 0.0.73
+
+- Los cintillos persistentes TNM se reconstruyen como un único clip editable
+  aunque los subtítulos de emisión o un cambio de plano oculten temporalmente
+  su zona inferior izquierda. La unión exige el mismo texto y no cruza un
+  cambio a otro tema editorial.
+- Se limpia el artefacto OCR de nombres `àas` al final de un apellido, que
+  corregía incorrectamente `Xavi Coral Trullàs` como `Trullàas`. La lectura
+  correcta de `Anna Garnatxe Masmitjà` se conserva.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4

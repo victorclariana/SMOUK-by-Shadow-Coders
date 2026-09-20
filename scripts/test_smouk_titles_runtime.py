@@ -227,6 +227,25 @@ class TitleRuntimeTests(unittest.TestCase):
         self.assertEqual(
             self.dock._normalise_chyron_text('LE Xavi Coral Trullàs —', 'presenter_right'),
             'Xavi Coral Trullàs')
+        self.assertEqual(
+            self.dock._normalise_chyron_text('Xavi Coral Trullàas', 'presenter_right'),
+            'Xavi Coral Trullàs')
+
+    def test_persistent_title_blind_spots_are_merged(self):
+        events = [
+            {'template': 'persistent_headline', 'text': 'CONSELL DE SEGURETAT EUROPEU',
+             'normalised': 'consell de seguretat europeu', 'start_frame': 100, 'end_frame': 200,
+             'confidence': .91, 'samples': 2},
+            {'template': 'persistent_headline', 'text': 'CONSELL DE SEGURETAT EUROPEU -',
+             'normalised': 'consell de seguretat europeu', 'start_frame': 500,
+             'end_frame': 650, 'confidence': .97, 'samples': 2},
+            {'template': 'story_headline', 'text': 'TITULAR', 'start_frame': 700,
+             'end_frame': 800, 'confidence': .99, 'samples': 2},
+        ]
+        merged = self.dock._merge_persistent_chyrons(events)
+        self.assertEqual(len(merged), 2)
+        self.assertEqual(merged[0]['end_frame'], 650)
+        self.assertEqual(merged[0]['samples'], 4)
 
     def test_chyron_selection_does_not_evaluate_reframe_keyframes(self):
         class Slider:

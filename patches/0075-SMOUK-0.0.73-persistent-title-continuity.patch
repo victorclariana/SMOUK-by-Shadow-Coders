@@ -1,0 +1,101 @@
+From 934e6a661ac0314dc99fa4792d72291c2f32287d Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sun, 20 Sep 2026 23:11:20 +0200
+Subject: [PATCH] SMOUK 0.0.73 preserve persistent title continuity
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 43 +++++++++++++++++++++++++++++++++-
+ 2 files changed, 43 insertions(+), 2 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 019fa7a7d..0a73632b0 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.72"
++SMOUK_VERSION = "0.0.73"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 87fc0207d..00f806c42 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -66,6 +66,9 @@ CHYRON_SIGNATURE_CHANGE_DELTA = 0.025
+ # by more than the compact-name thresholds below.
+ CHYRON_TEXT_BAND_STABLE_DELTA = 0.050
+ CHYRON_TEXT_BAND_CHANGE_DELTA = 0.080
++# A persistent TNM topic label remains editorially valid across picture cuts
++# and broadcast subtitles that can briefly obscure its small lower-left band.
++PERSISTENT_TITLE_BRIDGE_SECONDS = 90
+ # A recognition score describes text quality.  It must survive duration
+ # refinement unchanged so a visually well-bounded but unreadable banner never
+ # becomes an apparently reliable chyron.
+@@ -900,6 +903,11 @@ class VerticalizationDockContent(QWidget):
+                 # the editable caption.
+                 line = re.sub(r"^(?:[A-ZÀ-Ö]{1,2}\s+)+(?=[A-ZÀ-Ö][a-zà-öø-ÿ])", "", line)
+                 line = re.sub(r"\s*[-–—]+\s*$", "", line).strip()
++                # PP-OCR can duplicate the plain vowel after an accented one
++                # in this white-on-orange TNM typeface: "Trullàas".
++                line = re.sub(r"([ÀÁÂÄàáâä])a(?=s\b)", r"\1", line)
++            elif template in ("persistent_headline", "pretitle"):
++                line = re.sub(r"\s*[-–—]+\s*$", "", line).strip()
+             letters = re.sub(r"[^A-Za-zÀ-ÖØ-öø-ÿ]", "", line)
+             words = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ]{3,}", line)
+             if len(letters) < 8 or not words:
+@@ -952,6 +960,39 @@ class VerticalizationDockContent(QWidget):
+             return True
+         return SequenceMatcher(None, left, right).ratio() >= 0.82
+ 
++    @staticmethod
++    def _merge_persistent_chyrons(events):
++        """Bridge OCR blind spots in one unchanged TNM topic label.
++
++        The lower-left persistent label remains valid across a story, but can
++        be obscured by broadcaster subtitles or lose contrast at a scene cut.
++        It must therefore stay one editable Timeline clip. Other template
++        types keep their exact visual spans.
++        """
++        merged = []
++        maximum_gap = PERSISTENT_TITLE_BRIDGE_SECONDS * 25
++        for event in sorted(events, key=lambda item: item.get("start_frame", 0)):
++            # Other simultaneous labels may occur between two sampling hits;
++            # find the most recent persistent label without crossing a change
++            # to a different persistent topic.
++            previous = next((candidate for candidate in reversed(merged)
++                             if candidate.get("template") == "persistent_headline"), None)
++            if (event.get("template") == "persistent_headline" and previous and
++                    previous.get("template") == "persistent_headline" and
++                    event.get("start_frame", 0) - previous.get("end_frame", 0) <= maximum_gap and
++                    VerticalizationDockContent._same_chyron_text(
++                        previous.get("text"), event.get("text"))):
++                previous["end_frame"] = max(previous["end_frame"], event["end_frame"])
++                previous["confidence"] = max(float(previous.get("confidence", 0.0)),
++                                             float(event.get("confidence", 0.0)))
++                previous["samples"] = previous.get("samples", 0) + event.get("samples", 0)
++                if len(event.get("text", "")) > len(previous.get("text", "")):
++                    previous["text"] = event["text"]
++                    previous["normalised"] = event.get("normalised", event["text"].casefold())
++                continue
++            merged.append(event)
++        return merged
++
+     @staticmethod
+     def _chyron_regions(width, height):
+         """Return the TNM title zones from the editorial graphics manual.
+@@ -1302,7 +1343,7 @@ class VerticalizationDockContent(QWidget):
+                      95 + int(3 * number / max(1, total_events)), 100)
+             refined_events.append(self._refine_chyron_boundaries(
+                 program_path, event, cv2, numpy))
+-        events = refined_events
++        events = self._merge_persistent_chyrons(refined_events)
+         if len(events) > MAX_CHYRON_EVENTS:
+             raise RuntimeError(
+                 "Se han detectado %s candidatos; el límite seguro es %s. "
+-- 
+2.55.0.windows.3
+
