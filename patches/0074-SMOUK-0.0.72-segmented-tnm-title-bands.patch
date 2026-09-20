@@ -1,0 +1,213 @@
+From ddbc1a4aa686c1a92e0338ab5626eacb9c54388e Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sun, 20 Sep 2026 22:01:10 +0200
+Subject: [PATCH] SMOUK 0.0.72 segment TNM title bands
+
+---
+ src/classes/smouk_ppocr.py     | 78 +++++++++++++++++++++++++++++++---
+ src/classes/smouk_titles.py    |  5 ++-
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 24 +++++++++--
+ 4 files changed, 97 insertions(+), 12 deletions(-)
+
+diff --git a/src/classes/smouk_ppocr.py b/src/classes/smouk_ppocr.py
+index 1e719a6f5..8f5cd0e46 100644
+--- a/src/classes/smouk_ppocr.py
++++ b/src/classes/smouk_ppocr.py
+@@ -23,6 +23,74 @@ def _load_model():
+         return TextRecognition(model_name="latin_PP-OCRv5_mobile_rec", device="cpu", cpu_threads=2)
+ 
+ 
++def _recognize(model, image):
++    """Return the one-line PP-OCRv5 reading for one prepared image."""
++    with contextlib.redirect_stdout(sys.stderr):
++        result = list(model.predict(image, batch_size=1))[0]
++    values = result.json.get("res", {})
++    return str(values.get("rec_text", "")).strip(), float(values.get("rec_score", 0.0) or 0.0)
++
++
++def _recognize_headline_words(model, image):
++    """Read TNM's high-contrast headline words separately, then join them.
++
++    The recognizer is line-oriented. A TNM sumary or story headline can span
++    most of a 16:9 frame, so a single pass loses the extreme words despite
++    their large, stable glyphs. Its fixed dark/orange band lets us safely
++    isolate bright word components without inspecting the programme picture.
++    """
++    import cv2
++    import numpy
++
++    # A full orange story bar can coexist with a grey pretitle above it. Keep
++    # only the orange band before finding words, otherwise their two lines are
++    # incorrectly combined into one recognizer input.
++    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
++    orange = cv2.inRange(hsv, (2, 115, 115), (28, 255, 255))
++    row_coverage = numpy.count_nonzero(orange, axis=1) / max(1, orange.shape[1])
++    orange_rows = numpy.where(row_coverage >= .40)[0]
++    if len(orange_rows):
++        runs, start, previous = [], int(orange_rows[0]), int(orange_rows[0])
++        for row in orange_rows[1:]:
++            row = int(row)
++            if row > previous + 1:
++                runs.append((start, previous))
++                start = row
++            previous = row
++        runs.append((start, previous))
++        start, end = max(runs, key=lambda run: run[1] - run[0])
++        if end - start + 1 >= max(10, int(image.shape[0] * .18)):
++            image = image[start:end + 1, :]
++
++    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
++    _unused, mask = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
++    # The pretitle is appreciably smaller than a headline, so scale the word
++    # gap with the crop height instead of merging e.g. "DE SEGURETAT".
++    word_gap = max(3, int(image.shape[0] * .12))
++    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE,
++                            numpy.ones((3, word_gap), numpy.uint8))
++    count, _labels, stats, _centres = cv2.connectedComponentsWithStats(mask)
++    minimum_height = max(12, int(image.shape[0] * .20))
++    words = []
++    for x, y, width, height, area in stats[1:count]:
++        if area < 80 or width < 10 or height < minimum_height:
++            continue
++        # The permanent TN bug is outside every editorial title. Its white
++        # glyph is a false one-letter component at the far-right edge.
++        if x >= image.shape[1] * .93:
++            continue
++        padding = 4
++        word = image[max(0, y - padding):min(image.shape[0], y + height + padding),
++                     max(0, x - padding):min(image.shape[1], x + width + padding)]
++        text, confidence = _recognize(model, word)
++        if text and confidence >= .70:
++            words.append((int(x), text, confidence))
++    if len(words) >= 2:
++        words.sort(key=lambda item: item[0])
++        return " ".join(item[1] for item in words), min(item[2] for item in words)
++    return _recognize(model, image)
++
++
+ def main():
+     try:
+         import cv2
+@@ -38,11 +106,11 @@ def main():
+             image = cv2.imdecode(numpy.frombuffer(encoded, dtype=numpy.uint8), cv2.IMREAD_COLOR)
+             if image is None:
+                 raise ValueError("invalid_image")
+-            with contextlib.redirect_stdout(sys.stderr):
+-                result = list(model.predict(image, batch_size=1))[0]
+-            values = result.json.get("res", {})
+-            _reply({"text": values.get("rec_text", ""),
+-                    "confidence": float(values.get("rec_score", 0.0) or 0.0), "reason": ""})
++            if request.get("mode") == "headline_words":
++                text, confidence = _recognize_headline_words(model, image)
++            else:
++                text, confidence = _recognize(model, image)
++            _reply({"text": text, "confidence": confidence, "reason": ""})
+         except Exception as exc:
+             _reply({"text": "", "confidence": 0.0, "reason": "ppocr_request_failed: %s" % exc})
+     return 0
+diff --git a/src/classes/smouk_titles.py b/src/classes/smouk_titles.py
+index dfb1945cf..ea3d96236 100644
+--- a/src/classes/smouk_titles.py
++++ b/src/classes/smouk_titles.py
+@@ -126,14 +126,15 @@ class PaddleOcrSession:
+             except Exception:
+                 pass
+ 
+-    def read(self, image):
++    def read(self, image, mode="line"):
+         """Recognize one BGR crop and return text plus model confidence."""
+         try:
+             import cv2
+             encoded_ok, encoded = cv2.imencode(".png", image)
+             if not encoded_ok:
+                 return {"text": "", "confidence": 0.0, "reason": "ppocr_encode_failed"}
+-            request = {"image": base64.b64encode(encoded.tobytes()).decode("ascii")}
++            request = {"image": base64.b64encode(encoded.tobytes()).decode("ascii"),
++                       "mode": mode}
+             with self.lock:
+                 self._start()
+                 self.process.stdin.write(json.dumps(request) + "\n")
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 92971e3ea..019fa7a7d 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.71"
++SMOUK_VERSION = "0.0.72"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 92e1b5278..87fc0207d 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -61,6 +61,11 @@ CHYRON_VISUAL_SAMPLE_SECONDS = 1
+ CHYRON_STABLE_VISUAL_SAMPLES = 2
+ CHYRON_SIGNATURE_STABLE_DELTA = 0.012
+ CHYRON_SIGNATURE_CHANGE_DELTA = 0.025
++# The full-width TNM strips have a moving picture immediately above them and
++# animate their edges. Their text remains stable, but their sampled masks move
++# by more than the compact-name thresholds below.
++CHYRON_TEXT_BAND_STABLE_DELTA = 0.050
++CHYRON_TEXT_BAND_CHANGE_DELTA = 0.080
+ # A recognition score describes text quality.  It must survive duration
+ # refinement unchanged so a visually well-bounded but unreadable banner never
+ # becomes an apparently reliable chyron.
+@@ -974,7 +979,7 @@ class VerticalizationDockContent(QWidget):
+             # A full-width headline can finish immediately before the TN bug.
+             # 90% clipped the final glyph in “ACOLLIDA”; 93% keeps that glyph
+             # while the clock remains below this band.
+-            "story_headline": (0, int(height * .82),
++            "story_headline": (0, int(height * .77),
+                                int(width * .93), int(height * .94)),
+             "persistent_headline": (int(width * .03), int(height * .88),
+                                     int(width * .60), int(height * .96)),
+@@ -1083,6 +1088,14 @@ class VerticalizationDockContent(QWidget):
+         return float(numpy.mean(numpy.abs(left.astype(numpy.int16) -
+                                            right.astype(numpy.int16)))) / 255.0
+ 
++    @staticmethod
++    def _chyron_signature_threshold(template, changed=False):
++        """Use the appropriate visual tolerance for each TNM graphic family."""
++        if template in ("story_headline", "pretitle", "persistent_headline"):
++            return (CHYRON_TEXT_BAND_CHANGE_DELTA if changed
++                    else CHYRON_TEXT_BAND_STABLE_DELTA)
++        return CHYRON_SIGNATURE_CHANGE_DELTA if changed else CHYRON_SIGNATURE_STABLE_DELTA
++
+     @staticmethod
+     def _chyron_signature_similarity(candidate, reference, cv2, numpy):
+         """Score a title graphic against an OCR-confirmed reference image."""
+@@ -1210,7 +1223,7 @@ class VerticalizationDockContent(QWidget):
+                     signature = self._chyron_signature(crop, cv2, template)
+                     previous_distance = self._chyron_signature_distance(
+                         state["previous"], signature, numpy)
+-                    if previous_distance <= CHYRON_SIGNATURE_STABLE_DELTA:
++                    if previous_distance <= self._chyron_signature_threshold(template):
+                         state["stable_samples"] += 1
+                     else:
+                         state["stable_samples"] = 1
+@@ -1225,12 +1238,15 @@ class VerticalizationDockContent(QWidget):
+                     if state["stable_samples"] < CHYRON_STABLE_VISUAL_SAMPLES:
+                         continue
+                     if self._chyron_signature_distance(
+-                            state["last_ocr"], signature, numpy) < CHYRON_SIGNATURE_CHANGE_DELTA:
++                            state["last_ocr"], signature, numpy) < self._chyron_signature_threshold(
++                                template, changed=True):
+                         continue
+                     progress("PP-OCRv5 català %s: segon %s/%s…" %
+                              (template, index + 1, sample_count),
+                              55 + int(40 * index / sample_count), 100)
+-                    reading = reader.read(crop)
++                    reading = reader.read(
++                        crop, "headline_words" if template in (
++                            "story_headline", "pretitle", "persistent_headline") else "line")
+                     if reading.get("reason"):
+                         raise RuntimeError("PP-OCRv5: " + reading["reason"])
+                     confidence = max(0.0, min(1.0, float(
+-- 
+2.55.0.windows.3
+

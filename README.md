@@ -706,6 +706,22 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   El refinado de entrada/salida conserva la confianza original y no puede
   inflarla artificialmente.
 
+### 0.0.72
+
+- Se corrige la geometría de los titulares grandes TNM: su zona comenzaba en
+  el 82% de la altura y entregaba al OCR letras recortadas. Ahora cubre la
+  banda gris/naranja completa, por lo que detecta los titulares de sumario y
+  noticia como `ALERTA PER LES PLUGES` y `ELS JAVIS, CAMÍ DELS OSCARS`.
+- PP-OCRv5 conserva su modelo local pero recibe las palabras separadas de las
+  bandas editoriales fijas. Para las barras naranjas, aísla primero esa barra
+  y evita mezclar el pretítulo o el logotipo TN; para los cintillos grises,
+  segmenta las palabras blancas. Esto también reconstruye a la vez el
+  pretítulo `CONSELL DE SEGURETAT EUROPEU` y el titular de noticia.
+- La agrupación visual permite la variación normal de las animaciones de
+  entrada en titulares, pretítulos y cintillos persistentes, manteniendo dos
+  muestras estables y los filtros gráficos. Los nombres y otras etiquetas
+  compactas conservan el umbral estricto anterior.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4

@@ -130,12 +130,17 @@ class TitleRuntimeTests(unittest.TestCase):
         self.assertEqual(regions['presenter_left'], (96, 442, 432, 486))
         self.assertEqual(regions['presenter_right'], (528, 442, 825, 486))
         self.assertEqual(regions['pretitle'], (240, 399, 691, 453))
-        self.assertEqual(regions['story_headline'], (0, 442, 892, 507))
+        self.assertEqual(regions['story_headline'], (0, 415, 892, 507))
         self.assertEqual(regions['persistent_headline'], (28, 475, 576, 518))
         for left, top, right, bottom in regions.values():
             self.assertLess(right, 900)  # Leave the TN bug and clock untouched.
             self.assertTrue(0 <= left < right <= 960)
             self.assertTrue(0 <= top < bottom <= 540)
+
+    def test_text_bands_allow_settled_graphic_animation(self):
+        self.assertEqual(self.dock._chyron_signature_threshold('story_headline'), .050)
+        self.assertEqual(self.dock._chyron_signature_threshold('pretitle', changed=True), .080)
+        self.assertEqual(self.dock._chyron_signature_threshold('presenter_left'), .012)
 
     def test_chyron_graphic_gate_requires_the_expected_template_style(self):
         import cv2
@@ -268,6 +273,20 @@ class TitleRuntimeTests(unittest.TestCase):
         self.assertIn('\\u00e0', capture.value)
         self.assertNotIn('ç', capture.value)
 
+    def test_headline_word_mode_joins_the_fixed_tnm_text_band(self):
+        import numpy
+
+        band = numpy.full((60, 260, 3), (45, 45, 45), dtype=numpy.uint8)
+        # Three separated bright word components in a TNM-style dark band.
+        band[18:43, 20:64] = 255
+        band[18:43, 88:144] = 255
+        band[18:43, 170:238] = 255
+        replies = iter([('ELS', .99), ('JAVIS,', .98), ('OSCARS', .97)])
+        with patch.object(smouk_ppocr, '_recognize', side_effect=lambda *_args: next(replies)):
+            text, confidence = smouk_ppocr._recognize_headline_words(object(), band)
+        self.assertEqual(text, 'ELS JAVIS, OSCARS')
+        self.assertEqual(confidence, .97)
+
     def test_button_signal_boolean_is_accepted(self):
         with patch.object(v.QFileDialog, 'getExistingDirectory', return_value=''):
             self.dock._on_browse_title_folder(False)
@@ -308,7 +327,7 @@ class TitleRuntimeTests(unittest.TestCase):
                 return self
             def __exit__(self, *_args):
                 pass
-            def read(self, _image):
+            def read(self, _image, _mode="line"):
                 return {'text': '14:30:00', 'confidence': 1.0, 'reason': ''}
         with patch.object(v, 'ppocr_runtime_status', return_value={'available': True}), \
                 patch.object(v, 'PaddleOcrSession', FakePaddleSession), \
