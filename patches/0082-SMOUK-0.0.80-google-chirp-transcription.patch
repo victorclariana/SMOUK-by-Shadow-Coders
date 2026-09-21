@@ -1,0 +1,425 @@
+diff --git a/README.md b/README.md
+index 77ef716..95d82c9 100644
+--- a/README.md
++++ b/README.md
+@@ -802,6 +802,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
+ ### 0.0.57
+ 
+ - Protege New, Open y Save frente a backups generados por las versiones de OCR
++
++### 0.0.80
++
++- Sustituye la transcripción por defecto por Google Cloud Speech-to-Text V2 Chirp 3 para catalán (`ca-ES`). El audio se convierte en fragmentos PCM de 45 segundos con 1,5 segundos de solape y se procesan hasta tres fragmentos en paralelo. Se conservan los offsets por palabra y el contrato JSON/SRT/VTT usado por el timeline.
++- La integración no guarda credenciales en proyectos ni en logs. Requiere configurar `SMOUK_GOOGLE_PROJECT` y `SMOUK_GOOGLE_ACCESS_TOKEN`; para recuperar temporalmente el motor local se puede usar `SMOUK_TRANSCRIPTION_PROVIDER=local`.
++- El dock muestra el avance de cada fragmento y no envía audio si faltan las credenciales.
+   que crearon cientos de chyrons falsos. Si `backup.osp` contiene más de 40
+   assets SMOUK, se conserva en `recovery/smouk-quarantine` y se inicia un
+   proyecto vacío, evitando cargar cientos de lectores SVG en la Timeline.
+diff --git a/patches/README.md b/patches/README.md
+index 53edb4d..4ff1b3c 100644
+--- a/patches/README.md
++++ b/patches/README.md
+@@ -87,6 +87,7 @@ corresponding repository.
+ | `0079-SMOUK-0.0.77-source-progress-heartbeat.patch` | **openshot-qt** | Keeps Source Video and Titles progress clocks independent, preventing Source clock analysis from emitting a Titles error. |
+ | `0080-SMOUK-0.0.78-centred-vertical-logo.patch` | **openshot-qt** | Centres proportional vertical PNG logo clips in the active 9:16 guide rather than the left edge of the 16:9 edit canvas. |
+ | `0081-SMOUK-0.0.79-title-subtitle-safe-bands.patch` | **openshot-qt** | Assigns separate vertical guide bands to subtitles, locations, identities, pretitles, and headlines to prevent on-screen overlap. |
++| `0082-SMOUK-0.0.80-google-chirp-transcription.patch` | **openshot-qt / scripts** | Adds Google Cloud Speech-to-Text V2 Chirp 3 Catalan transcription with overlapped parallel chunks, word offsets, progress events, and an explicit local fallback. |
+ | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
+ 
+ ## Apply
+diff --git a/scripts/smouk_transcribe.py b/scripts/smouk_transcribe.py
+index 4f39a06..32825cd 100644
+--- a/scripts/smouk_transcribe.py
++++ b/scripts/smouk_transcribe.py
+@@ -1,14 +1,26 @@
+ """Offline Catalan transcription worker used by the SMOUK Qt process."""
+ 
+ import argparse
++import base64
++import concurrent.futures
+ import json
+ import os
+ import re
++import subprocess
++import tempfile
+ import textwrap
+ import threading
++import urllib.error
++import urllib.request
+ 
+ 
+ DEFAULT_MODEL = "BSC-LT/faster-whisper-large-v3-ca-punctuated-3370h"
++DEFAULT_PROVIDER = "google"
++DEFAULT_GOOGLE_MODEL = "chirp_3"
++DEFAULT_GOOGLE_LOCATION = "eu"
++DEFAULT_GOOGLE_CHUNK_SECONDS = 45.0
++DEFAULT_GOOGLE_OVERLAP_SECONDS = 1.5
++DEFAULT_GOOGLE_WORKERS = 3
+ DEFAULT_BEAM_SIZE = 3
+ MAX_SUBTITLE_LINE_CHARS = 26
+ MAX_SUBTITLE_CUE_CHARS = MAX_SUBTITLE_LINE_CHARS * 2
+@@ -246,6 +258,159 @@ def cues_to_vtt(cues):
+     return "\n\n".join(blocks) + ("\n" if blocks else "")
+ 
+ 
++def _run_media_command(command):
++    completed = subprocess.run(command, stdout=subprocess.PIPE,
++                               stderr=subprocess.PIPE, check=False)
++    if completed.returncode != 0:
++        raise RuntimeError(completed.stderr.decode("utf-8", errors="replace")[-1000:])
++    return completed.stdout
++
++
++def _media_duration(path):
++    output = _run_media_command([
++        "ffprobe", "-v", "error", "-show_entries", "format=duration",
++        "-of", "default=noprint_wrappers=1:nokey=1", os.path.abspath(path),
++    ])
++    return max(0.001, float(output.decode("ascii", errors="ignore").strip()))
++
++
++def _google_seconds(value):
++    """Parse Google Duration strings (for example ``1.250s``)."""
++    if isinstance(value, (int, float)):
++        return float(value)
++    text = str(value or "0").strip()
++    if text.endswith("s"):
++        text = text[:-1]
++    try:
++        return float(text)
++    except ValueError:
++        return 0.0
++
++
++def _google_chunk(path, start, duration, temp_dir):
++    output = os.path.join(temp_dir, "chunk-%012d.wav" % int(round(start * 1000)))
++    _run_media_command([
++        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
++        "-ss", "%.3f" % start, "-t", "%.3f" % duration,
++        "-i", os.path.abspath(path), "-vn", "-ac", "1", "-ar", "16000",
++        "-c:a", "pcm_s16le", output,
++    ])
++    return output
++
++
++def _google_request(audio_path, project, location, recognizer, access_token,
++                    model, chunk_start):
++    endpoint = (
++        "https://speech.googleapis.com/v2/projects/{}/locations/{}/recognizers/{}:recognize"
++        .format(project, location, recognizer)
++    )
++    with open(audio_path, "rb") as handle:
++        content = base64.b64encode(handle.read()).decode("ascii")
++    payload = {
++        "config": {
++            "autoDecodingConfig": {},
++            "languageCodes": ["ca-ES"],
++            "model": model,
++            "features": {
++                "enableWordTimeOffsets": True,
++                "enableAutomaticPunctuation": True,
++            },
++        },
++        "content": content,
++    }
++    request = urllib.request.Request(
++        endpoint, data=json.dumps(payload).encode("utf-8"),
++        headers={"Authorization": "Bearer " + access_token,
++                 "Content-Type": "application/json; charset=utf-8"},
++        method="POST")
++    try:
++        with urllib.request.urlopen(request, timeout=180) as response:
++            result = json.loads(response.read().decode("utf-8"))
++    except urllib.error.HTTPError as ex:
++        body = ex.read().decode("utf-8", errors="replace")
++        raise RuntimeError("Google Speech API HTTP %s: %s" % (ex.code, body[-1000:]))
++    words = []
++    segments = []
++    for result_item in result.get("results", []):
++        alternatives = result_item.get("alternatives") or []
++        if not alternatives:
++            continue
++        alternative = alternatives[0]
++        result_words = alternative.get("words") or []
++        if result_words:
++            for item in result_words:
++                word = str(item.get("word", "")).strip()
++                if not word:
++                    continue
++                words.append({
++                    "start": chunk_start + _google_seconds(item.get("startOffset")),
++                    "end": chunk_start + _google_seconds(item.get("endOffset")),
++                    "word": word,
++                    "confidence": item.get("confidence", alternative.get("confidence")),
++                })
++        elif alternative.get("transcript"):
++            segments.append({
++                "start": chunk_start + _google_seconds(result_item.get("resultStartOffset")),
++                "end": chunk_start + _google_seconds(result_item.get("resultEndOffset")),
++                "text": alternative["transcript"],
++            })
++    return words, segments
++
++
++def transcribe_google(path, project, location, recognizer, access_token,
++                      model=DEFAULT_GOOGLE_MODEL,
++                      chunk_seconds=DEFAULT_GOOGLE_CHUNK_SECONDS,
++                      overlap_seconds=DEFAULT_GOOGLE_OVERLAP_SECONDS,
++                      workers=DEFAULT_GOOGLE_WORKERS):
++    """Transcribe Catalan audio through Chirp in parallel, with word offsets."""
++    duration = _media_duration(path)
++    chunks = []
++    position = 0.0
++    while position < duration:
++        actual_start = max(0.0, position - (overlap_seconds if position else 0.0))
++        actual_end = min(duration, position + chunk_seconds)
++        chunks.append((actual_start, actual_end - actual_start, position))
++        position += chunk_seconds
++    _emit("status", text=(
++        "Google Chirp 3: preparando %s fragmentos de %.0f s en paralelo…" %
++        (len(chunks), chunk_seconds)))
++    words, segments = [], []
++    completed = 0
++    lock = threading.Lock()
++    with tempfile.TemporaryDirectory(prefix="smouk-google-") as temp_dir:
++        def run(item):
++            file_path = _google_chunk(path, item[0], item[1], temp_dir)
++            return item[2], _google_request(
++                file_path, project, location, recognizer, access_token,
++                model, item[2] - (overlap_seconds if item[2] else 0.0))
++
++        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
++            futures = [pool.submit(run, item) for item in chunks]
++            for future in concurrent.futures.as_completed(futures):
++                _start, (chunk_words, chunk_segments) = future.result()
++                words.extend(chunk_words)
++                segments.extend(chunk_segments)
++                with lock:
++                    completed += 1
++                    _emit("progress", value=int(round(completed * 85.0 / len(chunks))))
++                    _emit("status", text=(
++                        "Google Chirp 3: fragmento %s/%s transcrito…" %
++                        (completed, len(chunks))))
++                    partial_text = " ".join(item["word"] for item in sorted(
++                        words, key=lambda value: value["start"])[-18:])
++                    _emit("partial", words=len(words), text=partial_text)
++    # Overlap is intentional for boundary accuracy; collapse duplicate words.
++    deduped = []
++    seen = set()
++    for item in sorted(words, key=lambda value: (value["start"], value["end"])):
++        key = (re.sub(r"\W+", "", item["word"].casefold()), round(item["start"], 1))
++        if key in seen:
++            continue
++        seen.add(key)
++        deduped.append(item)
++    return duration, deduped, sorted(segments, key=lambda value: value["start"])
++
++
+ def main():
+     parser = argparse.ArgumentParser()
+     parser.add_argument("--input", required=True)
+@@ -254,59 +419,92 @@ def main():
+     parser.add_argument("--model", default=DEFAULT_MODEL)
+     parser.add_argument("--cpu-threads", type=int, default=recommended_cpu_threads())
+     parser.add_argument("--beam-size", type=int, default=DEFAULT_BEAM_SIZE)
++    parser.add_argument("--provider", default=os.environ.get(
++        "SMOUK_TRANSCRIPTION_PROVIDER", DEFAULT_PROVIDER))
++    parser.add_argument("--google-project", default=os.environ.get("SMOUK_GOOGLE_PROJECT"))
++    parser.add_argument("--google-location", default=os.environ.get(
++        "SMOUK_GOOGLE_LOCATION", DEFAULT_GOOGLE_LOCATION))
++    parser.add_argument("--google-recognizer", default=os.environ.get(
++        "SMOUK_GOOGLE_RECOGNIZER", "_"))
++    parser.add_argument("--google-access-token", default=os.environ.get(
++        "SMOUK_GOOGLE_ACCESS_TOKEN"))
++    parser.add_argument("--google-model", default=os.environ.get(
++        "SMOUK_GOOGLE_MODEL", DEFAULT_GOOGLE_MODEL))
++    parser.add_argument("--google-chunk-seconds", type=float, default=float(os.environ.get(
++        "SMOUK_GOOGLE_CHUNK_SECONDS", DEFAULT_GOOGLE_CHUNK_SECONDS)))
++    parser.add_argument("--google-overlap-seconds", type=float, default=float(os.environ.get(
++        "SMOUK_GOOGLE_OVERLAP_SECONDS", DEFAULT_GOOGLE_OVERLAP_SECONDS)))
++    parser.add_argument("--google-workers", type=int, default=int(os.environ.get(
++        "SMOUK_GOOGLE_WORKERS", DEFAULT_GOOGLE_WORKERS)))
+     args = parser.parse_args()
+ 
+-    from faster_whisper import WhisperModel
+-
+-    _emit("status", text="Loading the Catalan model (the first run downloads it)...")
+-    model = WhisperModel(
+-        args.model, device="cpu", compute_type="int8",
+-        cpu_threads=max(1, args.cpu_threads),
+-        download_root=os.path.abspath(args.model_dir),
+-    )
+-    _emit("status", text=(
+-        f"Transcribing Catalan audio with {max(1, args.cpu_threads)} CPU threads..."
+-    ))
+-    segments, info = model.transcribe(
+-        os.path.abspath(args.input), language="ca", task="transcribe",
+-        beam_size=max(1, args.beam_size), vad_filter=True,
+-        vad_parameters={"threshold": 0.35, "speech_pad_ms": 500},
+-        word_timestamps=True, condition_on_previous_text=True,
+-    )
+-    duration = max(0.001, float(getattr(info, "duration", 0.0) or 0.0))
+-    words = []
+-    fallback_segments = []
+-    last_audio_percent = {"value": 0}
+-    stop_heartbeat = threading.Event()
+-
+-    def report_long_segment():
+-        while not stop_heartbeat.wait(10.0):
+-            _emit("status", text=(
+-                "Recognizing speech… audio processed through "
+-                f"{last_audio_percent['value']}%. The current segment is still being decoded."
+-            ))
+-
+-    heartbeat = threading.Thread(target=report_long_segment, daemon=True)
+-    heartbeat.start()
+-    try:
+-        for segment in segments:
+-            fallback_segments.append({
+-                "start": float(segment.start), "end": float(segment.end),
+-                "text": str(segment.text).strip(),
+-            })
+-            for word in getattr(segment, "words", None) or []:
+-                words.append({
+-                    "start": float(word.start), "end": float(word.end),
+-                    "word": str(word.word).strip(),
++    if str(args.provider).casefold() == "google":
++        if not args.google_project or not args.google_access_token:
++            raise RuntimeError(
++                "Google Chirp requires SMOUK_GOOGLE_PROJECT and "
++                "SMOUK_GOOGLE_ACCESS_TOKEN (no audio was sent).")
++        duration, words, fallback_segments = transcribe_google(
++            args.input, args.google_project, args.google_location,
++            args.google_recognizer, args.google_access_token, args.google_model,
++            max(5.0, args.google_chunk_seconds),
++            max(0.0, min(args.google_overlap_seconds, args.google_chunk_seconds / 2.0)),
++            max(1, args.google_workers))
++        args.model = "google-speech-to-text-v2/" + args.google_model
++    else:
++        duration = None
++        words = None
++        fallback_segments = None
++
++    if words is None:
++        from faster_whisper import WhisperModel
++
++        _emit("status", text="Loading the Catalan model (the first run downloads it)...")
++        model = WhisperModel(
++            args.model, device="cpu", compute_type="int8",
++            cpu_threads=max(1, args.cpu_threads),
++            download_root=os.path.abspath(args.model_dir),
++        )
++        _emit("status", text=(
++            f"Transcribing Catalan audio with {max(1, args.cpu_threads)} CPU threads..."
++        ))
++        segments, info = model.transcribe(
++            os.path.abspath(args.input), language="ca", task="transcribe",
++            beam_size=max(1, args.beam_size), vad_filter=True,
++            vad_parameters={"threshold": 0.35, "speech_pad_ms": 500},
++            word_timestamps=True, condition_on_previous_text=True,
++        )
++        duration = max(0.001, float(getattr(info, "duration", 0.0) or 0.0))
++        words = []
++        fallback_segments = []
++        last_audio_percent = {"value": 0}
++        stop_heartbeat = threading.Event()
++
++        def report_long_segment():
++            while not stop_heartbeat.wait(10.0):
++                _emit("status", text=(
++                    "Recognizing speech… audio processed through "
++                    f"{last_audio_percent['value']}%. The current segment is still being decoded."
++                ))
++
++        heartbeat = threading.Thread(target=report_long_segment, daemon=True)
++        heartbeat.start()
++        try:
++            for segment in segments:
++                fallback_segments.append({
++                    "start": float(segment.start), "end": float(segment.end),
++                    "text": str(segment.text).strip(),
+                 })
+-            last_audio_percent["value"] = min(
+-                100, int(round(float(segment.end) * 100.0 / duration)))
+-            # Reserve the final 15% for cue formatting and writing, and avoid
+-            # implying completion while Whisper is still decoding a segment.
+-            _emit("progress", value=int(round(last_audio_percent["value"] * 0.85)))
+-    finally:
+-        stop_heartbeat.set()
+-        heartbeat.join(timeout=1.0)
++                for word in getattr(segment, "words", None) or []:
++                    words.append({
++                        "start": float(word.start), "end": float(word.end),
++                        "word": str(word.word).strip(),
++                    })
++                last_audio_percent["value"] = min(
++                    100, int(round(float(segment.end) * 100.0 / duration)))
++                _emit("progress", value=int(round(last_audio_percent["value"] * 0.85)))
++        finally:
++            stop_heartbeat.set()
++            heartbeat.join(timeout=1.0)
+ 
+     _emit("progress", value=90)
+     _emit("status", text="Formatting two-line subtitles and checking reading times…")
+diff --git a/src/tests/test_smouk_transcription.py b/src/tests/test_smouk_transcription.py
+index b65f2c850..4cda0a781 100644
+--- a/src/tests/test_smouk_transcription.py
++++ b/src/tests/test_smouk_transcription.py
+@@ -33,6 +33,7 @@ class SmoukTranscriptionTests(unittest.TestCase):
+         argv = [
+             "smouk_transcribe.py", "--input", "audio.wav",
+             "--output", "captions.json", "--model-dir", "models",
++            "--provider", "local",
+         ]
+         fake_module = types.SimpleNamespace(WhisperModel=FakeModel)
+         with mock.patch.dict(sys.modules, {"faster_whisper": fake_module}), \
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 12b7cc80e..65691528d 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.79"
++SMOUK_VERSION = "0.0.80"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 76a8b4e42..b84eb38f3 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -1969,6 +1969,19 @@ class VerticalizationDockContent(QWidget):
+     def _on_transcribe_catalan(self):
+         """Transcribe each unique source represented by timeline clips."""
+         _ = get_app()._tr
++        provider = str(os.environ.get("SMOUK_TRANSCRIPTION_PROVIDER", "google")).casefold()
++        if provider == "google" and not (
++                os.environ.get("SMOUK_GOOGLE_PROJECT") and
++                os.environ.get("SMOUK_GOOGLE_ACCESS_TOKEN")):
++            self.transcription_progress.setVisible(True)
++            self.transcription_progress.setRange(0, 100)
++            self.transcription_progress.setValue(0)
++            self.transcription_results.setText(_(
++                "Google Chirp 3 is selected. Configure SMOUK_GOOGLE_PROJECT and "
++                "SMOUK_GOOGLE_ACCESS_TOKEN before starting; no audio has been sent. "
++                "Set SMOUK_TRANSCRIPTION_PROVIDER=local only to use the offline engine."
++            ))
++            return
+         clips = self._timeline_video_clips()
+         sources = []
+         for clip in clips:
+@@ -2073,6 +2086,12 @@ class VerticalizationDockContent(QWidget):
+         event_name = event.get("event")
+         if event_name == "status":
+             self.transcription_results.setText(str(event.get("text", "")))
++        elif event_name == "partial":
++            text = str(event.get("text", "")).strip()
++            if text:
++                self.transcription_results.setText(
++                    _("Partial Google transcription (%s words): %s") %
++                    (event.get("words", 0), text))
+         elif event_name == "progress":
+             local = max(0, min(100, int(event.get("value", 0))))
+             total = self._transcription_completed_sources + len(self._transcription_sources)

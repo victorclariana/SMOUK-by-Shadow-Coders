@@ -87,6 +87,7 @@ corresponding repository.
 | `0079-SMOUK-0.0.77-source-progress-heartbeat.patch` | **openshot-qt** | Keeps Source Video and Titles progress clocks independent, preventing Source clock analysis from emitting a Titles error. |
 | `0080-SMOUK-0.0.78-centred-vertical-logo.patch` | **openshot-qt** | Centres proportional vertical PNG logo clips in the active 9:16 guide rather than the left edge of the 16:9 edit canvas. |
 | `0081-SMOUK-0.0.79-title-subtitle-safe-bands.patch` | **openshot-qt** | Assigns separate vertical guide bands to subtitles, locations, identities, pretitles, and headlines to prevent on-screen overlap. |
+| `0082-SMOUK-0.0.80-google-chirp-transcription.patch` | **openshot-qt / scripts** | Adds Google Cloud Speech-to-Text V2 Chirp 3 Catalan transcription with overlapped parallel chunks, word offsets, progress events, and an explicit local fallback. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply
