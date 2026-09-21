@@ -231,6 +231,17 @@ class TitleRuntimeTests(unittest.TestCase):
             self.dock._normalise_chyron_text('Xavi Coral Trullàas', 'presenter_right'),
             'Xavi Coral Trullàs')
 
+    def test_large_headline_stays_inside_the_916_guide_and_wraps(self):
+        svg = self.dock._title_svg(
+            'LA UE APOSTA PER REFORÇAR LES FRONTERES', 'story_headline', 1920, 1080)
+        self.assertIn('clipPath id="smouk-vertical-title-safe"', svg)
+        self.assertIn('<rect x="656.2" y="0.0" width="607.5" height="1080.0"/>', svg)
+        self.assertEqual(svg.count('<text '), 3)
+        self.assertIn('LA UE APOSTA PER', svg)
+        self.assertIn('REFORÇAR LES', svg)
+        self.assertIn('FRONTERES', svg)
+        self.assertIn('text-anchor="middle"', svg)
+
     def test_persistent_title_blind_spots_are_merged(self):
         events = [
             {'template': 'persistent_headline', 'text': 'CONSELL DE SEGURETAT EUROPEU',

@@ -1,0 +1,114 @@
+From 18762f31ef8e114b9394966f33e707e664822ced Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Mon, 21 Sep 2026 02:05:00 +0200
+Subject: [PATCH] SMOUK 0.0.74 place headlines in vertical safe area
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 59 +++++++++++++++++++++++++++++++++-
+ 2 files changed, 59 insertions(+), 2 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 0a73632b0..c928cd562 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.73"
++SMOUK_VERSION = "0.0.74"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 00f806c42..35656e55d 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -69,6 +69,11 @@ CHYRON_TEXT_BAND_CHANGE_DELTA = 0.080
+ # A persistent TNM topic label remains editorially valid across picture cuts
+ # and broadcast subtitles that can briefly obscure its small lower-left band.
+ PERSISTENT_TITLE_BRIDGE_SECONDS = 90
++# The editing canvas remains 16:9, but the white guide and the default SMOUK
++# output use a centred 9:16 crop.  Large editorial headlines must be authored
++# inside that crop so they survive the vertical export without manual moves.
++VERTICAL_TITLE_SAFE_ASPECT = 9.0 / 16.0
++VERTICAL_TITLE_SAFE_MARGIN = .05
+ # A recognition score describes text quality.  It must survive duration
+ # refinement unchanged so a visually well-bounded but unreadable banner never
+ # becomes an apparently reliable chyron.
+@@ -843,6 +848,31 @@ class VerticalizationDockContent(QWidget):
+         clip.save()
+         return clip
+ 
++    @staticmethod
++    def _wrap_story_headline(text, max_characters):
++        """Wrap an OCR headline by words for the narrow 9:16 title safe area."""
++        wrapped = []
++        for source_line in str(text or "").splitlines() or [str(text or "")]:
++            words = source_line.split()
++            line = []
++            for word in words:
++                candidate = " ".join(line + [word])
++                if line and len(candidate) > max_characters:
++                    wrapped.append(" ".join(line))
++                    line = [word]
++                else:
++                    line.append(word)
++            if line:
++                wrapped.append(" ".join(line))
++        return wrapped or [""]
++
++    @staticmethod
++    def _vertical_title_safe_area(width, height):
++        """Return the centred 9:16 guide bounds in the current edit canvas."""
++        safe_width = min(float(width), float(height) * VERTICAL_TITLE_SAFE_ASPECT)
++        left = (float(width) - safe_width) / 2.0
++        return left, 0.0, left + safe_width, float(height)
++
+     def _title_svg(self, text, template, width, height):
+         """Build an editable transparent SVG for a detected broadcast chyron."""
+         styles = {
+@@ -853,11 +883,38 @@ class VerticalizationDockContent(QWidget):
+             "name_cargo": (.04, .83, "start", 40),
+             "credit": (.04, .84, "start", 38),
+             "pretitle": (.50, .76, "middle", 38),
+-            "story_headline": (.50, .86, "middle", 54),
++            "story_headline": (.50, .86, "middle", 46),
+             "persistent_headline": (.04, .92, "start", 38),
+         }
+         x_ratio, y_ratio, anchor, font_size = styles.get(template, styles["story_headline"])
+         x, y = width * x_ratio, height * y_ratio
++        if template == "story_headline":
++            safe_left, safe_top, safe_right, safe_bottom = self._vertical_title_safe_area(width, height)
++            safe_width = safe_right - safe_left
++            usable_width = safe_width * (1.0 - 2.0 * VERTICAL_TITLE_SAFE_MARGIN)
++            max_characters = max(12, int(usable_width / (font_size * .60)))
++            lines = self._wrap_story_headline(text, max_characters)
++            # Center the multiline block in the lower third.  Its text stays
++            # in the same editorial area as before while every line remains
++            # inside the 9:16 viewer guide.
++            line_height = font_size * 1.12
++            x = (safe_left + safe_right) / 2.0
++            y = height * .84 - (len(lines) - 1) * line_height / 2.0
++            rendered = "".join(
++                '<text x="%.1f" y="%.1f" text-anchor="middle" '
++                'font-family="Arial, sans-serif" font-size="%d" font-weight="bold" '
++                'fill="white" stroke="black" stroke-width="1.5" paint-order="stroke" '
++                'textLength="%.1f" lengthAdjust="spacingAndGlyphs">%s</text>' % (
++                    x, y + index * line_height, font_size,
++                    min(usable_width, max(font_size * 3.0, len(line) * font_size * .56)),
++                    html.escape(line))
++                for index, line in enumerate(lines) if line.strip())
++            return ('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" '
++                    'viewBox="0 0 %d %d"><defs><clipPath id="smouk-vertical-title-safe">'
++                    '<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f"/></clipPath></defs>'
++                    '<g clip-path="url(#smouk-vertical-title-safe)">%s</g></svg>') % (
++                        width, height, width, height, safe_left, safe_top, safe_width,
++                        safe_bottom - safe_top, rendered)
+         lines = [html.escape(line.strip()) for line in str(text).splitlines() if line.strip()][:2]
+         rendered = "".join('<text x="%.1f" y="%.1f" text-anchor="%s" font-family="Arial, sans-serif" font-size="%d" font-weight="bold" fill="white" stroke="black" stroke-width="1.5" paint-order="stroke">%s</text>' % (x, y + index * font_size * 1.12, anchor, font_size, line) for index, line in enumerate(lines))
+         return '<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">%s</svg>' % (width, height, width, height, rendered)
+-- 
+2.55.0.windows.3
+

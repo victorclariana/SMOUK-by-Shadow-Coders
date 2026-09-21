@@ -732,6 +732,17 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   corregía incorrectamente `Xavi Coral Trullàs` como `Trullàas`. La lectura
   correcta de `Anna Garnatxe Masmitjà` se conserva.
 
+### 0.0.74
+
+- Los titulares grandes de noticia se reconstruyen dentro del área central
+  activa 9:16 que marca la guía blanca, incluso mientras el proyecto se edita
+  en 16:9. Se aplica un margen interior y recorte de seguridad para que ningún
+  carácter se pierda al exportar en vertical.
+- Los titulares se dividen por palabras en varias líneas y se centran en el
+  tercio inferior de ese área. Esta primera adaptación afecta solo a la pista
+  `CHYRONS · Titular`; los demás tipos de rótulo mantienen su posición actual
+  para revisarlos por separado.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4
