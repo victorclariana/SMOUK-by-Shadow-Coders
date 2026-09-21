@@ -377,7 +377,11 @@ def transcribe_google(path, project, location, recognizer, access_token,
     words, segments = [], []
     completed = 0
     lock = threading.Lock()
-    with tempfile.TemporaryDirectory(prefix="smouk-google-") as temp_dir:
+    # Some managed Windows profiles deny chmod during the default temporary
+    # directory cleanup. Ignore cleanup errors; the files contain only derived
+    # PCM audio and are removed by the OS when possible.
+    with tempfile.TemporaryDirectory(prefix="smouk-google-",
+                                      ignore_cleanup_errors=True) as temp_dir:
         def run(item):
             file_path = _google_chunk(path, item[0], item[1], temp_dir)
             return item[2], _google_request(

@@ -808,6 +808,10 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - Sustituye la transcripción por defecto por Google Cloud Speech-to-Text V2 Chirp 3 para catalán (`ca-ES`). El audio se convierte en fragmentos PCM de 45 segundos con 1,5 segundos de solape y se procesan hasta tres fragmentos en paralelo. Se conservan los offsets por palabra y el contrato JSON/SRT/VTT usado por el timeline.
 - La integración no guarda credenciales en proyectos ni en logs. Requiere configurar `SMOUK_GOOGLE_PROJECT` y `SMOUK_GOOGLE_ACCESS_TOKEN`; para recuperar temporalmente el motor local se puede usar `SMOUK_TRANSCRIPTION_PROVIDER=local`.
 - El dock muestra el avance de cada fragmento y no envía audio si faltan las credenciales.
+
+### 0.0.81
+
+- Evita que el cierre de los archivos PCM temporales de Chirp falle en perfiles Windows administrados con permisos restrictivos.
   que crearon cientos de chyrons falsos. Si `backup.osp` contiene más de 40
   assets SMOUK, se conserva en `recovery/smouk-quarantine` y se inicia un
   proyecto vacío, evitando cargar cientos de lectores SVG en la Timeline.
