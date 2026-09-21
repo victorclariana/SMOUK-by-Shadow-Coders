@@ -756,6 +756,9 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
 ### 0.0.76
 
+- Se separó el flujo de Source Video, que valida e importa el corte de
+  `CLEAN.MP4`, del análisis posterior de chyrons en `PROGRAMA.MP4` dentro de
+  la sección Titles.
 - Se ordenó el dock Verticalization: el selector de carpeta y el corte de
   `CLEAN.MP4` están en **Source Video**; la detección de chyrons de
   `PROGRAMA.MP4` tiene su propio botón en **Titles**. Ambos pasos comparten la
@@ -768,6 +771,13 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - Los controles manuales `Horizontal framing (selected clip)`, su deslizador
   y `Keyframes` se trasladaron a **Automatic Reframing**. La guía 9:16 se
   muestra marcada por defecto junto al perfil de salida.
+
+### 0.0.77
+
+- Se corrigió el temporizador de progreso compartido por Source Video y
+  Titles. El análisis del reloj de `CLEAN.MP4` conserva ahora sus propias
+  trazas y estado, y ya no puede generar un error de Titles ni iniciar el
+  análisis de chyrons.
 
 ### 0.0.60
 

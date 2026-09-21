@@ -42,6 +42,10 @@ class TestDock(v.VerticalizationDockContent):
         self.source_folder_results = QLabel(self)
         self._title_trace = []
         self._source_trace = []
+        self._source_stage_text = ''
+        self._source_stage_started = time.monotonic()
+        self._title_stage_text = ''
+        self._title_stage_started = time.monotonic()
         self._title_busy = False
         self._source_busy = False
         self._title_workers = []
@@ -103,6 +107,14 @@ class TitleRuntimeTests(unittest.TestCase):
         self.dock._title_progress('CLEAN: reading clock', 0, 100)
         self.assertEqual(self.window.statusBar.currentMessage(), 'CLEAN: reading clock')
         self.assertIn('CLEAN: reading clock', self.dock.title_folder_results.text())
+
+    def test_source_heartbeat_never_writes_an_error_into_titles(self):
+        self.dock._source_busy = True
+        self.dock._source_progress('CLEAN: OCR del reloj en curso')
+        del self.dock._title_stage_started
+        self.dock._on_title_heartbeat()
+        self.assertIn('CLEAN: OCR del reloj en curso', self.dock.source_clock_status.text())
+        self.assertNotIn('Error', self.dock.title_folder_results.text())
 
     def test_new_project_runtime_cleanup_cannot_delete_a_directory_tree(self):
         source = (ROOT / 'openshot-qt/src/windows/main_window.py').read_text(encoding='utf-8')
