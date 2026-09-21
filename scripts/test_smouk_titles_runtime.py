@@ -242,6 +242,27 @@ class TitleRuntimeTests(unittest.TestCase):
         self.assertIn('FRONTERES', svg)
         self.assertIn('text-anchor="middle"', svg)
 
+    def test_all_title_templates_use_the_916_guide(self):
+        svg = self.dock._title_svg('Pilar Abril\nCorresponsal', 'name_cargo', 1920, 1080)
+        self.assertIn('<rect x="656.2" y="0.0" width="607.5" height="1080.0"/>', svg)
+        self.assertIn('clip-path="url(#smouk-vertical-title-safe)"', svg)
+        self.assertIn('x="960.0"', svg)
+        self.assertNotIn('x="76.8"', svg)
+
+    def test_overlapping_chyrons_use_distinct_vertical_lanes(self):
+        events = [
+            {'template': 'story_headline', 'start_frame': 100, 'end_frame': 200},
+            {'template': 'pretitle', 'start_frame': 100, 'end_frame': 200},
+            {'template': 'presenter_left', 'start_frame': 100, 'end_frame': 200},
+            {'template': 'presenter_right', 'start_frame': 100, 'end_frame': 200},
+            {'template': 'location', 'start_frame': 100, 'end_frame': 200},
+        ]
+        self.dock._assign_chyron_vertical_slots(events)
+        slots = {event['vertical_slot'] for event in events}
+        self.assertEqual(len(slots), len(events))
+        self.assertTrue(all(0 <= slot < len(v.VERTICAL_TITLE_SLOT_RATIOS) for slot in slots))
+        self.assertEqual(next(event for event in events if event['template'] == 'story_headline')['vertical_slot'], 6)
+
     def test_persistent_title_blind_spots_are_merged(self):
         events = [
             {'template': 'persistent_headline', 'text': 'CONSELL DE SEGURETAT EUROPEU',

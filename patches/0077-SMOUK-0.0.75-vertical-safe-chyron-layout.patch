@@ -1,0 +1,199 @@
+From 4efd5eee50dafc0af3c6c1908fc0edf12939ce09 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Mon, 21 Sep 2026 11:23:09 +0200
+Subject: [PATCH] SMOUK 0.0.75 lay out all chyrons in vertical guide
+
+---
+ src/windows/main_window.py     |   2 +-
+ src/windows/verticalization.py | 124 +++++++++++++++++++++------------
+ 2 files changed, 81 insertions(+), 45 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index c928cd562..5de6783bb 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.74"
++SMOUK_VERSION = "0.0.75"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 35656e55d..f594d7f4b 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -74,6 +74,21 @@ PERSISTENT_TITLE_BRIDGE_SECONDS = 90
+ # inside that crop so they survive the vertical export without manual moves.
+ VERTICAL_TITLE_SAFE_ASPECT = 9.0 / 16.0
+ VERTICAL_TITLE_SAFE_MARGIN = .05
++# These are editorial lanes inside the safe crop.  They let several concurrent
++# graphics remain independently editable while preserving a clear gap between
++# location, identification, pretitle, persistent label, and main headline.
++VERTICAL_TITLE_SLOT_RATIOS = (.14, .28, .42, .56, .65, .74, .85)
++CHYRON_VERTICAL_SLOT_PREFERENCES = {
++    "live_location": (0, 1, 2, 3, 4, 5, 6),
++    "location": (0, 1, 2, 3, 4, 5, 6),
++    "presenter_left": (3, 2, 4, 1, 5, 0, 6),
++    "presenter_right": (4, 3, 2, 5, 1, 0, 6),
++    "name_cargo": (3, 2, 4, 1, 5, 0, 6),
++    "credit": (3, 2, 4, 1, 5, 0, 6),
++    "pretitle": (4, 3, 5, 2, 1, 0, 6),
++    "persistent_headline": (5, 4, 3, 2, 1, 0, 6),
++    "story_headline": (6, 5, 4, 3, 2, 1, 0),
++}
+ # A recognition score describes text quality.  It must survive duration
+ # refinement unchanged so a visually well-bounded but unreadable banner never
+ # becomes an apparently reliable chyron.
+@@ -850,7 +865,7 @@ class VerticalizationDockContent(QWidget):
+ 
+     @staticmethod
+     def _wrap_story_headline(text, max_characters):
+-        """Wrap an OCR headline by words for the narrow 9:16 title safe area."""
++        """Wrap a chyron by words for the narrow 9:16 title safe area."""
+         wrapped = []
+         for source_line in str(text or "").splitlines() or [str(text or "")]:
+             words = source_line.split()
+@@ -873,51 +888,69 @@ class VerticalizationDockContent(QWidget):
+         left = (float(width) - safe_width) / 2.0
+         return left, 0.0, left + safe_width, float(height)
+ 
+-    def _title_svg(self, text, template, width, height):
++    @staticmethod
++    def _chyron_vertical_slot_preferences(template):
++        return CHYRON_VERTICAL_SLOT_PREFERENCES.get(
++            template, CHYRON_VERTICAL_SLOT_PREFERENCES["story_headline"])
++
++    def _assign_chyron_vertical_slots(self, events):
++        """Assign distinct safe-area lanes to temporally overlapping chyrons."""
++        active = []
++        for event in sorted(events, key=lambda item: (
++                int(item.get("start_frame", 0)),
++                self._chyron_vertical_slot_preferences(item.get("template", ""))[0],
++                int(item.get("end_frame", 0)))):
++            start_frame = int(event.get("start_frame", 0))
++            active = [candidate for candidate in active
++                      if int(candidate.get("end_frame", 0)) > start_frame]
++            occupied = {candidate.get("vertical_slot") for candidate in active}
++            preferences = self._chyron_vertical_slot_preferences(event.get("template", ""))
++            slot = next((candidate for candidate in preferences if candidate not in occupied),
++                        preferences[0])
++            event["vertical_slot"] = slot
++            active.append(event)
++        return events
++
++    def _title_svg(self, text, template, width, height, vertical_slot=None):
+         """Build an editable transparent SVG for a detected broadcast chyron."""
+         styles = {
+-            "live_location": (.04, .14, "start", 42),
+-            "location": (.04, .14, "start", 42),
+-            "presenter_left": (.10, .84, "start", 44),
+-            "presenter_right": (.56, .84, "start", 44),
+-            "name_cargo": (.04, .83, "start", 40),
+-            "credit": (.04, .84, "start", 38),
+-            "pretitle": (.50, .76, "middle", 38),
+-            "story_headline": (.50, .86, "middle", 46),
+-            "persistent_headline": (.04, .92, "start", 38),
++            "live_location": 34,
++            "location": 34,
++            "presenter_left": 34,
++            "presenter_right": 34,
++            "name_cargo": 34,
++            "credit": 34,
++            "pretitle": 34,
++            "story_headline": 46,
++            "persistent_headline": 34,
+         }
+-        x_ratio, y_ratio, anchor, font_size = styles.get(template, styles["story_headline"])
+-        x, y = width * x_ratio, height * y_ratio
+-        if template == "story_headline":
+-            safe_left, safe_top, safe_right, safe_bottom = self._vertical_title_safe_area(width, height)
+-            safe_width = safe_right - safe_left
+-            usable_width = safe_width * (1.0 - 2.0 * VERTICAL_TITLE_SAFE_MARGIN)
+-            max_characters = max(12, int(usable_width / (font_size * .60)))
+-            lines = self._wrap_story_headline(text, max_characters)
+-            # Center the multiline block in the lower third.  Its text stays
+-            # in the same editorial area as before while every line remains
+-            # inside the 9:16 viewer guide.
+-            line_height = font_size * 1.12
+-            x = (safe_left + safe_right) / 2.0
+-            y = height * .84 - (len(lines) - 1) * line_height / 2.0
+-            rendered = "".join(
+-                '<text x="%.1f" y="%.1f" text-anchor="middle" '
+-                'font-family="Arial, sans-serif" font-size="%d" font-weight="bold" '
+-                'fill="white" stroke="black" stroke-width="1.5" paint-order="stroke" '
+-                'textLength="%.1f" lengthAdjust="spacingAndGlyphs">%s</text>' % (
+-                    x, y + index * line_height, font_size,
+-                    min(usable_width, max(font_size * 3.0, len(line) * font_size * .56)),
+-                    html.escape(line))
+-                for index, line in enumerate(lines) if line.strip())
+-            return ('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" '
+-                    'viewBox="0 0 %d %d"><defs><clipPath id="smouk-vertical-title-safe">'
+-                    '<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f"/></clipPath></defs>'
+-                    '<g clip-path="url(#smouk-vertical-title-safe)">%s</g></svg>') % (
+-                        width, height, width, height, safe_left, safe_top, safe_width,
+-                        safe_bottom - safe_top, rendered)
+-        lines = [html.escape(line.strip()) for line in str(text).splitlines() if line.strip()][:2]
+-        rendered = "".join('<text x="%.1f" y="%.1f" text-anchor="%s" font-family="Arial, sans-serif" font-size="%d" font-weight="bold" fill="white" stroke="black" stroke-width="1.5" paint-order="stroke">%s</text>' % (x, y + index * font_size * 1.12, anchor, font_size, line) for index, line in enumerate(lines))
+-        return '<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">%s</svg>' % (width, height, width, height, rendered)
++        font_size = styles.get(template, styles["story_headline"])
++        safe_left, safe_top, safe_right, safe_bottom = self._vertical_title_safe_area(width, height)
++        safe_width = safe_right - safe_left
++        usable_width = safe_width * (1.0 - 2.0 * VERTICAL_TITLE_SAFE_MARGIN)
++        max_characters = max(12, int(usable_width / (font_size * .60)))
++        lines = self._wrap_story_headline(text, max_characters)
++        preferences = self._chyron_vertical_slot_preferences(template)
++        slot = preferences[0] if vertical_slot is None else int(vertical_slot)
++        slot = max(0, min(slot, len(VERTICAL_TITLE_SLOT_RATIOS) - 1))
++        line_height = font_size * 1.12
++        x = (safe_left + safe_right) / 2.0
++        y = height * VERTICAL_TITLE_SLOT_RATIOS[slot] - (len(lines) - 1) * line_height / 2.0
++        rendered = "".join(
++            '<text x="%.1f" y="%.1f" text-anchor="middle" '
++            'font-family="Arial, sans-serif" font-size="%d" font-weight="bold" '
++            'fill="white" stroke="black" stroke-width="1.5" paint-order="stroke" '
++            'textLength="%.1f" lengthAdjust="spacingAndGlyphs">%s</text>' % (
++                x, y + index * line_height, font_size,
++                min(usable_width, max(font_size * 3.0, len(line) * font_size * .56)),
++                html.escape(line))
++            for index, line in enumerate(lines) if line.strip())
++        return ('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" '
++                'viewBox="0 0 %d %d"><defs><clipPath id="smouk-vertical-title-safe">'
++                '<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f"/></clipPath></defs>'
++                '<g clip-path="url(#smouk-vertical-title-safe)">%s</g></svg>') % (
++                    width, height, width, height, safe_left, safe_top, safe_width,
++                    safe_bottom - safe_top, rendered)
+ 
+     def _add_chyron_clip(self, svg_path, layer, position, duration, event):
+         data, _duration = inspect_media(svg_path, max_width=int(get_app().project.get("width") or 1920),
+@@ -934,6 +967,7 @@ class VerticalizationDockContent(QWidget):
+                           "reader": file_obj.data, "title": file_obj.data["name"],
+                           "smouk_chyron_clip": True, "smouk_chyron_text": event["text"],
+                           "smouk_chyron_template": event["template"],
++                          "smouk_chyron_vertical_slot": event.get("vertical_slot"),
+                           "smouk_chyron_confidence": event.get("confidence", 0.0),
+                           "smouk_chyron_source_start": event["timecode_start"],
+                           "smouk_chyron_source_end": event["timecode_end"]})
+@@ -1414,6 +1448,7 @@ class VerticalizationDockContent(QWidget):
+         project_height = int(get_app().project.get("height") or 1080)
+         asset_dir = os.path.join(self._subtitle_asset_directory(), "chyron-assets")
+         os.makedirs(asset_dir, exist_ok=True)
++        self._assign_chyron_vertical_slots(events)
+         added = 0
+         for index, event in enumerate(events, start=1):
+             self._title_progress("Creando títulos editables: %s de %s…" % (index, len(events)),
+@@ -1427,7 +1462,8 @@ class VerticalizationDockContent(QWidget):
+             position, event_duration = max(0.0, position), min(duration, end_position) - max(0.0, position)
+             if event_duration < 0.2:
+                 continue
+-            svg = self._title_svg(event["text"], event["template"], project_width, project_height)
++            svg = self._title_svg(event["text"], event["template"], project_width,
++                                  project_height, event.get("vertical_slot"))
+             svg_path = os.path.join(asset_dir, "chyron-%s-%03d.svg" % (uuid.uuid4().hex[:8], index))
+             with open(svg_path, "w", encoding="utf-8") as stream:
+                 stream.write(svg)
+-- 
+2.55.0.windows.3
+

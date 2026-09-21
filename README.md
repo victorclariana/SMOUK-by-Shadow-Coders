@@ -743,6 +743,17 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   `CHYRONS · Titular`; los demás tipos de rótulo mantienen su posición actual
   para revisarlos por separado.
 
+### 0.0.75
+
+- Todos los tipos de rótulo reconstruidos —localización, directo, nombres,
+  cargos, firmas, pretítulos y cintillos persistentes— se componen dentro del
+  área activa central 9:16, con el mismo margen y recorte seguro que los
+  titulares grandes.
+- Cuando coinciden en el tiempo, SMOUK los distribuye en carriles verticales
+  separados. Conserva una jerarquía editorial: localización arriba,
+  identificaciones en el centro, pretítulos y cintillos debajo, y el titular
+  principal en el tercio inferior.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4

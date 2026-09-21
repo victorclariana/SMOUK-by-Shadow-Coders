@@ -82,6 +82,7 @@ corresponding repository.
 | `0074-SMOUK-0.0.72-segmented-tnm-title-bands.patch` | **openshot-qt** | Segments the fixed TNM headline and pretitle bands into individual words before PP-OCRv5 recognition, includes the full large-title geometry, and tolerates their settled entrance animation. |
 | `0075-SMOUK-0.0.73-persistent-title-continuity.patch` | **openshot-qt** | Bridges brief OCR blind spots in a same-topic persistent TNM label and removes the `àas` presenter-name artifact. |
 | `0076-SMOUK-0.0.74-vertical-safe-multiline-headlines.patch` | **openshot-qt** | Places large TNM story headlines inside the centred 9:16 active guide, wraps them by words over multiple lines, and clips their SVG output to that safe area. |
+| `0077-SMOUK-0.0.75-vertical-safe-chyron-layout.patch` | **openshot-qt** | Composes every editable chyron inside the 9:16 active guide and assigns distinct vertical lanes to concurrent editorial graphics. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply
