@@ -85,6 +85,7 @@ corresponding repository.
 | `0077-SMOUK-0.0.75-vertical-safe-chyron-layout.patch` | **openshot-qt** | Composes every editable chyron inside the 9:16 active guide and assigns distinct vertical lanes to concurrent editorial graphics. |
 | `0078-SMOUK-0.0.76-split-source-and-title-workflows.patch` | **openshot-qt** | Separates CLEAN source validation/import from PROGRAM chyron detection, reorganizes the dock controls, and keeps the 9:16 guide enabled by default. |
 | `0079-SMOUK-0.0.77-source-progress-heartbeat.patch` | **openshot-qt** | Keeps Source Video and Titles progress clocks independent, preventing Source clock analysis from emitting a Titles error. |
+| `0080-SMOUK-0.0.78-centred-vertical-logo.patch` | **openshot-qt** | Centres proportional vertical PNG logo clips in the active 9:16 guide rather than the left edge of the 16:9 edit canvas. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

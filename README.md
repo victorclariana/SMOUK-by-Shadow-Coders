@@ -779,6 +779,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   trazas y estado, y ya no puede generar un error de Titles ni iniciar el
   análisis de chyrons.
 
+### 0.0.78
+
+- Los PNG de logo verticales se insertan ahora con su tamaño nativo y gravedad
+  centrada. Un fichero de 608×1080 queda dentro del rectángulo blanco 9:16 de
+  un proyecto HD 1920×1080, con posición y tamaño aún editables desde el visor.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4

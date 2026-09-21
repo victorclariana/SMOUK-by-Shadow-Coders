@@ -1,0 +1,68 @@
+From 4154ff572def1538f33233491d68db8dcec8bb3f Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Mon, 21 Sep 2026 16:37:27 +0200
+Subject: [PATCH] SMOUK 0.0.78 centre vertical logo
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 24 ++++++++++++++++++++++++
+ 2 files changed, 25 insertions(+), 1 deletion(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 64f8e4916..34ffe4090 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.77"
++SMOUK_VERSION = "0.0.78"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 1546803c3..d0f1ad17d 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -1868,6 +1868,29 @@ class VerticalizationDockContent(QWidget):
+                               _("PNG images (*.png)"), on_selected,
+                               allow_multiple=False)
+ 
++    @staticmethod
++    def _vertical_logo_transform():
++        """Return a centred, guide-sized transform for a vertical PNG logo.
++
++        With a 1920×1080 edit canvas, SCALE_NONE preserves a 608×1080 PNG at
++        its native 608×1080 size. Centre gravity places its left edge at
++        x=656, exactly matching SMOUK's 608×1080 white 9:16 guide. This also
++        keeps a 608×1079 asset safely inside the guide. Explicit zero
++        locations prevent the image-reader default (top-left gravity) leaking
++        into a generated logo clip.
++        """
++        point = lambda value: {"Points": [{
++            "co": {"X": 1.0, "Y": float(value)},
++            "interpolation": openshot.BEZIER,
++        }]}
++        return {
++            "scale": openshot.SCALE_NONE,
++            "gravity": openshot.GRAVITY_CENTER,
++            "location_x": point(0.0),
++            "location_y": point(0.0),
++            "smouk_logo_vertical_safe": True,
++        }
++
+     def _add_logo(self, path):
+         """Register *path* and create a full-duration native image clip."""
+         _ = get_app()._tr
+@@ -1904,6 +1927,7 @@ class VerticalizationDockContent(QWidget):
+             "title": file_obj.data["name"], "file_id": file_obj.id,
+             "reader": file_obj.data, "smouk_logo_clip": True,
+         })
++        clip.data.update(self._vertical_logo_transform())
+         clip.save()
+         get_app().updates.transaction_id = None
+         window.refreshFilesSignal.emit()
+-- 
+2.55.0.windows.3
+

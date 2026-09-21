@@ -116,6 +116,16 @@ class TitleRuntimeTests(unittest.TestCase):
         self.assertIn('CLEAN: OCR del reloj en curso', self.dock.source_clock_status.text())
         self.assertNotIn('Error', self.dock.title_folder_results.text())
 
+    def test_vertical_logo_starts_centred_inside_the_916_guide(self):
+        transform = self.dock._vertical_logo_transform()
+        self.assertEqual(transform['scale'], v.openshot.SCALE_NONE)
+        self.assertEqual(transform['gravity'], v.openshot.GRAVITY_CENTER)
+        self.assertTrue(transform['smouk_logo_vertical_safe'])
+        for property_name in ('location_x', 'location_y'):
+            point = transform[property_name]['Points'][0]
+            self.assertEqual(point['co']['X'], 1.0)
+            self.assertEqual(point['co']['Y'], 0.0)
+
     def test_new_project_runtime_cleanup_cannot_delete_a_directory_tree(self):
         source = (ROOT / 'openshot-qt/src/windows/main_window.py').read_text(encoding='utf-8')
         module = ast.parse(source)
