@@ -36,8 +36,14 @@ class TestDock(v.VerticalizationDockContent):
         self.title_clock_status = QLabel(self)
         self.title_folder_results = QLabel(self)
         self.btn_browse_title_folder = QPushButton(self)
+        self.btn_detect_titles = QPushButton(self)
+        self.source_clock_progress = QProgressBar(self)
+        self.source_clock_status = QLabel(self)
+        self.source_folder_results = QLabel(self)
         self._title_trace = []
+        self._source_trace = []
         self._title_busy = False
+        self._source_busy = False
         self._title_workers = []
         self._title_heartbeat = QtCore.QTimer(self)
         self._title_heartbeat.setInterval(100)
@@ -357,6 +363,33 @@ class TitleRuntimeTests(unittest.TestCase):
         self.dock._on_title_clock_ocr_completed({'error': 'PP-OCRv5 timeout'})
         self.assertIn('PP-OCRv5 timeout', self.dock.title_folder_results.text())
         self.assertFalse(self.dock.imports)
+
+    def test_source_step_imports_clean_and_enables_titles(self):
+        result = result_fixture()
+        self.dock._source_pending_result = result
+        self.dock._source_busy = True
+        with patch.object(self.dock, '_clear_generated_clean_feed_import'), \
+                patch.object(self.dock, '_clear_generated_chyrons'):
+            self.dock._on_source_clock_ocr_completed({'clean': {'frames': 0, 'text': '00:00:00'}})
+        self.assertEqual(len(self.dock.imports), 1)
+        self.assertEqual(self.dock.imports[0][0], 'CLEAN.mp4')
+        self.assertEqual(self.dock.title_analysis_data['clean_origin'], 0)
+        self.assertTrue(self.dock.btn_detect_titles.isEnabled())
+
+    def test_titles_step_does_not_reimport_clean(self):
+        result = result_fixture()
+        result.update({'clean_origin': 0, 'clean_duration': 2.0})
+        self.dock._title_pending_result = result
+        self.dock.title_analysis_data = result
+        self.dock._title_busy = True
+        workers = []
+        with patch.object(self.dock, '_clear_generated_chyrons'), \
+                patch.object(self.dock, '_start_title_worker', side_effect=workers.append):
+            self.dock._on_title_program_clock_ocr_completed(
+                {'program': {'frames': 0, 'text': '00:00:00'}})
+        self.assertFalse(self.dock.imports)
+        self.assertEqual(len(workers), 1)
+        self.assertEqual(workers[0].arguments[0], 'PROGRAMA.mp4')
 
     def test_title_scan_error_is_not_reported_as_success(self):
         self.dock._on_title_chyrons_completed({'error': 'FFmpeg incomplete frame'})

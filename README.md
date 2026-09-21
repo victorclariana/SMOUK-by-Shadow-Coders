@@ -754,6 +754,21 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   identificaciones en el centro, pretítulos y cintillos debajo, y el titular
   principal en el tercio inferior.
 
+### 0.0.76
+
+- Se ordenó el dock Verticalization: el selector de carpeta y el corte de
+  `CLEAN.MP4` están en **Source Video**; la detección de chyrons de
+  `PROGRAMA.MP4` tiene su propio botón en **Titles**. Ambos pasos comparten la
+  sincronización horaria, pero el segundo no abre otro selector ni vuelve a
+  cortar o importar CLEAN.
+- El selector Source Video exige `CLEAN.MP4`, `DATA.JSON` y `PROGRAMA.MP4`,
+  obtiene el `in/out` de DATA y calibra solo el reloj de CLEAN para importar
+  el clip en Track 2. Titles calibra después solo PROGRAMA y crea los chyrons
+  encima de ese clip.
+- Los controles manuales `Horizontal framing (selected clip)`, su deslizador
+  y `Keyframes` se trasladaron a **Automatic Reframing**. La guía 9:16 se
+  muestra marcada por defecto junto al perfil de salida.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4

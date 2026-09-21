@@ -1,0 +1,602 @@
+From 9ed5c8731d8db0a7430231fdce882d735aa88f90 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Mon, 21 Sep 2026 13:28:17 +0200
+Subject: [PATCH] SMOUK 0.0.76 split source and title workflows
+
+---
+ src/classes/smouk_titles.py    |  19 +-
+ src/windows/main_window.py     |   2 +-
+ src/windows/verticalization.py | 371 ++++++++++++++++++++++++++-------
+ 3 files changed, 305 insertions(+), 87 deletions(-)
+
+diff --git a/src/classes/smouk_titles.py b/src/classes/smouk_titles.py
+index ea3d96236..1c1987b22 100644
+--- a/src/classes/smouk_titles.py
++++ b/src/classes/smouk_titles.py
+@@ -375,7 +375,8 @@ def _clock_probe(path, reference, fps=25, max_seconds=180, progress_callback=Non
+         return {"candidate": False, "reason": str(exc), "samples": 0}
+ 
+ 
+-def validate_title_folder(folder, fps=25, clock_progress=None):
++def validate_title_folder(folder, fps=25, clock_progress=None,
++                          clock_targets=("clean", "program")):
+     """Validate a SMOUK title-analysis folder.
+ 
+     Required names are intentionally strict for the first implementation:
+@@ -472,9 +473,13 @@ def validate_title_folder(folder, fps=25, clock_progress=None):
+             "area_ratio": reference["features"]["area_ratio"],
+         }
+ 
+-    # Scan both feeds against the CLEAN reference. Exact digits and the
+-    # resulting origin timecode remain OCR work.
+-    for file_index, key in enumerate(("clean", "program")):
++    # Scan the requested feeds against the CLEAN reference. Source Video uses
++    # CLEAN only; the independent Titles action later scans PROGRAMA without
++    # replacing the already imported CLEAN timeline clip.
++    targets = tuple(key for key in clock_targets if key in ("clean", "program"))
++    if not targets:
++        targets = ("clean", "program")
++    for file_index, key in enumerate(targets):
+         def update_progress(completed, total, current_key=key, current_index=file_index):
+             if clock_progress:
+                 clock_progress(current_key, current_index, completed, total)
+@@ -488,14 +493,16 @@ def validate_title_folder(folder, fps=25, clock_progress=None):
+             result["clock_probes"][key] = _clock_probe(
+                 result["files"][key], reference, fps=fps,
+                 progress_callback=update_progress)
+-    result["clock_probe"] = result["clock_probes"]["program"]
++    result["clock_probe"] = result["clock_probes"].get(
++        "program", result["clock_probes"].get("clean", {}))
+     result["clock_candidate"] = any(
+         probe.get("candidate") for probe in result["clock_probes"].values())
+     found = [key.upper() for key, probe in result["clock_probes"].items()
+              if probe.get("candidate")]
++    names = ", ".join("%s.MP4" % key.upper() for key in targets)
+     if not result["clock_candidate"]:
+         result["warnings"].append(
+-            "No se ha detectado un reloj visual al rastrear los primeros tres minutos de CLEAN.MP4 y PROGRAMA.MP4.")
++            "No se ha detectado un reloj visual al rastrear los primeros tres minutos de %s." % names)
+     else:
+         result["warnings"].append(
+             "Se ha detectado un posible reloj visual en %s; su lectura exacta todavía requiere OCR/calibración." %
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 5de6783bb..1ad04788a 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.75"
++SMOUK_VERSION = "0.0.76"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index f594d7f4b..ec8fdda98 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -162,11 +162,12 @@ class SmoukClockOcrWorker(QtCore.QThread):
+     stage = QtCore.pyqtSignal(str)
+     completed = QtCore.pyqtSignal(object)
+ 
+-    def __init__(self, dock, files, probes):
++    def __init__(self, dock, files, probes, clock_keys=("clean", "program")):
+         super().__init__(dock)
+         self.dock = dock
+         self.files = files
+         self.probes = probes
++        self.clock_keys = tuple(clock_keys)
+ 
+     def run(self):
+         try:
+@@ -175,16 +176,19 @@ class SmoukClockOcrWorker(QtCore.QThread):
+             if not status["available"]:
+                 raise RuntimeError(status["reason"])
+             with PaddleOcrSession() as reader:
+-                self.stage.emit("PP-OCRv5: leyendo el reloj de CLEAN.MP4…")
+-                clean = self.dock._ocr_clock_at(
+-                    self.files["clean"], self.probes["clean"], reader, self.stage.emit)
+-                self.stage.emit("PP-OCRv5: leyendo el reloj de PROGRAMA.MP4…")
+-                program = self.dock._ocr_clock_at(
+-                    self.files["program"], self.probes["program"], reader, self.stage.emit)
+-            self.completed.emit({"clean": clean, "program": program, "error": ""})
++                readings = {}
++                for key in self.clock_keys:
++                    name = "CLEAN.MP4" if key == "clean" else "PROGRAMA.MP4"
++                    self.stage.emit("PP-OCRv5: leyendo el reloj de %s…" % name)
++                    readings[key] = self.dock._ocr_clock_at(
++                        self.files[key], self.probes[key], reader, self.stage.emit)
++            readings["error"] = ""
++            self.completed.emit(readings)
+         except Exception as exc:
+             log.exception("SMOUK clock OCR worker failed")
+-            self.completed.emit({"clean": {}, "program": {}, "error": str(exc)})
++            readings = {key: {} for key in self.clock_keys}
++            readings["error"] = str(exc)
++            self.completed.emit(readings)
+ 
+ 
+ class SmoukChyronOcrWorker(QtCore.QThread):
+@@ -312,6 +316,7 @@ class VerticalizationDockContent(QWidget):
+         self._build_auto_reframe_controls(_)
+         self._build_transcription_controls(_)
+         self._build_logo_controls(_)
++        self._build_source_import_controls(_)
+         self._build_title_import_controls(_)
+         self._connect_reframe_sync()
+ 
+@@ -358,6 +363,29 @@ class VerticalizationDockContent(QWidget):
+         self.btn_auto_reframe.clicked.connect(self._on_auto_reframe_timeline)
+         self.sections["automatic_reframing"].add_widget(self.btn_auto_reframe)
+ 
++        self.reframe_label = QLabel(_("Horizontal framing (selected clip)"), self)
++        self.reframe_label.setObjectName("verticalizationReframeLabel")
++        self.sections["automatic_reframing"].add_widget(self.reframe_label)
++
++        self.reframe_slider = QSlider(Qt.Horizontal, self)
++        self.reframe_slider.setObjectName("verticalizationReframeSlider")
++        self.reframe_slider.setRange(-1000, 1000)
++        self.reframe_slider.setValue(0)
++        self.reframe_slider.setStyleSheet(
++            "QSlider::handle:horizontal { width: 22px; margin: -7px 0; }")
++        self.reframe_slider.setToolTip(
++            _("Move the selected 16:9 clip beneath the vertical guide."))
++        self.reframe_slider.sliderPressed.connect(self._on_reframe_press)
++        self.reframe_slider.sliderReleased.connect(self._on_reframe_release)
++        self.reframe_slider.valueChanged.connect(self._on_reframe_changed)
++        self.sections["automatic_reframing"].add_widget(self.reframe_slider)
++
++        self.chk_keyframes = QCheckBox(_("Keyframes"), self)
++        self.chk_keyframes.setObjectName("verticalizationReframeKeyframes")
++        self.chk_keyframes.setToolTip(
++            _("Store this position only at the current playhead frame."))
++        self.sections["automatic_reframing"].add_widget(self.chk_keyframes)
++
+         self.reframe_progress = QProgressBar(self)
+         self.reframe_progress.setObjectName("verticalizationReframeProgress")
+         self.reframe_progress.setVisible(False)
+@@ -471,39 +499,69 @@ class VerticalizationDockContent(QWidget):
+         self._logo_opacity_dragging = False
+         self._sync_logo_opacity()
+ 
+-    def _build_title_import_controls(self, _):
+-        """Add the automatic input, synchronisation, and title-import controls."""
++    def _build_source_import_controls(self, _):
++        """Add folder validation and the CLEAN-only source import action."""
+         self.btn_browse_title_folder = QPushButton(
+-            _("Select title-analysis folder"), self)
++            _("Select source-video folder"), self)
+         self.btn_browse_title_folder.setObjectName("verticalizationBrowseTitleFolder")
+         self.btn_browse_title_folder.setToolTip(_(
+-            "Choose a folder containing CLEAN.MP4, DATA.JSON and PROGRAMA.MP4."))
++            "Choose a folder containing CLEAN.MP4, DATA.JSON and PROGRAMA.MP4. "
++            "This imports only the calculated CLEAN cut."))
+         self.btn_browse_title_folder.clicked.connect(self._on_browse_title_folder)
+         self.title_folder_requirements = QLabel(
+             _("Required files in the selected folder: CLEAN.MP4, DATA.JSON and PROGRAMA.MP4."),
+             self)
+         self.title_folder_requirements.setObjectName("verticalizationTitleFolderRequirements")
+         self.title_folder_requirements.setWordWrap(True)
++        self.source_clock_progress = QProgressBar(self)
++        self.source_clock_progress.setObjectName("verticalizationSourceClockProgress")
++        self.source_clock_progress.setRange(0, 180)
++        self.source_clock_progress.setValue(0)
++        self.source_clock_progress.setVisible(False)
++        self.source_clock_status = QLabel(
++            _("Waiting for a source-video folder."), self)
++        self.source_clock_status.setObjectName("verticalizationSourceClockStatus")
++        self.source_clock_status.setWordWrap(True)
++        self.source_folder_results = QLabel(
++            _("No source-video folder has been selected."), self)
++        self.source_folder_results.setObjectName("verticalizationSourceFolderResults")
++        self.source_folder_results.setWordWrap(True)
++        self.sections["source_video"].add_widget(self.btn_browse_title_folder)
++        self.sections["source_video"].add_widget(self.title_folder_requirements)
++        self.sections["source_video"].add_widget(self.source_clock_progress)
++        self.sections["source_video"].add_widget(self.source_clock_status)
++        self.sections["source_video"].add_widget(self.source_folder_results)
++
++    def _build_title_import_controls(self, _):
++        """Add the second, PROGRAM-only chyron reconstruction action."""
++        self.btn_detect_titles = QPushButton(
++            _("Detect chyrons in PROGRAMA.MP4"), self)
++        self.btn_detect_titles.setObjectName("verticalizationDetectChyrons")
++        self.btn_detect_titles.setToolTip(_(
++            "Read PROGRAMA.MP4 and place synchronised editable chyrons over CLEAN."))
++        self.btn_detect_titles.clicked.connect(self._on_detect_titles)
++        self.btn_detect_titles.setEnabled(False)
+         self.title_clock_progress = QProgressBar(self)
+         self.title_clock_progress.setObjectName("verticalizationTitleClockProgress")
+         self.title_clock_progress.setRange(0, 360)
+         self.title_clock_progress.setValue(0)
+         self.title_clock_progress.setVisible(False)
+         self.title_clock_status = QLabel(
+-            _("Waiting for a title-analysis folder."), self)
++            _("Prepare CLEAN.MP4 in Source Video before detecting chyrons."), self)
+         self.title_clock_status.setObjectName("verticalizationTitleClockStatus")
+         self.title_clock_status.setWordWrap(True)
+         self.title_folder_results = QLabel(
+             _("No title-analysis folder has been selected."), self)
+         self.title_folder_results.setObjectName("verticalizationTitleFolderResults")
+         self.title_folder_results.setWordWrap(True)
+-        self.sections["titles"].add_widget(self.btn_browse_title_folder)
+-        self.sections["titles"].add_widget(self.title_folder_requirements)
++        self.sections["titles"].add_widget(self.btn_detect_titles)
+         self.sections["titles"].add_widget(self.title_clock_progress)
+         self.sections["titles"].add_widget(self.title_clock_status)
+         self.sections["titles"].add_widget(self.title_folder_results)
+         self.title_analysis_data = None
++        self._source_busy = False
+         self._title_trace = []
++        self._source_trace = []
+         self._title_busy = False
+         self._title_workers = []
+         self._title_heartbeat = QtCore.QTimer(self)
+@@ -512,9 +570,9 @@ class VerticalizationDockContent(QWidget):
+ 
+     @title_pipeline_guard
+     def _on_browse_title_folder(self, _checked=False):
+-        """Run the non-interactive title reconstruction pipeline."""
++        """Validate a source folder and import only its CLEAN interval."""
+         _ = get_app()._tr
+-        if self._title_busy:
++        if self._title_busy or self._source_busy:
+             return
+         project_path = getattr(get_app().project, "current_filepath", "")
+         directory = os.path.dirname(project_path) if project_path else ""
+@@ -523,63 +581,54 @@ class VerticalizationDockContent(QWidget):
+             QFileDialog.ShowDirsOnly)
+         if not folder:
+             return
+-        self._title_trace = []
+-        self._title_busy = True
+-        self.title_clock_progress.setVisible(True)
+-        self.title_clock_progress.setRange(0, 360)
+-        self.title_clock_progress.setValue(0)
+-        self.title_clock_status.setText(
+-            _("Preparing the three-minute clock scan…"))
++        self._source_trace = []
++        self._source_busy = True
++        self.source_clock_progress.setVisible(True)
++        self.source_clock_progress.setRange(0, 180)
++        self.source_clock_progress.setValue(0)
++        self.source_clock_status.setText(
++            _("Preparing the CLEAN three-minute clock scan…"))
+         self.btn_browse_title_folder.setEnabled(False)
++        self.btn_detect_titles.setEnabled(False)
+         get_app().processEvents()
+ 
+-        def update_clock_progress(file_key, file_index, completed, total):
+-            name = "CLEAN.MP4" if file_key == "clean" else "PROGRAMA.MP4"
+-            overall_total = max(1, int(total) * 2)
+-            overall_value = min(overall_total, int(file_index) * int(total) + int(completed))
+-            self.title_clock_progress.setRange(0, overall_total)
+-            self.title_clock_progress.setValue(overall_value)
+-            self.title_clock_status.setText(
+-                _("Searching for the clock in %s: %s of %s samples.") %
+-                (name, completed, total))
++        def update_clock_progress(_file_key, _file_index, completed, total):
++            self.source_clock_progress.setRange(0, max(1, int(total)))
++            self.source_clock_progress.setValue(min(int(total), int(completed)))
++            self.source_clock_status.setText(
++                _("Searching for the clock in CLEAN.MP4: %s of %s samples.") %
++                (completed, total))
+             get_app().processEvents()
+ 
+         result = validate_title_folder(folder, fps=25,
+-                                       clock_progress=update_clock_progress)
++                                       clock_progress=update_clock_progress,
++                                       clock_targets=("clean",))
+         self.title_analysis_data = result
+         if not result.get("valid"):
+-            self.title_clock_status.setText(
++            self.source_clock_status.setText(
+                 _("Clock analysis was not started because the folder is invalid."))
+             details = "\n".join(result.get("errors") or [])
+-            self._finish_title_pipeline(_("Invalid title-analysis folder:\n%s") % details)
++            self._finish_source_pipeline(_("Invalid source-video folder:\n%s") % details)
+             return
+ 
+         files = result["files"]
+         tc = result["timecodes"]
+         warnings = result.get("warnings") or []
+         summary = _(
+-            "Folder accepted.\nCorte: %s – %s\nClean Feed: %s\nPrograma: %s") % (
++            "Folder accepted.\nCorte: %s – %s\nClean Feed: %s\nPrograma reserved for Titles: %s") % (
+                 tc.get("clip_in"), tc.get("clip_out"),
+                 os.path.basename(files["clean"]), os.path.basename(files["program"]))
+         clock_probes = result.get("clock_probes") or {}
+-        clock_lines = []
+-        for key, title in (("clean", "Clean Feed"), ("program", "Programa")):
+-            probe = clock_probes.get(key) or {}
+-            if probe.get("candidate"):
+-                clock_lines.append(
+-                    "%s: reloj candidato en %0.0f s (%s muestras)" % (
+-                        title, float(probe.get("seconds", 0.0)), probe.get("samples", 0)))
+-            else:
+-                reason = str(probe.get("reason") or "")
+-                diagnostic = "; %s" % reason if reason else ""
+-                clock_lines.append(
+-                    "%s: sin reloj en los primeros 3 min (%s muestras%s)" % (
+-                        title, probe.get("samples", 0), diagnostic))
+-        summary += "\n" + "\n".join(clock_lines)
++        probe = clock_probes.get("clean") or {}
++        if probe.get("candidate"):
++            summary += "\nCLEAN.MP4: reloj candidato en %0.0f s (%s muestras)" % (
++                float(probe.get("seconds", 0.0)), probe.get("samples", 0))
++        else:
++            summary += "\nCLEAN.MP4: sin reloj en los primeros 3 min (%s muestras)" % probe.get("samples", 0)
+         if warnings:
+             summary += "\n" + _("Avisos: ") + "; ".join(warnings)
+-        self._title_progress(summary)
+-        self._run_title_reconstruction(result)
++        self._source_progress(summary)
++        self._run_source_import(result)
+ 
+     def _title_progress(self, text, value=None, maximum=None):
+         """Report long title work in both the dock and the application status bar."""
+@@ -601,16 +650,49 @@ class VerticalizationDockContent(QWidget):
+         if status_bar is not None:
+             status_bar.showMessage(text)
+ 
++    def _source_progress(self, text, value=None, maximum=None):
++        """Report source-folder validation and CLEAN import in its dock section."""
++        if maximum is not None:
++            self.source_clock_progress.setRange(0, max(1, int(maximum)))
++        if value is not None:
++            self.source_clock_progress.setValue(int(value))
++        self.source_clock_status.setText(text)
++        self._source_stage_text = text
++        self._source_stage_started = time.monotonic()
++        self._source_trace.append(time.strftime("%H:%M:%S ") + text)
++        self._source_trace = self._source_trace[-8:]
++        self.source_folder_results.setText("Pasos del proceso:\n" + "\n".join(self._source_trace))
++        log.info("SMOUK source pipeline: %s", text)
++        window = get_app().window
++        status_bar = getattr(window, "statusBar", None)
++        if callable(status_bar):
++            status_bar = status_bar()
++        if status_bar is not None:
++            status_bar.showMessage(text)
++
+     def _finish_title_pipeline(self, message):
+         self._title_busy = False
+         self._title_heartbeat.stop()
+         self.btn_browse_title_folder.setEnabled(True)
++        self.btn_detect_titles.setEnabled(
++            bool(self.title_analysis_data and self.title_analysis_data.get("clean_origin") is not None))
+         self._title_progress(message)
+ 
++    def _finish_source_pipeline(self, message):
++        self._source_busy = False
++        self._title_heartbeat.stop()
++        self.btn_browse_title_folder.setEnabled(True)
++        self.btn_detect_titles.setEnabled(
++            bool(self.title_analysis_data and self.title_analysis_data.get("clean_origin") is not None))
++        self._source_progress(message)
++
+     @title_pipeline_guard
+     def _on_title_heartbeat(self):
+         elapsed = int(time.monotonic() - self._title_stage_started)
+-        self.title_clock_status.setText("%s (%s s)" % (self._title_stage_text, elapsed))
++        if getattr(self, "_source_busy", False):
++            self.source_clock_status.setText("%s (%s s)" % (self._source_stage_text, elapsed))
++        else:
++            self.title_clock_status.setText("%s (%s s)" % (self._title_stage_text, elapsed))
+ 
+     @title_pipeline_guard
+     def _on_title_worker_stage(self, message, value=None, maximum=None):
+@@ -826,8 +908,20 @@ class VerticalizationDockContent(QWidget):
+ 
+     @staticmethod
+     def _clear_generated_title_import():
++        """Legacy full reset used by older callers and migration tests."""
++        VerticalizationDockContent._clear_generated_clean_feed_import()
++        VerticalizationDockContent._clear_generated_chyrons()
++
++    @staticmethod
++    def _clear_generated_clean_feed_import():
++        for clip in Clip.filter():
++            if clip.data.get("smouk_clean_feed_clip"):
++                clip.delete()
++
++    @staticmethod
++    def _clear_generated_chyrons():
+         for clip in Clip.filter():
+-            if clip.data.get("smouk_clean_feed_clip") or clip.data.get("smouk_chyron_clip"):
++            if clip.data.get("smouk_chyron_clip"):
+                 clip.delete()
+ 
+     def _add_clean_feed_clip(self, path, source_start, source_end, hourly_start):
+@@ -1472,6 +1566,145 @@ class VerticalizationDockContent(QWidget):
+             added += 1
+         return events, added
+ 
++    @title_pipeline_guard
++    def _run_source_import(self, result):
++        """OCR only CLEAN's clock, then import the JSON-defined CLEAN interval."""
++        probe = (result.get("clock_probes") or {}).get("clean") or {}
++        if not probe.get("candidate"):
++            self._finish_source_pipeline(
++                "No se ha detectado el reloj de CLEAN.MP4; Timeline sin cambios.")
++            return
++        self._source_pending_result = result
++        self._source_progress("OCR de reloj: preparando CLEAN.MP4…", 0, 100)
++        worker = SmoukClockOcrWorker(self, result["files"], {"clean": probe}, ("clean",))
++        worker.stage.connect(self._on_source_worker_stage)
++        worker.completed.connect(self._on_source_clock_ocr_completed)
++        self._start_title_worker(worker)
++
++    @title_pipeline_guard
++    def _on_source_worker_stage(self, message, value=None, maximum=None):
++        self._source_progress(message, value, maximum)
++
++    @title_pipeline_guard
++    def _on_source_clock_ocr_completed(self, payload):
++        """Import the CLEAN clip after its visual-clock calibration succeeds."""
++        result = self._source_pending_result
++        files, probes, timecodes = result["files"], result.get("clock_probes", {}), result["timecodes"]
++        clean_clock = payload.get("clean", {})
++        if payload.get("error") or clean_clock.get("frames") is None:
++            details = payload.get("error") or clean_clock.get("reason") or clean_clock.get("text") or "sin lectura"
++            self._finish_source_pipeline("No se ha podido leer el reloj de CLEAN.MP4: %s" % details)
++            return
++        clean_origin = int(clean_clock["frames"] - clean_clock.get(
++            "source_frame", round(float(probes["clean"]["seconds"]) * 25)) -
++            clean_clock.get("presentation_phase_frames", 0))
++        clip_in, clip_out = timecodes["clip_in_frames"], timecodes["clip_out_frames"]
++        clean_start, clean_end = (clip_in - clean_origin) / 25.0, (clip_out - clean_origin) / 25.0
++        clean_duration = float(files.get("clean_info", {}).get("duration", 0) or 0)
++        if clean_start < 0 or clean_end <= clean_start or (clean_duration > 0 and clean_end > clean_duration):
++            self._finish_source_pipeline(
++                "El corte calculado queda fuera de CLEAN.MP4; revisar OCR. Timeline sin cambios.")
++            return
++        self._source_progress("Importando el corte de CLEAN.MP4 en Track 2…", 70, 100)
++        self._clear_generated_clean_feed_import()
++        # Chyrons from a prior folder cannot stay synchronised with a new CLEAN
++        # source. They are recreated only by the explicit Titles action.
++        self._clear_generated_chyrons()
++        self._add_clean_feed_clip(files["clean"], clean_start, clean_end, clean_origin)
++        get_app().window.refreshFilesSignal.emit()
++        get_app().window.refreshFrameSignal.emit()
++        result.update({"clean_clock_ocr": clean_clock, "clean_origin": clean_origin,
++                       "clean_start": clean_start, "clean_end": clean_end,
++                       "clean_duration": clean_end - clean_start, "chyrons": []})
++        self.title_analysis_data = result
++        self.source_clock_progress.setValue(100)
++        self._finish_source_pipeline(
++            "CLEAN.MP4 importado en Track 2. Puedes detectar los chyrons en Titles.")
++
++    @title_pipeline_guard
++    def _on_detect_titles(self, _checked=False):
++        """Read PROGRAM only and create chyrons over the prepared CLEAN clip."""
++        if self._source_busy or self._title_busy:
++            return
++        result = self.title_analysis_data or {}
++        if result.get("clean_origin") is None:
++            self._title_progress("Selecciona primero una carpeta y prepara CLEAN.MP4 en Source Video.")
++            return
++        self._title_busy = True
++        self.btn_browse_title_folder.setEnabled(False)
++        self.btn_detect_titles.setEnabled(False)
++        self.title_clock_progress.setVisible(True)
++        self.title_clock_progress.setRange(0, 180)
++        self.title_clock_progress.setValue(0)
++        self._title_trace = []
++        self._title_progress("Comprobando PROGRAMA.MP4 para detectar chyrons…", 0, 180)
++
++        def update_clock_progress(_file_key, _file_index, completed, total):
++            self.title_clock_progress.setRange(0, max(1, int(total)))
++            self.title_clock_progress.setValue(min(int(total), int(completed)))
++            self.title_clock_status.setText(
++                "Buscando el reloj en PROGRAMA.MP4: %s de %s muestras." % (completed, total))
++            get_app().processEvents()
++
++        validation = validate_title_folder(result.get("folder"), fps=25,
++                                           clock_progress=update_clock_progress,
++                                           clock_targets=("program",))
++        if not validation.get("valid"):
++            self._finish_title_pipeline("La carpeta fuente ya no es válida: %s" %
++                                        "; ".join(validation.get("errors") or []))
++            return
++        previous_tc = result.get("timecodes", {})
++        current_tc = validation.get("timecodes", {})
++        if (previous_tc.get("clip_in_frames") != current_tc.get("clip_in_frames") or
++                previous_tc.get("clip_out_frames") != current_tc.get("clip_out_frames")):
++            self._finish_title_pipeline(
++                "DATA.JSON ha cambiado desde la importación de CLEAN; vuelve a preparar Source Video.")
++            return
++        program_probe = (validation.get("clock_probes") or {}).get("program") or {}
++        if not program_probe.get("candidate"):
++            self._finish_title_pipeline("No se ha detectado el reloj de PROGRAMA.MP4; no se han creado títulos.")
++            return
++        result["files"].update(validation["files"])
++        result.setdefault("clock_probes", {})["program"] = program_probe
++        self._title_pending_result = result
++        worker = SmoukClockOcrWorker(self, result["files"], {"program": program_probe}, ("program",))
++        worker.stage.connect(self._on_title_worker_stage)
++        worker.completed.connect(self._on_title_program_clock_ocr_completed)
++        self._start_title_worker(worker)
++
++    @title_pipeline_guard
++    def _on_title_program_clock_ocr_completed(self, payload):
++        """Start PROGRAM OCR without replacing the prepared CLEAN clip."""
++        result = self._title_pending_result
++        files, probes, timecodes = result["files"], result.get("clock_probes", {}), result["timecodes"]
++        program_clock = payload.get("program", {})
++        if payload.get("error") or program_clock.get("frames") is None:
++            details = payload.get("error") or program_clock.get("reason") or program_clock.get("text") or "sin lectura"
++            self._finish_title_pipeline("No se ha podido leer el reloj de PROGRAMA.MP4: %s" % details)
++            return
++        program_origin = int(program_clock["frames"] - program_clock.get(
++            "source_frame", round(float(probes["program"]["seconds"]) * 25)) -
++            program_clock.get("presentation_phase_frames", 0))
++        clip_in, clip_out = timecodes["clip_in_frames"], timecodes["clip_out_frames"]
++        program_start, program_end = (clip_in - program_origin) / 25.0, (clip_out - program_origin) / 25.0
++        program_duration = float(files.get("program_info", {}).get("duration", 0) or 0)
++        if program_start < 0 or program_end <= program_start or (
++                program_duration > 0 and program_end > program_duration):
++            self._finish_title_pipeline(
++                "El corte calculado queda fuera de PROGRAMA.MP4; no se han creado títulos.")
++            return
++        self._title_progress("OCR de rótulos: analizando PROGRAMA.MP4…", 55, 100)
++        self._clear_generated_chyrons()
++        result.update({"program_clock_ocr": program_clock, "program_origin": program_origin})
++        duration = float(result["clean_duration"])
++        assets = os.path.join(self._subtitle_asset_directory(), "chyron-references", uuid.uuid4().hex)
++        self._title_scan_context = (duration, clip_in)
++        worker = SmoukChyronOcrWorker(self, (
++            files["program"], program_start, duration, program_origin, clip_in, assets))
++        worker.stage.connect(self._on_title_worker_stage)
++        worker.completed.connect(self._on_title_chyrons_completed)
++        self._start_title_worker(worker)
++
+     @title_pipeline_guard
+     def _run_title_reconstruction(self, result):
+         """Synchronise the feeds, import CLEAN, and start OCR-backed chyron extraction."""
+@@ -1551,7 +1784,7 @@ class VerticalizationDockContent(QWidget):
+         get_app().window.refreshFilesSignal.emit()
+         get_app().window.refreshFrameSignal.emit()
+         self.title_clock_progress.setValue(100)
+-        self._finish_title_pipeline("Proceso terminado: CLEAN en Track 2 y %s rótulos editables en CHYRONS." % added)
++        self._finish_title_pipeline("Proceso terminado: %s rótulos editables creados sobre CLEAN en CHYRONS." % added)
+ 
+     def _sync_logo_opacity(self):
+         """Show the selected SMOUK logo clip's current alpha value."""
+@@ -2659,31 +2892,9 @@ class VerticalizationDockContent(QWidget):
+             _("Show the 9:16 guide in the viewer"), controls)
+         self.chk_overlay.setObjectName("verticalizationOverlayToggle")
+         self.chk_overlay.toggled.connect(self._on_toggle_overlay)
++        self.chk_overlay.setChecked(True)
+         cbox.addWidget(self.chk_overlay)
+ 
+-        self.reframe_label = QLabel(_("Horizontal framing (selected clip)"), controls)
+-        self.reframe_label.setObjectName("verticalizationReframeLabel")
+-        cbox.addWidget(self.reframe_label)
+-
+-        self.reframe_slider = QSlider(Qt.Horizontal, controls)
+-        self.reframe_slider.setObjectName("verticalizationReframeSlider")
+-        self.reframe_slider.setRange(-1000, 1000)
+-        self.reframe_slider.setValue(0)
+-        self.reframe_slider.setStyleSheet(
+-            "QSlider::handle:horizontal { width: 22px; margin: -7px 0; }")
+-        self.reframe_slider.setToolTip(
+-            _("Move the selected 16:9 clip beneath the vertical guide."))
+-        self.reframe_slider.sliderPressed.connect(self._on_reframe_press)
+-        self.reframe_slider.sliderReleased.connect(self._on_reframe_release)
+-        self.reframe_slider.valueChanged.connect(self._on_reframe_changed)
+-        cbox.addWidget(self.reframe_slider)
+-
+-        self.chk_keyframes = QCheckBox(_("Keyframes"), controls)
+-        self.chk_keyframes.setObjectName("verticalizationReframeKeyframes")
+-        self.chk_keyframes.setToolTip(
+-            _("Store this position only at the current playhead frame."))
+-        cbox.addWidget(self.chk_keyframes)
+-
+         layout.addWidget(controls)
+ 
+     def _on_output_profile_changed(self, _index):
+-- 
+2.55.0.windows.3
+
