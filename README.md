@@ -785,6 +785,13 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   centrada. Un fichero de 608×1080 queda dentro del rectángulo blanco 9:16 de
   un proyecto HD 1920×1080, con posición y tamaño aún editables desde el visor.
 
+### 0.0.79
+
+- Se reservaron bandas verticales para que la transcripción quede centrada en
+  la zona de subtítulos de la guía. Localización, identificaciones, pretítulos
+  y titulares se distribuyen en sus franjas propias y ya no se superponen con
+  los subtítulos al coincidir en el tiempo.
+
 ### 0.0.60
 
 - Se corrigió el cursor de espera que quedaba activo tras importar CLEAN.MP4

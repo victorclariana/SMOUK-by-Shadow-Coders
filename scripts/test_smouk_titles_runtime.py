@@ -291,6 +291,18 @@ class TitleRuntimeTests(unittest.TestCase):
         self.assertTrue(all(0 <= slot < len(v.VERTICAL_TITLE_SLOT_RATIOS) for slot in slots))
         self.assertEqual(next(event for event in events if event['template'] == 'story_headline')['vertical_slot'], 6)
 
+    def test_subtitles_use_their_own_band_between_pretitle_and_headline(self):
+        effect = {}
+        with patch.object(self.dock, '_output_ratio', return_value=608.0 / 1080.0):
+            svg = self.dock._subtitle_svg('Una línia de prova', 1920, 1080)
+            self.dock._style_transcription_caption(effect)
+        self.assertIn('y="540.00"', svg)
+        self.assertEqual(effect['top']['Points'][0]['co']['Y'], v.VERTICAL_CAPTION_TOP)
+        self.assertEqual(effect['bottom']['Points'][0]['co']['Y'], v.VERTICAL_CAPTION_BOTTOM)
+        self.assertLess(v.VERTICAL_TITLE_SLOT_RATIOS[4], v.VERTICAL_SUBTITLE_CENTER)
+        self.assertGreater(v.VERTICAL_TITLE_SLOT_RATIOS[5], v.VERTICAL_SUBTITLE_CENTER)
+        self.assertGreater(v.VERTICAL_TITLE_SLOT_RATIOS[6], v.VERTICAL_TITLE_SLOT_RATIOS[5])
+
     def test_persistent_title_blind_spots_are_merged(self):
         events = [
             {'template': 'persistent_headline', 'text': 'CONSELL DE SEGURETAT EUROPEU',
