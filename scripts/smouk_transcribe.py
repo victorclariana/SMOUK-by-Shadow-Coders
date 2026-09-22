@@ -1,28 +1,16 @@
 """Offline Catalan transcription worker used by the SMOUK Qt process."""
 
 import argparse
-import base64
-import concurrent.futures
 import json
 import os
 import re
 import subprocess
-import tempfile
 import textwrap
-import threading
-import time
-import urllib.error
-import urllib.request
 
 
-DEFAULT_MODEL = "BSC-LT/faster-whisper-large-v3-ca-punctuated-3370h"
-DEFAULT_PROVIDER = "google"
-DEFAULT_GOOGLE_MODEL = "chirp_3"
-DEFAULT_GOOGLE_LOCATION = "eu"
-DEFAULT_GOOGLE_CHUNK_SECONDS = 45.0
-DEFAULT_GOOGLE_OVERLAP_SECONDS = 1.5
-DEFAULT_GOOGLE_WORKERS = 2
-DEFAULT_BEAM_SIZE = 3
+DEFAULT_MODEL = "openvino-whisper-large-v3-turbo-int4-ov"
+DEFAULT_OPENVINO_DEVICE = "GPU"
+DEFAULT_OPENVINO_CHUNK_SECONDS = 60.0
 MAX_SUBTITLE_LINE_CHARS = 26
 MAX_SUBTITLE_CUE_CHARS = MAX_SUBTITLE_LINE_CHARS * 2
 MIN_SUBTITLE_CUE_SECONDS = 1.0
@@ -31,14 +19,6 @@ TRAILING_REPEAT_WORDS = {
     "a", "al", "de", "del", "el", "els", "en", "i", "la", "les",
     "lo", "que", "un", "una", "y",
 }
-
-
-def recommended_cpu_threads(logical_cpus=None):
-    """Use most of a workstation CPU without starving the SMOUK interface."""
-    logical_cpus = int(logical_cpus or os.cpu_count() or 1)
-    if logical_cpus <= 4:
-        return logical_cpus
-    return min(10, logical_cpus - 2)
 
 
 def _emit(event, **values):
@@ -284,20 +264,7 @@ def _media_duration(path, ffmpeg_path=None):
     return max(0.001, float(output.decode("ascii", errors="ignore").strip()))
 
 
-def _google_seconds(value):
-    """Parse Google Duration strings (for example ``1.250s``)."""
-    if isinstance(value, (int, float)):
-        return float(value)
-    text = str(value or "0").strip()
-    if text.endswith("s"):
-        text = text[:-1]
-    try:
-        return float(text)
-    except ValueError:
-        return 0.0
-
-
-def _google_chunk(path, start, duration, temp_dir, ffmpeg_path=None):
+def _audio_chunk(path, start, duration, temp_dir, ffmpeg_path=None):
     output = os.path.join(temp_dir, "chunk-%012d.wav" % int(round(start * 1000)))
     _run_media_command([
         _tool_path("ffmpeg.exe", ffmpeg_path), "-hide_banner", "-loglevel", "error", "-y",
@@ -308,231 +275,94 @@ def _google_chunk(path, start, duration, temp_dir, ffmpeg_path=None):
     return output
 
 
-def _google_request(audio_path, project, location, recognizer, access_token,
-                    model, chunk_start, retries=4):
-    region = str(location or "global").strip()
-    host = "speech.googleapis.com" if region == "global" else region + "-speech.googleapis.com"
-    endpoint = (
-        "https://{}/v2/projects/{}/locations/{}/recognizers/{}:recognize"
-        .format(host, project, region, recognizer)
-    )
-    with open(audio_path, "rb") as handle:
-        content = base64.b64encode(handle.read()).decode("ascii")
-    payload = {
-        "config": {
-            "autoDecodingConfig": {},
-            "languageCodes": ["ca-ES"],
-            "model": model,
-            "features": {
-                "enableWordTimeOffsets": True,
-                "enableAutomaticPunctuation": True,
-            },
-        },
-        "content": content,
-    }
-    request = urllib.request.Request(
-        endpoint, data=json.dumps(payload).encode("utf-8"),
-        headers={"Authorization": "Bearer " + access_token,
-                 "Content-Type": "application/json; charset=utf-8"},
-        method="POST")
-    for attempt in range(max(1, retries)):
-        try:
-            with urllib.request.urlopen(request, timeout=300) as response:
-                result = json.loads(response.read().decode("utf-8"))
-            break
-        except urllib.error.HTTPError as ex:
-            body = ex.read().decode("utf-8", errors="replace")
-            if ex.code not in {408, 429, 500, 502, 503, 504} or attempt + 1 >= retries:
-                raise RuntimeError("Google Speech API HTTP %s: %s" % (ex.code, body[-1000:]))
-            _emit("status", text=(
-                "Google ha limitado temporalmente la petición; reintentando "
-                "fragmento en %s s…" % (2 ** attempt)))
-            time.sleep(2 ** attempt)
-    words = []
-    segments = []
-    for result_item in result.get("results", []):
-        alternatives = result_item.get("alternatives") or []
-        if not alternatives:
-            continue
-        alternative = alternatives[0]
-        result_words = alternative.get("words") or []
-        if result_words:
-            for item in result_words:
-                word = str(item.get("word", "")).strip()
-                if not word:
-                    continue
-                words.append({
-                    "start": chunk_start + _google_seconds(item.get("startOffset")),
-                    "end": chunk_start + _google_seconds(item.get("endOffset")),
-                    "word": word,
-                    "confidence": item.get("confidence", alternative.get("confidence")),
-                })
-        elif alternative.get("transcript"):
-            segments.append({
-                "start": chunk_start + _google_seconds(result_item.get("resultStartOffset")),
-                "end": chunk_start + _google_seconds(result_item.get("resultEndOffset")),
-                "text": alternative["transcript"],
-            })
-    return words, segments
+def _load_openvino_audio(path):
+    import soundfile as sf
+    import numpy as np
+    audio, sample_rate = sf.read(path, dtype="float32")
+    if getattr(audio, "ndim", 1) > 1:
+        audio = np.mean(audio, axis=1)
+    if int(sample_rate) != 16000:
+        raise RuntimeError("OpenVINO requiere audio PCM mono a 16 kHz")
+    return audio
 
 
-def transcribe_google(path, project, location, recognizer, access_token,
-                      model=DEFAULT_GOOGLE_MODEL,
-                      chunk_seconds=DEFAULT_GOOGLE_CHUNK_SECONDS,
-                      overlap_seconds=DEFAULT_GOOGLE_OVERLAP_SECONDS,
-                      workers=DEFAULT_GOOGLE_WORKERS, ffmpeg_path=None):
-    """Transcribe Catalan audio through Chirp in parallel, with word offsets."""
+def transcribe_openvino(path, model_dir, device=DEFAULT_OPENVINO_DEVICE,
+                        chunk_seconds=DEFAULT_OPENVINO_CHUNK_SECONDS,
+                        ffmpeg_path=None, temp_root=None):
+    """Transcribe Catalan locally with the verified OpenVINO Turbo model."""
+    import openvino as ov
+    import openvino_genai as ov_genai
+
     duration = _media_duration(path, ffmpeg_path)
     chunks = []
     position = 0.0
     while position < duration:
-        actual_start = max(0.0, position - (overlap_seconds if position else 0.0))
         actual_end = min(duration, position + chunk_seconds)
-        chunks.append((actual_start, actual_end - actual_start, position))
+        length = actual_end - position
+        if length < 0.5:
+            break
+        chunks.append((position, length))
         position += chunk_seconds
     _emit("status", text=(
-        "Google Chirp 3: preparando %s fragmentos de %.0f s en paralelo…" %
+        "OpenVINO Whisper Turbo: preparando %s fragmentos de %.0f s…" %
         (len(chunks), chunk_seconds)))
+    model_path = os.path.abspath(model_dir)
+    if not os.path.isdir(model_path):
+        raise RuntimeError("No se encuentra el modelo OpenVINO: %s" % model_path)
+    available = {str(item).upper() for item in ov.Core().available_devices}
+    selected_device = str(device or "AUTO").upper()
+    if selected_device == "GPU" and "GPU" not in available:
+        selected_device = "CPU"
+    _emit("status", text=("Cargando OpenVINO Whisper Turbo en %s…" % selected_device))
+    pipe = ov_genai.WhisperPipeline(model_path, selected_device)
+    config = ov_genai.WhisperGenerationConfig()
+    config.language = "<|ca|>"
+    config.task = "transcribe"
+    config.return_timestamps = False
+    config.max_new_tokens = 448
     words, segments = [], []
     completed = 0
-    lock = threading.Lock()
-    # Some managed Windows profiles deny chmod during the default temporary
-    # directory cleanup. Ignore cleanup errors; the files contain only derived
-    # PCM audio and are removed by the OS when possible.
-    with tempfile.TemporaryDirectory(prefix="smouk-google-",
-                                      ignore_cleanup_errors=True) as temp_dir:
-        def run(item):
-            file_path = _google_chunk(path, item[0], item[1], temp_dir, ffmpeg_path)
-            return item[2], _google_request(
-                file_path, project, location, recognizer, access_token,
-                model, item[2] - (overlap_seconds if item[2] else 0.0))
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-            futures = [pool.submit(run, item) for item in chunks]
-            for future in concurrent.futures.as_completed(futures):
-                try:
-                    _start, (chunk_words, chunk_segments) = future.result()
-                except Exception as exc:
-                    raise RuntimeError(
-                        "No se pudo transcribir uno de los fragmentos: %s" % exc) from exc
-                words.extend(chunk_words)
-                segments.extend(chunk_segments)
-                with lock:
-                    completed += 1
-                    _emit("progress", value=int(round(completed * 85.0 / len(chunks))))
-                    _emit("status", text=(
-                        "Google Chirp 3: fragmento %s/%s transcrito…" %
-                        (completed, len(chunks))))
-                    partial_text = " ".join(item["word"] for item in sorted(
-                        words, key=lambda value: value["start"])[-18:])
-                    _emit("partial", words=len(words), text=partial_text)
-    # Overlap is intentional for boundary accuracy; collapse duplicate words.
-    deduped = []
-    seen = set()
-    for item in sorted(words, key=lambda value: (value["start"], value["end"])):
-        key = (re.sub(r"\W+", "", item["word"].casefold()), round(item["start"], 1))
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(item)
-    return duration, deduped, sorted(segments, key=lambda value: value["start"])
+    temp_dir = os.path.join(temp_root or os.path.dirname(os.path.abspath(path)),
+                            ".smouk-openvino-audio")
+    os.makedirs(temp_dir, exist_ok=True)
+    for start, length in chunks:
+        file_path = _audio_chunk(path, start, length, temp_dir, ffmpeg_path)
+        audio = _load_openvino_audio(file_path)
+        decoded = pipe.generate(audio, config)
+        text = " ".join(str(item).strip() for item in decoded.texts).strip()
+        if text:
+            segments.append({"start": start, "end": start + length, "text": text})
+        completed += 1
+        _emit("progress", value=int(round(completed * 85.0 / len(chunks))))
+        _emit("status", text=(
+            "OpenVINO Whisper Turbo: fragmento %s/%s transcrito…" %
+            (completed, len(chunks))))
+        _emit("partial", words=len(text.split()), text=text[-400:])
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+    return duration, words, sorted(segments, key=lambda value: value["start"])
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--model-dir", required=True)
     parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument("--cpu-threads", type=int, default=recommended_cpu_threads())
-    parser.add_argument("--beam-size", type=int, default=DEFAULT_BEAM_SIZE)
-    parser.add_argument("--provider", default=os.environ.get(
-        "SMOUK_TRANSCRIPTION_PROVIDER", DEFAULT_PROVIDER))
-    parser.add_argument("--google-project", default=os.environ.get("SMOUK_GOOGLE_PROJECT"))
-    parser.add_argument("--google-location", default=os.environ.get(
-        "SMOUK_GOOGLE_LOCATION", DEFAULT_GOOGLE_LOCATION))
-    parser.add_argument("--google-recognizer", default=os.environ.get(
-        "SMOUK_GOOGLE_RECOGNIZER", "_"))
-    parser.add_argument("--google-access-token", default=os.environ.get(
-        "SMOUK_GOOGLE_ACCESS_TOKEN"))
-    parser.add_argument("--google-model", default=os.environ.get(
-        "SMOUK_GOOGLE_MODEL", DEFAULT_GOOGLE_MODEL))
-    parser.add_argument("--google-chunk-seconds", type=float, default=float(os.environ.get(
-        "SMOUK_GOOGLE_CHUNK_SECONDS", DEFAULT_GOOGLE_CHUNK_SECONDS)))
-    parser.add_argument("--google-overlap-seconds", type=float, default=float(os.environ.get(
-        "SMOUK_GOOGLE_OVERLAP_SECONDS", DEFAULT_GOOGLE_OVERLAP_SECONDS)))
-    parser.add_argument("--google-workers", type=int, default=int(os.environ.get(
-        "SMOUK_GOOGLE_WORKERS", DEFAULT_GOOGLE_WORKERS)))
+    parser.add_argument("--model-dir", required=True)
+    parser.add_argument("--openvino-device", default=os.environ.get(
+        "SMOUK_OPENVINO_DEVICE", DEFAULT_OPENVINO_DEVICE))
+    parser.add_argument("--openvino-chunk-seconds", type=float, default=float(
+        os.environ.get("SMOUK_OPENVINO_CHUNK_SECONDS", DEFAULT_OPENVINO_CHUNK_SECONDS)))
     parser.add_argument("--ffmpeg-path", default=os.environ.get("SMOUK_FFMPEG_PATH"))
     args = parser.parse_args()
 
-    if str(args.provider).casefold() == "google":
-        if not args.google_project or not args.google_access_token:
-            raise RuntimeError(
-                "Google Chirp requires SMOUK_GOOGLE_PROJECT and "
-                "SMOUK_GOOGLE_ACCESS_TOKEN (no audio was sent).")
-        duration, words, fallback_segments = transcribe_google(
-            args.input, args.google_project, args.google_location,
-            args.google_recognizer, args.google_access_token, args.google_model,
-            max(5.0, args.google_chunk_seconds),
-            max(0.0, min(args.google_overlap_seconds, args.google_chunk_seconds / 2.0)),
-            max(1, args.google_workers), args.ffmpeg_path)
-        args.model = "google-speech-to-text-v2/" + args.google_model
-    else:
-        duration = None
-        words = None
-        fallback_segments = None
-
-    if words is None:
-        from faster_whisper import WhisperModel
-
-        _emit("status", text="Loading the Catalan model (the first run downloads it)...")
-        model = WhisperModel(
-            args.model, device="cpu", compute_type="int8",
-            cpu_threads=max(1, args.cpu_threads),
-            download_root=os.path.abspath(args.model_dir),
-        )
-        _emit("status", text=(
-            f"Transcribing Catalan audio with {max(1, args.cpu_threads)} CPU threads..."
-        ))
-        segments, info = model.transcribe(
-            os.path.abspath(args.input), language="ca", task="transcribe",
-            beam_size=max(1, args.beam_size), vad_filter=True,
-            vad_parameters={"threshold": 0.35, "speech_pad_ms": 500},
-            word_timestamps=True, condition_on_previous_text=True,
-        )
-        duration = max(0.001, float(getattr(info, "duration", 0.0) or 0.0))
-        words = []
-        fallback_segments = []
-        last_audio_percent = {"value": 0}
-        stop_heartbeat = threading.Event()
-
-        def report_long_segment():
-            while not stop_heartbeat.wait(10.0):
-                _emit("status", text=(
-                    "Recognizing speech… audio processed through "
-                    f"{last_audio_percent['value']}%. The current segment is still being decoded."
-                ))
-
-        heartbeat = threading.Thread(target=report_long_segment, daemon=True)
-        heartbeat.start()
-        try:
-            for segment in segments:
-                fallback_segments.append({
-                    "start": float(segment.start), "end": float(segment.end),
-                    "text": str(segment.text).strip(),
-                })
-                for word in getattr(segment, "words", None) or []:
-                    words.append({
-                        "start": float(word.start), "end": float(word.end),
-                        "word": str(word.word).strip(),
-                    })
-                last_audio_percent["value"] = min(
-                    100, int(round(float(segment.end) * 100.0 / duration)))
-                _emit("progress", value=int(round(last_audio_percent["value"] * 0.85)))
-        finally:
-            stop_heartbeat.set()
-            heartbeat.join(timeout=1.0)
+    model_path = os.path.join(os.path.abspath(args.model_dir), args.model)
+    duration, words, fallback_segments = transcribe_openvino(
+        args.input, model_path, args.openvino_device,
+        max(5.0, args.openvino_chunk_seconds), args.ffmpeg_path,
+        os.path.dirname(os.path.abspath(args.output)))
 
     _emit("progress", value=90)
     _emit("status", text="Formatting two-line subtitles and checking reading times…")

@@ -87,13 +87,8 @@ corresponding repository.
 | `0079-SMOUK-0.0.77-source-progress-heartbeat.patch` | **openshot-qt** | Keeps Source Video and Titles progress clocks independent, preventing Source clock analysis from emitting a Titles error. |
 | `0080-SMOUK-0.0.78-centred-vertical-logo.patch` | **openshot-qt** | Centres proportional vertical PNG logo clips in the active 9:16 guide rather than the left edge of the 16:9 edit canvas. |
 | `0081-SMOUK-0.0.79-title-subtitle-safe-bands.patch` | **openshot-qt** | Assigns separate vertical guide bands to subtitles, locations, identities, pretitles, and headlines to prevent on-screen overlap. |
-| `0082-SMOUK-0.0.80-google-chirp-transcription.patch` | **openshot-qt / scripts** | Adds Google Cloud Speech-to-Text V2 Chirp 3 Catalan transcription with overlapped parallel chunks, word offsets, progress events, and an explicit local fallback. |
-| `0083-SMOUK-0.0.81-google-chirp-temp-cleanup.patch` | **openshot-qt / scripts** | Keeps Chirp temporary-audio cleanup tolerant of managed Windows permissions. |
-| `0084-SMOUK-0.0.82-google-chirp-ffmpeg-path.patch` | **openshot-qt / scripts** | Reuses OpenShot's FFmpeg resolver so Chirp can find FFmpeg and ffprobe under the packaged Python environment. |
-| `0085-SMOUK-0.0.83-google-chirp-regional-endpoint.patch` | **openshot-qt / scripts** | Routes EU Chirp requests through `eu-speech.googleapis.com`, matching the recognizer location. |
-| `0086-SMOUK-0.0.84-google-chirp-retries.patch` | **openshot-qt / scripts** | Adds bounded retries for transient Google responses, reduces parallel requests, and reports worker errors in the dock. |
-| `0087-SMOUK-0.0.85-google-worker-qt-isolation.patch` | **openshot-qt** | Moves transcription worker output off Qt `QProcess` signals and drains it through a Python queue and low-frequency timer to prevent native Qt fail-fast crashes. |
-| `0088-SMOUK-0.0.86-local-proxy-bypass.patch` | **scripts / openshot-qt** | Bypasses corporate proxies for OpenShot's loopback thumbnail server, preventing repeated proxy failures and native Qt instability while retaining the proxy for Google Speech. |
+| `0088-SMOUK-0.0.86-local-proxy-bypass.patch` | **scripts / openshot-qt** | Bypasses corporate proxies for OpenShot's loopback thumbnail server, preventing repeated proxy failures and native Qt instability. |
+| `0089-SMOUK-0.0.87-openvino-turbo-transcription.patch` | **openshot-qt / scripts** | Replaces remote transcription with the local OpenVINO Whisper Large-v3 Turbo INT4 worker, Intel GPU selection, 60-second chunks, and the existing JSON/SRT/VTT subtitle contract. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

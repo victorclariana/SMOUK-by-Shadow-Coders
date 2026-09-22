@@ -274,10 +274,9 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - Se añade `Transcribe timeline in Catalan` a la sección `Subtitles` del dock.
   Un solo clic transcribe cada fuente con audio presente en la timeline y
   aplica el resultado a todos sus planos como efectos `Caption` editables.
-- La transcripción es local mediante `faster-whisper` en CPU con cuantización
-  INT8 y el modelo catalán con puntuación
-  `BSC-LT/faster-whisper-large-v3-ca-punctuated-3370h`. En el primer uso se
-  confirma la instalación y descarga del modelo; después funciona sin red.
+- La transcripción es local mediante OpenVINO en CPU/GPU Intel con el modelo
+  multilingüe `whisper-large-v3-turbo-int4-ov`. En el primer uso se confirma la
+  instalación y descarga del modelo; después funciona sin red.
 - El proceso muestra progreso, genera copias JSON y SRT reproducibles dentro de
   `.smouk-transcriptions` y conserva cualquier efecto Caption creado a mano.
   Al repetirlo solo actualiza los efectos identificados como transcripción de
@@ -803,23 +802,11 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
 - Protege New, Open y Save frente a backups generados por las versiones de OCR
 
-### 0.0.80
+### 0.0.87
 
-- Sustituye la transcripción por defecto por Google Cloud Speech-to-Text V2 Chirp 3 para catalán (`ca-ES`). El audio se convierte en fragmentos PCM de 45 segundos con 1,5 segundos de solape y se procesan hasta tres fragmentos en paralelo. Se conservan los offsets por palabra y el contrato JSON/SRT/VTT usado por el timeline.
-- La integración no guarda credenciales en proyectos ni en logs. Requiere configurar `SMOUK_GOOGLE_PROJECT` y `SMOUK_GOOGLE_ACCESS_TOKEN`; para recuperar temporalmente el motor local se puede usar `SMOUK_TRANSCRIPTION_PROVIDER=local`.
-- El dock muestra el avance de cada fragmento y no envía audio si faltan las credenciales.
-
-### 0.0.81
-
-- Evita que el cierre de los archivos PCM temporales de Chirp falle en perfiles Windows administrados con permisos restrictivos.
-
-### 0.0.82
-
-- Pasa al worker de Chirp la ruta de FFmpeg que ya utiliza OpenShot y resuelve `ffprobe.exe` desde esa misma carpeta, evitando fallos cuando el Python de SMOUK no hereda FFmpeg en `PATH`.
-
-### 0.0.83
-
-- Usa el endpoint regional `eu-speech.googleapis.com` cuando Chirp está configurado en la región `eu`; evita respuestas HTTP 400 por enviar un recurso regional al host global.
+- Sustituye la transcripción remota por `OpenVINO/whisper-large-v3-turbo-int4-ov`, un modelo multilingüe local cuantizado a INT4. Usa la GPU Intel mediante OpenVINO cuando está disponible y procesa el audio en bloques de 60 segundos, sin credenciales ni tráfico de audio fuera del equipo.
+- El runtime y el modelo se instalan en carpetas aisladas de SMOUK desde fuentes oficiales, manteniendo el contrato JSON/SRT/VTT y el progreso del dock.
+- Usa tiempos estimados dentro de cada bloque cuando el modelo no entrega marcas de palabra, conserva subtítulos catalanes en dos líneas y limpia los WAV intermedios tolerando permisos administrados de Windows.
 
 ### 0.0.86
 
@@ -827,15 +814,6 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   SMOUK. El servidor interno de miniaturas ya no se envía erróneamente al proxy,
   evitando su bucle de fallos y el cierre de Qt durante la carga del Timeline.
 
-### 0.0.85
-
-- Aísla la salida del transcriptor de Google del canal de señales `QProcess`.
-  El trabajador se ejecuta con `subprocess` y la interfaz consume una cola
-  mediante un temporizador, evitando el cierre nativo de Qt durante el progreso.
-
-### 0.0.84
-
-- Reduce la concurrencia predeterminada de Chirp a dos fragmentos, añade reintentos con retroceso para límites y errores transitorios de Google, y muestra el motivo concreto si un fragmento falla.
   que crearon cientos de chyrons falsos. Si `backup.osp` contiene más de 40
   assets SMOUK, se conserva en `recovery/smouk-quarantine` y se inicia un
   proyecto vacío, evitando cargar cientos de lectores SVG en la Timeline.
