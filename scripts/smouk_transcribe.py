@@ -340,7 +340,11 @@ def transcribe_openvino(path, model_dir, device=DEFAULT_OPENVINO_DEVICE,
     config = ov_genai.WhisperGenerationConfig()
     config.language = "<|ca|>"
     config.task = "transcribe"
-    config.return_timestamps = False
+    # Ask Whisper for its native segment boundaries.  Without these, the
+    # previous implementation spread all words across the whole 60-second
+    # extraction window, which caused subtitles to drift and then resync at
+    # every window boundary.
+    config.return_timestamps = True
     config.max_new_tokens = 448
     words, segments = [], []
     completed = 0
@@ -355,9 +359,30 @@ def transcribe_openvino(path, model_dir, device=DEFAULT_OPENVINO_DEVICE,
         _trace("chunk.inference.start", index=completed + 1)
         decoded = pipe.generate(audio, config)
         _trace("chunk.inference.finish", index=completed + 1)
-        text = " ".join(str(item).strip() for item in decoded.texts).strip()
-        if text:
-            segments.append({"start": start, "end": start + length, "text": text})
+        decoded_chunks = list(getattr(decoded, "chunks", []) or [])
+        if decoded_chunks:
+            for chunk_index, chunk in enumerate(decoded_chunks):
+                text = str(getattr(chunk, "text", "")).strip()
+                if not text:
+                    continue
+                relative_start = max(0.0, float(getattr(chunk, "start_ts", 0.0)))
+                relative_end = float(getattr(chunk, "end_ts", -1.0))
+                if relative_end <= relative_start:
+                    next_start = (float(getattr(decoded_chunks[chunk_index + 1],
+                                                  "start_ts", -1.0))
+                                  if chunk_index + 1 < len(decoded_chunks) else length)
+                    relative_end = next_start if next_start > relative_start else length
+                segments.append({
+                    "start": start + relative_start,
+                    "end": min(start + length, start + relative_end),
+                    "text": text,
+                })
+            _trace("chunk.timestamps", index=completed + 1,
+                   segments=len(decoded_chunks))
+        else:
+            text = " ".join(str(item).strip() for item in decoded.texts).strip()
+            if text:
+                segments.append({"start": start, "end": start + length, "text": text})
         completed += 1
         _emit("progress", value=int(round(completed * 85.0 / len(chunks))))
         _emit("status", text=(

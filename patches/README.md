@@ -92,6 +92,7 @@ corresponding repository.
 | `0090-SMOUK-0.0.88-openvino-cpu-isolation.patch` | **openshot-qt / scripts** | Keeps OpenVINO inference on CPU by default so the Qt preview and Intel graphics stack are isolated. |
 | `0091-SMOUK-0.0.89-openvino-tracing.patch` | **openshot-qt / scripts** | Adds step-by-step worker traces and restores GPU as the default OpenVINO device. |
 | `0092-SMOUK-0.0.90-qt-safe-transcription-ui.patch` | **openshot-qt** | Defers Qt widget updates until transcription finishes while retaining detailed worker traces. |
+| `0093-SMOUK-0.0.91-whisper-segment-timestamps.patch` | **openshot-qt / scripts** | Uses Whisper native segment timestamps instead of distributing each window's text across its full duration. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

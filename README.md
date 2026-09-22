@@ -802,6 +802,10 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
 - Protege New, Open y Save frente a backups generados por las versiones de OCR
 
+### 0.0.91
+
+Usa las marcas de segmento nativas de Whisper (`return_timestamps`) al crear los subtítulos. Cada fragmento conserva ahora sus límites temporales reales y deja de repartir todo el texto uniformemente por la ventana de audio, evitando la deriva de sincronía.
+
 ### 0.0.90
 
 Evita actualizar widgets Qt mientras el trabajador OpenVINO entrega resultados. Los estados, progreso y texto parcial quedan registrados en `openshot-qt.log` y la interfaz se actualiza al terminar, evitando el cierre nativo de `Qt5Core.dll` que ocurría justo después de la primera inferencia.
