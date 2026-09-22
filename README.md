@@ -802,6 +802,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
 - Protege New, Open y Save frente a backups generados por las versiones de OCR
 
+### 0.0.95
+
+Los clips de subtítulos editables guardan ahora su duración real. Antes
+conservaban los 3600 segundos predeterminados del recurso SVG y se solapaban
+durante todo el Timeline, ocultando o adelantando visualmente otros cues.
+
 ### 0.0.94
 
 La transcripción usa el intervalo real de cada clip del Timeline (`IN`, `OUT`
