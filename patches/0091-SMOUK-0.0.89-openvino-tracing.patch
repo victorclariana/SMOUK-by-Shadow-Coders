@@ -1,0 +1,61 @@
+From 25221c48da5c2065b59687770a44209494dea4bf Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Tue, 22 Sep 2026 16:39:11 +0200
+Subject: [PATCH] SMOUK 0.0.89 add transcription diagnostics and restore GPU
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 10 ++++++++++
+ 2 files changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 8c6cf5a98..e90569b87 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.88"
++SMOUK_VERSION = "0.0.89"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 9464f6fd6..3f37dc46c 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -2043,6 +2043,8 @@ class VerticalizationDockContent(QWidget):
+                 _("Transcription worker could not be started: %s") % exc)
+             return
+         self._transcription_process = process
++        log.info("SMOUK transcription worker started: pid=%s stage=%s program=%s",
++                 process.pid, stage, program)
+         self._transcription_stage = stage
+         self._transcription_output_buffer = ""
+         self._transcription_log_tail = []
+@@ -2121,6 +2123,12 @@ class VerticalizationDockContent(QWidget):
+             log.debug("SMOUK transcription output: %s", line)
+             return
+         event_name = event.get("event")
++        if event_name == "trace":
++            log.info("SMOUK worker trace: %s", json.dumps(event, ensure_ascii=False))
++            return
++        if event_name == "error":
++            log.error("SMOUK worker error: %s", json.dumps(event, ensure_ascii=False))
++            return
+         if event_name == "status":
+             self.transcription_results.setText(str(event.get("text", "")))
+         elif event_name == "partial":
+@@ -2140,6 +2148,8 @@ class VerticalizationDockContent(QWidget):
+         if self._transcription_output_buffer.strip():
+             self._handle_transcription_line(self._transcription_output_buffer.strip())
+         stage = self._transcription_stage
++        log.info("SMOUK transcription worker finished: stage=%s exit_code=%s",
++                 stage, exit_code)
+         self._transcription_process = None
+         self._transcription_reader = None
+         if exit_code != 0:
+-- 
+2.55.0.windows.3
+
