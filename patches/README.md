@@ -93,6 +93,7 @@ corresponding repository.
 | `0085-SMOUK-0.0.83-google-chirp-regional-endpoint.patch` | **openshot-qt / scripts** | Routes EU Chirp requests through `eu-speech.googleapis.com`, matching the recognizer location. |
 | `0086-SMOUK-0.0.84-google-chirp-retries.patch` | **openshot-qt / scripts** | Adds bounded retries for transient Google responses, reduces parallel requests, and reports worker errors in the dock. |
 | `0087-SMOUK-0.0.85-google-worker-qt-isolation.patch` | **openshot-qt** | Moves transcription worker output off Qt `QProcess` signals and drains it through a Python queue and low-frequency timer to prevent native Qt fail-fast crashes. |
+| `0088-SMOUK-0.0.86-local-proxy-bypass.patch` | **scripts / openshot-qt** | Bypasses corporate proxies for OpenShot's loopback thumbnail server, preventing repeated proxy failures and native Qt instability while retaining the proxy for Google Speech. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

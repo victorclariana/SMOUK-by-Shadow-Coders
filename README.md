@@ -821,6 +821,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
 - Usa el endpoint regional `eu-speech.googleapis.com` cuando Chirp está configurado en la región `eu`; evita respuestas HTTP 400 por enviar un recurso regional al host global.
 
+### 0.0.86
+
+- Excluye `localhost`, `127.0.0.1` y `::1` del proxy corporativo al iniciar
+  SMOUK. El servidor interno de miniaturas ya no se envía erróneamente al proxy,
+  evitando su bucle de fallos y el cierre de Qt durante la carga del Timeline.
+
 ### 0.0.85
 
 - Aísla la salida del transcriptor de Google del canal de señales `QProcess`.

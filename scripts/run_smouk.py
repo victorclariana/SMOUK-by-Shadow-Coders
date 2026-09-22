@@ -12,6 +12,21 @@ Usage:
 import os
 import sys
 
+# Corporate proxy discovery can leave loopback traffic routed through the
+# proxy.  OpenShot's thumbnail server is intentionally local, so such routing
+# produces repeated failed requests and destabilizes the preview process.
+# Preserve any existing exclusions and make both casings available because
+# requests/urllib environments differ on Windows.
+_loopback_hosts = ("localhost", "127.0.0.1", "::1")
+for _proxy_bypass_name in ("NO_PROXY", "no_proxy"):
+    _existing = os.environ.get(_proxy_bypass_name, "")
+    _entries = [entry.strip() for entry in _existing.split(",") if entry.strip()]
+    _known = {entry.casefold() for entry in _entries}
+    for _host in _loopback_hosts:
+        if _host.casefold() not in _known:
+            _entries.append(_host)
+    os.environ[_proxy_bypass_name] = ",".join(_entries)
+
 # Workspace root (parent of the scripts/ directory)
 WORKSPACE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
