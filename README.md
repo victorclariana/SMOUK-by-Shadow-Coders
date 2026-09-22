@@ -802,6 +802,10 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
 - Protege New, Open y Save frente a backups generados por las versiones de OCR
 
+### 0.0.88
+
+La transcripción usa CPU por defecto para no compartir la GPU Intel integrada entre OpenVINO y la previsualización Qt de OpenShot, una combinación que provocaba el cierre nativo `Qt5Core.dll`/`0xc0000602`. Se mantiene la opción explícita `SMOUK_OPENVINO_DEVICE=GPU` para equipos que la hayan validado.
+
 ### 0.0.87
 
 - Sustituye la transcripción remota por `OpenVINO/whisper-large-v3-turbo-int4-ov`, un modelo multilingüe local cuantizado a INT4. Usa la GPU Intel mediante OpenVINO cuando está disponible y procesa el audio en bloques de 60 segundos, sin credenciales ni tráfico de audio fuera del equipo.

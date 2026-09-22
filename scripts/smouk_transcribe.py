@@ -9,7 +9,11 @@ import textwrap
 
 
 DEFAULT_MODEL = "openvino-whisper-large-v3-turbo-int4-ov"
-DEFAULT_OPENVINO_DEVICE = "GPU"
+# Keep inference off the graphics device used by OpenShot's Qt preview. On
+# integrated Intel adapters, sharing the device between libopenshot and
+# OpenVINO can terminate the Qt host with STATUS_FAIL_FAST_EXCEPTION. Users
+# can opt in explicitly with SMOUK_OPENVINO_DEVICE=GPU.
+DEFAULT_OPENVINO_DEVICE = "CPU"
 DEFAULT_OPENVINO_CHUNK_SECONDS = 60.0
 MAX_SUBTITLE_LINE_CHARS = 26
 MAX_SUBTITLE_CUE_CHARS = MAX_SUBTITLE_LINE_CHARS * 2
