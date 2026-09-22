@@ -90,6 +90,7 @@ corresponding repository.
 | `0088-SMOUK-0.0.86-local-proxy-bypass.patch` | **scripts / openshot-qt** | Bypasses corporate proxies for OpenShot's loopback thumbnail server, preventing repeated proxy failures and native Qt instability. |
 | `0089-SMOUK-0.0.87-openvino-turbo-transcription.patch` | **openshot-qt / scripts** | Replaces remote transcription with the local OpenVINO Whisper Large-v3 Turbo INT4 worker, Intel GPU selection, 60-second chunks, and the existing JSON/SRT/VTT subtitle contract. |
 | `0090-SMOUK-0.0.88-openvino-cpu-isolation.patch` | **openshot-qt / scripts** | Keeps OpenVINO inference on CPU by default so the Qt preview and Intel graphics stack are isolated. |
+| `0091-SMOUK-0.0.89-openvino-tracing.patch` | **openshot-qt / scripts** | Adds step-by-step worker traces and restores GPU as the default OpenVINO device. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

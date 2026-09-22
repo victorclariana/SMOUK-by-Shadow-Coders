@@ -5,15 +5,13 @@ import json
 import os
 import re
 import subprocess
+import sys
 import textwrap
+import traceback
 
 
 DEFAULT_MODEL = "openvino-whisper-large-v3-turbo-int4-ov"
-# Keep inference off the graphics device used by OpenShot's Qt preview. On
-# integrated Intel adapters, sharing the device between libopenshot and
-# OpenVINO can terminate the Qt host with STATUS_FAIL_FAST_EXCEPTION. Users
-# can opt in explicitly with SMOUK_OPENVINO_DEVICE=GPU.
-DEFAULT_OPENVINO_DEVICE = "CPU"
+DEFAULT_OPENVINO_DEVICE = "GPU"
 DEFAULT_OPENVINO_CHUNK_SECONDS = 60.0
 MAX_SUBTITLE_LINE_CHARS = 26
 MAX_SUBTITLE_CUE_CHARS = MAX_SUBTITLE_LINE_CHARS * 2
@@ -27,6 +25,11 @@ TRAILING_REPEAT_WORDS = {
 
 def _emit(event, **values):
     print(json.dumps({"event": event, **values}, ensure_ascii=False), flush=True)
+
+
+def _trace(step, **details):
+    """Emit a machine-readable breadcrumb before every native boundary."""
+    _emit("trace", step=step, **details)
 
 
 def _timecode(seconds):
@@ -244,8 +247,10 @@ def cues_to_vtt(cues):
 
 
 def _run_media_command(command):
+    _trace("media.command.start", command=[str(item) for item in command])
     completed = subprocess.run(command, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, check=False)
+    _trace("media.command.finish", returncode=completed.returncode)
     if completed.returncode != 0:
         raise RuntimeError(completed.stderr.decode("utf-8", errors="replace")[-1000:])
     return completed.stdout
@@ -280,6 +285,7 @@ def _audio_chunk(path, start, duration, temp_dir, ffmpeg_path=None):
 
 
 def _load_openvino_audio(path):
+    _trace("audio.load.start", path=os.path.abspath(path))
     import soundfile as sf
     import numpy as np
     audio, sample_rate = sf.read(path, dtype="float32")
@@ -287,6 +293,7 @@ def _load_openvino_audio(path):
         audio = np.mean(audio, axis=1)
     if int(sample_rate) != 16000:
         raise RuntimeError("OpenVINO requiere audio PCM mono a 16 kHz")
+    _trace("audio.load.finish", samples=int(len(audio)), sample_rate=int(sample_rate))
     return audio
 
 
@@ -294,10 +301,15 @@ def transcribe_openvino(path, model_dir, device=DEFAULT_OPENVINO_DEVICE,
                         chunk_seconds=DEFAULT_OPENVINO_CHUNK_SECONDS,
                         ffmpeg_path=None, temp_root=None):
     """Transcribe Catalan locally with the verified OpenVINO Turbo model."""
+    _trace("python.start", pid=os.getpid(), python=sys.executable)
+    _trace("openvino.import.start")
     import openvino as ov
     import openvino_genai as ov_genai
+    _trace("openvino.import.finish", version=str(getattr(ov, "__version__", "unknown")))
 
+    _trace("media.duration.start", path=os.path.abspath(path))
     duration = _media_duration(path, ffmpeg_path)
+    _trace("media.duration.finish", seconds=duration)
     chunks = []
     position = 0.0
     while position < duration:
@@ -311,14 +323,20 @@ def transcribe_openvino(path, model_dir, device=DEFAULT_OPENVINO_DEVICE,
         "OpenVINO Whisper Turbo: preparando %s fragmentos de %.0f s…" %
         (len(chunks), chunk_seconds)))
     model_path = os.path.abspath(model_dir)
+    _trace("model.validate", path=model_path,
+           encoder=os.path.isfile(os.path.join(model_path, "openvino_encoder_model.bin")))
     if not os.path.isdir(model_path):
         raise RuntimeError("No se encuentra el modelo OpenVINO: %s" % model_path)
     available = {str(item).upper() for item in ov.Core().available_devices}
     selected_device = str(device or "AUTO").upper()
     if selected_device == "GPU" and "GPU" not in available:
         selected_device = "CPU"
+    _trace("device.selected", requested=str(device), selected=selected_device,
+           available=sorted(available))
     _emit("status", text=("Cargando OpenVINO Whisper Turbo en %s…" % selected_device))
+    _trace("pipeline.load.start", device=selected_device)
     pipe = ov_genai.WhisperPipeline(model_path, selected_device)
+    _trace("pipeline.load.finish", device=selected_device)
     config = ov_genai.WhisperGenerationConfig()
     config.language = "<|ca|>"
     config.task = "transcribe"
@@ -330,9 +348,13 @@ def transcribe_openvino(path, model_dir, device=DEFAULT_OPENVINO_DEVICE,
                             ".smouk-openvino-audio")
     os.makedirs(temp_dir, exist_ok=True)
     for start, length in chunks:
+        _trace("chunk.start", index=completed + 1, total=len(chunks),
+               start=start, seconds=length)
         file_path = _audio_chunk(path, start, length, temp_dir, ffmpeg_path)
         audio = _load_openvino_audio(file_path)
+        _trace("chunk.inference.start", index=completed + 1)
         decoded = pipe.generate(audio, config)
+        _trace("chunk.inference.finish", index=completed + 1)
         text = " ".join(str(item).strip() for item in decoded.texts).strip()
         if text:
             segments.append({"start": start, "end": start + length, "text": text})
@@ -362,11 +384,18 @@ def main():
     parser.add_argument("--ffmpeg-path", default=os.environ.get("SMOUK_FFMPEG_PATH"))
     args = parser.parse_args()
 
+    _trace("main.arguments", input=os.path.abspath(args.input),
+           output=os.path.abspath(args.output), model=args.model,
+           device=args.openvino_device)
     model_path = os.path.join(os.path.abspath(args.model_dir), args.model)
-    duration, words, fallback_segments = transcribe_openvino(
-        args.input, model_path, args.openvino_device,
-        max(5.0, args.openvino_chunk_seconds), args.ffmpeg_path,
-        os.path.dirname(os.path.abspath(args.output)))
+    try:
+        duration, words, fallback_segments = transcribe_openvino(
+            args.input, model_path, args.openvino_device,
+            max(5.0, args.openvino_chunk_seconds), args.ffmpeg_path,
+            os.path.dirname(os.path.abspath(args.output)))
+    except Exception as exc:
+        _emit("error", message=str(exc), traceback=traceback.format_exc())
+        raise
 
     _emit("progress", value=90)
     _emit("status", text="Formatting two-line subtitles and checking reading times…")

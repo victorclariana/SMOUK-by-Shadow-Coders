@@ -802,6 +802,10 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
 - Protege New, Open y Save frente a backups generados por las versiones de OCR
 
+### 0.0.89
+
+Añade trazas de diagnóstico en cada frontera del transcriptor OpenVINO (Python, modelo, dispositivo, audio, fragmentos e inferencia) y registra el PID y código de salida en `openshot-qt.log`. La GPU vuelve a ser el dispositivo predeterminado; se puede forzar CPU con `SMOUK_OPENVINO_DEVICE=CPU`.
+
 ### 0.0.88
 
 La transcripción usa CPU por defecto para no compartir la GPU Intel integrada entre OpenVINO y la previsualización Qt de OpenShot, una combinación que provocaba el cierre nativo `Qt5Core.dll`/`0xc0000602`. Se mantiene la opción explícita `SMOUK_OPENVINO_DEVICE=GPU` para equipos que la hayan validado.
