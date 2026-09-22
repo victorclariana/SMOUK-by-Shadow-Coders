@@ -812,6 +812,10 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 ### 0.0.81
 
 - Evita que el cierre de los archivos PCM temporales de Chirp falle en perfiles Windows administrados con permisos restrictivos.
+
+### 0.0.82
+
+- Pasa al worker de Chirp la ruta de FFmpeg que ya utiliza OpenShot y resuelve `ffprobe.exe` desde esa misma carpeta, evitando fallos cuando el Python de SMOUK no hereda FFmpeg en `PATH`.
   que crearon cientos de chyrons falsos. Si `backup.osp` contiene más de 40
   assets SMOUK, se conserva en `recovery/smouk-quarantine` y se inicia un
   proyecto vacío, evitando cargar cientos de lectores SVG en la Timeline.

@@ -89,6 +89,7 @@ corresponding repository.
 | `0081-SMOUK-0.0.79-title-subtitle-safe-bands.patch` | **openshot-qt** | Assigns separate vertical guide bands to subtitles, locations, identities, pretitles, and headlines to prevent on-screen overlap. |
 | `0082-SMOUK-0.0.80-google-chirp-transcription.patch` | **openshot-qt / scripts** | Adds Google Cloud Speech-to-Text V2 Chirp 3 Catalan transcription with overlapped parallel chunks, word offsets, progress events, and an explicit local fallback. |
 | `0083-SMOUK-0.0.81-google-chirp-temp-cleanup.patch` | **openshot-qt / scripts** | Keeps Chirp temporary-audio cleanup tolerant of managed Windows permissions. |
+| `0084-SMOUK-0.0.82-google-chirp-ffmpeg-path.patch` | **openshot-qt / scripts** | Reuses OpenShot's FFmpeg resolver so Chirp can find FFmpeg and ffprobe under the packaged Python environment. |
 | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
 
 ## Apply

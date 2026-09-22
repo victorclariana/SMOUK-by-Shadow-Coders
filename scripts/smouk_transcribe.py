@@ -266,9 +266,18 @@ def _run_media_command(command):
     return completed.stdout
 
 
-def _media_duration(path):
+def _tool_path(name, ffmpeg_path=None):
+    if ffmpeg_path:
+        sibling = os.path.join(os.path.dirname(os.path.abspath(ffmpeg_path)), name)
+        if os.path.isfile(sibling):
+            return sibling
+    return name
+
+
+def _media_duration(path, ffmpeg_path=None):
     output = _run_media_command([
-        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        _tool_path("ffprobe.exe", ffmpeg_path), "-v", "error",
+        "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", os.path.abspath(path),
     ])
     return max(0.001, float(output.decode("ascii", errors="ignore").strip()))
@@ -287,10 +296,10 @@ def _google_seconds(value):
         return 0.0
 
 
-def _google_chunk(path, start, duration, temp_dir):
+def _google_chunk(path, start, duration, temp_dir, ffmpeg_path=None):
     output = os.path.join(temp_dir, "chunk-%012d.wav" % int(round(start * 1000)))
     _run_media_command([
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        _tool_path("ffmpeg.exe", ffmpeg_path), "-hide_banner", "-loglevel", "error", "-y",
         "-ss", "%.3f" % start, "-t", "%.3f" % duration,
         "-i", os.path.abspath(path), "-vn", "-ac", "1", "-ar", "16000",
         "-c:a", "pcm_s16le", output,
@@ -361,9 +370,9 @@ def transcribe_google(path, project, location, recognizer, access_token,
                       model=DEFAULT_GOOGLE_MODEL,
                       chunk_seconds=DEFAULT_GOOGLE_CHUNK_SECONDS,
                       overlap_seconds=DEFAULT_GOOGLE_OVERLAP_SECONDS,
-                      workers=DEFAULT_GOOGLE_WORKERS):
+                      workers=DEFAULT_GOOGLE_WORKERS, ffmpeg_path=None):
     """Transcribe Catalan audio through Chirp in parallel, with word offsets."""
-    duration = _media_duration(path)
+    duration = _media_duration(path, ffmpeg_path)
     chunks = []
     position = 0.0
     while position < duration:
@@ -383,7 +392,7 @@ def transcribe_google(path, project, location, recognizer, access_token,
     with tempfile.TemporaryDirectory(prefix="smouk-google-",
                                       ignore_cleanup_errors=True) as temp_dir:
         def run(item):
-            file_path = _google_chunk(path, item[0], item[1], temp_dir)
+            file_path = _google_chunk(path, item[0], item[1], temp_dir, ffmpeg_path)
             return item[2], _google_request(
                 file_path, project, location, recognizer, access_token,
                 model, item[2] - (overlap_seconds if item[2] else 0.0))
@@ -440,6 +449,7 @@ def main():
         "SMOUK_GOOGLE_OVERLAP_SECONDS", DEFAULT_GOOGLE_OVERLAP_SECONDS)))
     parser.add_argument("--google-workers", type=int, default=int(os.environ.get(
         "SMOUK_GOOGLE_WORKERS", DEFAULT_GOOGLE_WORKERS)))
+    parser.add_argument("--ffmpeg-path", default=os.environ.get("SMOUK_FFMPEG_PATH"))
     args = parser.parse_args()
 
     if str(args.provider).casefold() == "google":
@@ -452,7 +462,7 @@ def main():
             args.google_recognizer, args.google_access_token, args.google_model,
             max(5.0, args.google_chunk_seconds),
             max(0.0, min(args.google_overlap_seconds, args.google_chunk_seconds / 2.0)),
-            max(1, args.google_workers))
+            max(1, args.google_workers), args.ffmpeg_path)
         args.model = "google-speech-to-text-v2/" + args.google_model
     else:
         duration = None
