@@ -820,6 +820,10 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 ### 0.0.83
 
 - Usa el endpoint regional `eu-speech.googleapis.com` cuando Chirp está configurado en la región `eu`; evita respuestas HTTP 400 por enviar un recurso regional al host global.
+
+### 0.0.84
+
+- Reduce la concurrencia predeterminada de Chirp a dos fragmentos, añade reintentos con retroceso para límites y errores transitorios de Google, y muestra el motivo concreto si un fragmento falla.
   que crearon cientos de chyrons falsos. Si `backup.osp` contiene más de 40
   assets SMOUK, se conserva en `recovery/smouk-quarantine` y se inicia un
   proyecto vacío, evitando cargar cientos de lectores SVG en la Timeline.

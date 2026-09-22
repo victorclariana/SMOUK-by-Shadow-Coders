@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import textwrap
 import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -20,7 +21,7 @@ DEFAULT_GOOGLE_MODEL = "chirp_3"
 DEFAULT_GOOGLE_LOCATION = "eu"
 DEFAULT_GOOGLE_CHUNK_SECONDS = 45.0
 DEFAULT_GOOGLE_OVERLAP_SECONDS = 1.5
-DEFAULT_GOOGLE_WORKERS = 3
+DEFAULT_GOOGLE_WORKERS = 2
 DEFAULT_BEAM_SIZE = 3
 MAX_SUBTITLE_LINE_CHARS = 26
 MAX_SUBTITLE_CUE_CHARS = MAX_SUBTITLE_LINE_CHARS * 2
@@ -308,7 +309,7 @@ def _google_chunk(path, start, duration, temp_dir, ffmpeg_path=None):
 
 
 def _google_request(audio_path, project, location, recognizer, access_token,
-                    model, chunk_start):
+                    model, chunk_start, retries=4):
     region = str(location or "global").strip()
     host = "speech.googleapis.com" if region == "global" else region + "-speech.googleapis.com"
     endpoint = (
@@ -334,12 +335,19 @@ def _google_request(audio_path, project, location, recognizer, access_token,
         headers={"Authorization": "Bearer " + access_token,
                  "Content-Type": "application/json; charset=utf-8"},
         method="POST")
-    try:
-        with urllib.request.urlopen(request, timeout=180) as response:
-            result = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as ex:
-        body = ex.read().decode("utf-8", errors="replace")
-        raise RuntimeError("Google Speech API HTTP %s: %s" % (ex.code, body[-1000:]))
+    for attempt in range(max(1, retries)):
+        try:
+            with urllib.request.urlopen(request, timeout=300) as response:
+                result = json.loads(response.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as ex:
+            body = ex.read().decode("utf-8", errors="replace")
+            if ex.code not in {408, 429, 500, 502, 503, 504} or attempt + 1 >= retries:
+                raise RuntimeError("Google Speech API HTTP %s: %s" % (ex.code, body[-1000:]))
+            _emit("status", text=(
+                "Google ha limitado temporalmente la petición; reintentando "
+                "fragmento en %s s…" % (2 ** attempt)))
+            time.sleep(2 ** attempt)
     words = []
     segments = []
     for result_item in result.get("results", []):
@@ -402,7 +410,11 @@ def transcribe_google(path, project, location, recognizer, access_token,
         with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
             futures = [pool.submit(run, item) for item in chunks]
             for future in concurrent.futures.as_completed(futures):
-                _start, (chunk_words, chunk_segments) = future.result()
+                try:
+                    _start, (chunk_words, chunk_segments) = future.result()
+                except Exception as exc:
+                    raise RuntimeError(
+                        "No se pudo transcribir uno de los fragmentos: %s" % exc) from exc
                 words.extend(chunk_words)
                 segments.extend(chunk_segments)
                 with lock:

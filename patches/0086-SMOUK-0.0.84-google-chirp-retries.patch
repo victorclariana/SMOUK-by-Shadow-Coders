@@ -1,0 +1,123 @@
+diff --git a/README.md b/README.md
+index ac59f98..108931f 100644
+--- a/README.md
++++ b/README.md
+@@ -820,6 +820,10 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
+ ### 0.0.83
+ 
+ - Usa el endpoint regional `eu-speech.googleapis.com` cuando Chirp está configurado en la región `eu`; evita respuestas HTTP 400 por enviar un recurso regional al host global.
++
++### 0.0.84
++
++- Reduce la concurrencia predeterminada de Chirp a dos fragmentos, añade reintentos con retroceso para límites y errores transitorios de Google, y muestra el motivo concreto si un fragmento falla.
+   que crearon cientos de chyrons falsos. Si `backup.osp` contiene más de 40
+   assets SMOUK, se conserva en `recovery/smouk-quarantine` y se inicia un
+   proyecto vacío, evitando cargar cientos de lectores SVG en la Timeline.
+diff --git a/patches/README.md b/patches/README.md
+index 2894d9c..68f6f18 100644
+--- a/patches/README.md
++++ b/patches/README.md
+@@ -91,6 +91,7 @@ corresponding repository.
+ | `0083-SMOUK-0.0.81-google-chirp-temp-cleanup.patch` | **openshot-qt / scripts** | Keeps Chirp temporary-audio cleanup tolerant of managed Windows permissions. |
+ | `0084-SMOUK-0.0.82-google-chirp-ffmpeg-path.patch` | **openshot-qt / scripts** | Reuses OpenShot's FFmpeg resolver so Chirp can find FFmpeg and ffprobe under the packaged Python environment. |
+ | `0085-SMOUK-0.0.83-google-chirp-regional-endpoint.patch` | **openshot-qt / scripts** | Routes EU Chirp requests through `eu-speech.googleapis.com`, matching the recognizer location. |
++| `0086-SMOUK-0.0.84-google-chirp-retries.patch` | **openshot-qt / scripts** | Adds bounded retries for transient Google responses, reduces parallel requests, and reports worker errors in the dock. |
+ | `0001-FFmpeg-9-compatibility-guard-AVCodec-capability-fiel.patch` | **libopenshot** | Guards the `AVCodec` capability fields (`supported_samplerates`, `ch_layouts`, `sample_fmts`, `pix_fmts`) that were removed in FFmpeg 7+, so `FFmpegWriter.cpp` builds against FFmpeg 9. |
+ 
+ ## Apply
+diff --git a/scripts/smouk_transcribe.py b/scripts/smouk_transcribe.py
+index d773496..0883f16 100644
+--- a/scripts/smouk_transcribe.py
++++ b/scripts/smouk_transcribe.py
+@@ -10,6 +10,7 @@ import subprocess
+ import tempfile
+ import textwrap
+ import threading
++import time
+ import urllib.error
+ import urllib.request
+ 
+@@ -20,7 +21,7 @@ DEFAULT_GOOGLE_MODEL = "chirp_3"
+ DEFAULT_GOOGLE_LOCATION = "eu"
+ DEFAULT_GOOGLE_CHUNK_SECONDS = 45.0
+ DEFAULT_GOOGLE_OVERLAP_SECONDS = 1.5
+-DEFAULT_GOOGLE_WORKERS = 3
++DEFAULT_GOOGLE_WORKERS = 2
+ DEFAULT_BEAM_SIZE = 3
+ MAX_SUBTITLE_LINE_CHARS = 26
+ MAX_SUBTITLE_CUE_CHARS = MAX_SUBTITLE_LINE_CHARS * 2
+@@ -308,7 +309,7 @@ def _google_chunk(path, start, duration, temp_dir, ffmpeg_path=None):
+ 
+ 
+ def _google_request(audio_path, project, location, recognizer, access_token,
+-                    model, chunk_start):
++                    model, chunk_start, retries=4):
+     region = str(location or "global").strip()
+     host = "speech.googleapis.com" if region == "global" else region + "-speech.googleapis.com"
+     endpoint = (
+@@ -334,12 +335,19 @@ def _google_request(audio_path, project, location, recognizer, access_token,
+         headers={"Authorization": "Bearer " + access_token,
+                  "Content-Type": "application/json; charset=utf-8"},
+         method="POST")
+-    try:
+-        with urllib.request.urlopen(request, timeout=180) as response:
+-            result = json.loads(response.read().decode("utf-8"))
+-    except urllib.error.HTTPError as ex:
+-        body = ex.read().decode("utf-8", errors="replace")
+-        raise RuntimeError("Google Speech API HTTP %s: %s" % (ex.code, body[-1000:]))
++    for attempt in range(max(1, retries)):
++        try:
++            with urllib.request.urlopen(request, timeout=300) as response:
++                result = json.loads(response.read().decode("utf-8"))
++            break
++        except urllib.error.HTTPError as ex:
++            body = ex.read().decode("utf-8", errors="replace")
++            if ex.code not in {408, 429, 500, 502, 503, 504} or attempt + 1 >= retries:
++                raise RuntimeError("Google Speech API HTTP %s: %s" % (ex.code, body[-1000:]))
++            _emit("status", text=(
++                "Google ha limitado temporalmente la petición; reintentando "
++                "fragmento en %s s…" % (2 ** attempt)))
++            time.sleep(2 ** attempt)
+     words = []
+     segments = []
+     for result_item in result.get("results", []):
+@@ -402,7 +410,11 @@ def transcribe_google(path, project, location, recognizer, access_token,
+         with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+             futures = [pool.submit(run, item) for item in chunks]
+             for future in concurrent.futures.as_completed(futures):
+-                _start, (chunk_words, chunk_segments) = future.result()
++                try:
++                    _start, (chunk_words, chunk_segments) = future.result()
++                except Exception as exc:
++                    raise RuntimeError(
++                        "No se pudo transcribir uno de los fragmentos: %s" % exc) from exc
+                 words.extend(chunk_words)
+                 segments.extend(chunk_segments)
+                 with lock:
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index cc4476c3e..c074f76eb 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.83"
++SMOUK_VERSION = "0.0.84"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 05f4ba5ac..200449b8f 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -2112,7 +2112,8 @@ class VerticalizationDockContent(QWidget):
+             message = "\n".join(self._transcription_log_tail)
+             log.warning("SMOUK %s process failed with exit code %s: %s", stage, exit_code, message)
+             self._finish_transcription_ui(
+-                _("Transcription failed. See openshot-qt.log for details."))
++                _("Transcription failed: %s") % (message[-600:] or
++                                                  _("see openshot-qt.log for details.")))
+             return
+         if stage == "setup":
+             self.transcription_progress.setRange(0, 100)
