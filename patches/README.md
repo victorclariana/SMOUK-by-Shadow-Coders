@@ -108,3 +108,4 @@ git am /path/to/patches/0001-FFmpeg-9-*.patch
 ```
 | `0094-SMOUK-0.0.92-transcription-progress.patch` | **openshot-qt** | Publishes throttled transcription progress in the safe Qt polling timer. |
 | `0095-SMOUK-0.0.93-safe-busy-transcription-progress.patch` | **openshot-qt** | Uses a Qt-owned busy indicator while GPU transcription runs, avoiding the Qt5Core crash caused by worker progress updates. |
+| `0096-SMOUK-0.0.94-transcribe-timeline-clip-range.patch` | **openshot-qt / scripts** | Transcribes only each timeline clip's source IN/OUT range and maps cues back to the clip. |

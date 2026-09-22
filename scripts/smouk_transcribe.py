@@ -299,7 +299,8 @@ def _load_openvino_audio(path):
 
 def transcribe_openvino(path, model_dir, device=DEFAULT_OPENVINO_DEVICE,
                         chunk_seconds=DEFAULT_OPENVINO_CHUNK_SECONDS,
-                        ffmpeg_path=None, temp_root=None):
+                        ffmpeg_path=None, temp_root=None, source_start=0.0,
+                        source_duration=None):
     """Transcribe Catalan locally with the verified OpenVINO Turbo model."""
     _trace("python.start", pid=os.getpid(), python=sys.executable)
     _trace("openvino.import.start")
@@ -308,7 +309,13 @@ def transcribe_openvino(path, model_dir, device=DEFAULT_OPENVINO_DEVICE,
     _trace("openvino.import.finish", version=str(getattr(ov, "__version__", "unknown")))
 
     _trace("media.duration.start", path=os.path.abspath(path))
-    duration = _media_duration(path, ffmpeg_path)
+    full_duration = _media_duration(path, ffmpeg_path)
+    source_start = max(0.0, float(source_start or 0.0))
+    if source_start >= full_duration:
+        raise RuntimeError("El IN del clip queda fuera de la duración del vídeo")
+    duration = min(full_duration - source_start,
+                   float(source_duration) if source_duration is not None else full_duration)
+    duration = max(0.001, duration)
     _trace("media.duration.finish", seconds=duration)
     chunks = []
     position = 0.0
@@ -354,7 +361,7 @@ def transcribe_openvino(path, model_dir, device=DEFAULT_OPENVINO_DEVICE,
     for start, length in chunks:
         _trace("chunk.start", index=completed + 1, total=len(chunks),
                start=start, seconds=length)
-        file_path = _audio_chunk(path, start, length, temp_dir, ffmpeg_path)
+        file_path = _audio_chunk(path, source_start + start, length, temp_dir, ffmpeg_path)
         audio = _load_openvino_audio(file_path)
         _trace("chunk.inference.start", index=completed + 1)
         decoded = pipe.generate(audio, config)
@@ -407,17 +414,20 @@ def main():
     parser.add_argument("--openvino-chunk-seconds", type=float, default=float(
         os.environ.get("SMOUK_OPENVINO_CHUNK_SECONDS", DEFAULT_OPENVINO_CHUNK_SECONDS)))
     parser.add_argument("--ffmpeg-path", default=os.environ.get("SMOUK_FFMPEG_PATH"))
+    parser.add_argument("--start", type=float, default=0.0)
+    parser.add_argument("--duration", type=float, default=None)
     args = parser.parse_args()
 
     _trace("main.arguments", input=os.path.abspath(args.input),
            output=os.path.abspath(args.output), model=args.model,
-           device=args.openvino_device)
+           device=args.openvino_device, start=args.start, duration=args.duration)
     model_path = os.path.join(os.path.abspath(args.model_dir), args.model)
     try:
         duration, words, fallback_segments = transcribe_openvino(
             args.input, model_path, args.openvino_device,
             max(5.0, args.openvino_chunk_seconds), args.ffmpeg_path,
-            os.path.dirname(os.path.abspath(args.output)))
+            os.path.dirname(os.path.abspath(args.output)), args.start,
+            args.duration)
     except Exception as exc:
         _emit("error", message=str(exc), traceback=traceback.format_exc())
         raise

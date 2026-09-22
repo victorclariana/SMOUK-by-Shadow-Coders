@@ -802,6 +802,13 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
 - Protege New, Open y Save frente a backups generados por las versiones de OCR
 
+### 0.0.94
+
+La transcripción usa el intervalo real de cada clip del Timeline (`IN`, `OUT`
+y posición), en lugar de procesar el archivo fuente completo. Los tiempos del
+audio recortado se vuelven a expresar en el tiempo de origen para mantener la
+sincronización y evitar subtítulos de partes que no están en pantalla.
+
 ### 0.0.93
 
 Durante la inferencia GPU la barra de transcripción usa el indicador continuo
