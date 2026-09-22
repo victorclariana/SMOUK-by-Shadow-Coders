@@ -802,6 +802,10 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
 - Protege New, Open y Save frente a backups generados por las versiones de OCR
 
+### 0.0.90
+
+Evita actualizar widgets Qt mientras el trabajador OpenVINO entrega resultados. Los estados, progreso y texto parcial quedan registrados en `openshot-qt.log` y la interfaz se actualiza al terminar, evitando el cierre nativo de `Qt5Core.dll` que ocurría justo después de la primera inferencia.
+
 ### 0.0.89
 
 Añade trazas de diagnóstico en cada frontera del transcriptor OpenVINO (Python, modelo, dispositivo, audio, fragmentos e inferencia) y registra el PID y código de salida en `openshot-qt.log`. La GPU vuelve a ser el dispositivo predeterminado; se puede forzar CPU con `SMOUK_OPENVINO_DEVICE=CPU`.
