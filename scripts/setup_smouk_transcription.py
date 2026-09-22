@@ -33,7 +33,7 @@ def main():
         "huggingface_hub==1.32.0", "soundfile==0.14.0", "numpy==2.5.3",
     ], env=install_env)
 
-    if not os.path.isdir(model_dir):
+    if not os.path.isfile(os.path.join(model_dir, "openvino_encoder_model.bin")):
         print("Downloading the verified OpenVINO Whisper Turbo model...", flush=True)
         download = (
             "from huggingface_hub import snapshot_download; "
