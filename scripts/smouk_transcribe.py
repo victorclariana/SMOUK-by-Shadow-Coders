@@ -309,9 +309,11 @@ def _google_chunk(path, start, duration, temp_dir, ffmpeg_path=None):
 
 def _google_request(audio_path, project, location, recognizer, access_token,
                     model, chunk_start):
+    region = str(location or "global").strip()
+    host = "speech.googleapis.com" if region == "global" else region + "-speech.googleapis.com"
     endpoint = (
-        "https://speech.googleapis.com/v2/projects/{}/locations/{}/recognizers/{}:recognize"
-        .format(project, location, recognizer)
+        "https://{}/v2/projects/{}/locations/{}/recognizers/{}:recognize"
+        .format(host, project, region, recognizer)
     )
     with open(audio_path, "rb") as handle:
         content = base64.b64encode(handle.read()).decode("ascii")
