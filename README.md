@@ -802,6 +802,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
 - Protege New, Open y Save frente a backups generados por las versiones de OCR
 
+### 0.0.93
+
+Durante la inferencia GPU la barra de transcripción usa el indicador continuo
+propio de Qt. Evita actualizaciones de widgets tras cada fragmento, que hacían
+fallar Qt5Core en la instalación MSYS2, y deja claro que el proceso sigue activo.
+
 ### 0.0.92
 
 Muestra el progreso de la transcripción en el dock, actualizándolo de forma
