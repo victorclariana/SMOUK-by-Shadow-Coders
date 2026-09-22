@@ -802,6 +802,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
 - Protege New, Open y Save frente a backups generados por las versiones de OCR
 
+### 0.0.92
+
+Muestra el progreso de la transcripción en el dock, actualizándolo de forma
+limitada desde el temporizador seguro del hilo de Qt para evitar bloqueos por
+señales de alta frecuencia durante la inferencia en GPU.
+
 ### 0.0.91
 
 Usa las marcas de segmento nativas de Whisper (`return_timestamps`) al crear los subtítulos. Cada fragmento conserva ahora sus límites temporales reales y deja de repartir todo el texto uniformemente por la ventana de audio, evitando la deriva de sincronía.

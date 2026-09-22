@@ -106,3 +106,4 @@ git am /path/to/patches/0001-Add-SMOUK-*.patch
 cd libopenshot
 git am /path/to/patches/0001-FFmpeg-9-*.patch
 ```
+| `0094-SMOUK-0.0.92-transcription-progress.patch` | **openshot-qt** | Publishes throttled transcription progress in the safe Qt polling timer. |
