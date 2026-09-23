@@ -802,6 +802,22 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
 - Protege New, Open y Save frente a backups generados por las versiones de OCR
 
+### 0.0.98
+
+La transcripció OpenVINO manté el català com a idioma de treball i ja no
+activa per defecte la recuperació en castellà, que podia convertir la cua
+curta d'un vídeo en text espuri. Quan l'últim fragment és més curt que el
+context de Whisper, es torna a llegir amb una finestra de 30 segons i només
+s'afegeix al Timeline la part nova. Això evita la pèrdua de transcripció als
+canvis de fragment, inclòs el punt 00:01:29 del projecte de prova.
+
+El perfil OpenVINO utilitza fragments de 10 segons en aquest maquinari per
+reduir les caigudes de Whisper després de canvis de pla i descarta sortides
+curtes o repetitives que no són veu utilitzable.
+
+Per a un projecte bilingüe, la recuperació anterior es pot activar
+explícitament amb `SMOUK_ALLOW_SPANISH_FALLBACK=1`.
+
 ### 0.0.97
 
 Mantiene el catalán como idioma principal y reintenta en castellano solo los

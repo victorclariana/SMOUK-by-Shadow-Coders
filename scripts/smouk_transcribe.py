@@ -12,10 +12,14 @@ import traceback
 
 DEFAULT_MODEL = "openvino-whisper-large-v3-turbo-int4-ov"
 DEFAULT_OPENVINO_DEVICE = "GPU"
-# Whisper's encoder has a 30-second audio context.  Passing 60-second chunks
-# makes the second half collapse to repeated one-token hallucinations (often
-# just "I"), which then become empty/incorrect subtitles in the Timeline.
-DEFAULT_OPENVINO_CHUNK_SECONDS = 30.0
+# Short windows keep timestamps anchored to the spoken audio.  On this Intel
+# GPU the 30-second context occasionally collapses after a scene change; ten
+# seconds gives the decoder a fresh alignment before that failure can spread.
+DEFAULT_OPENVINO_CHUNK_SECONDS = 10.0
+# The current workflow is Catalan-only.  Spanish retry was useful for an
+# earlier bilingual sample, but it can turn a short/ambiguous Catalan tail
+# into a completely unrelated Spanish hallucination.  Keep it opt-in.
+ALLOW_SPANISH_FALLBACK = os.environ.get("SMOUK_ALLOW_SPANISH_FALLBACK", "0") == "1"
 MAX_SUBTITLE_LINE_CHARS = 26
 MAX_SUBTITLE_CUE_CHARS = MAX_SUBTITLE_LINE_CHARS * 2
 MIN_SUBTITLE_CUE_SECONDS = 1.0
@@ -327,7 +331,18 @@ def transcribe_openvino(path, model_dir, device=DEFAULT_OPENVINO_DEVICE,
         length = actual_end - position
         if length < 0.5:
             break
-        chunks.append((position, length))
+        # Whisper's 30-second context is especially important for the final
+        # piece.  A short tail (for example 19 seconds after three full
+        # chunks) otherwise loses its linguistic context and often collapses
+        # to one token.  Re-read the last 30 seconds and emit only the part
+        # that was not already covered by the preceding chunk.
+        extract_start = position
+        emit_from = position
+        if length < chunk_seconds and position > 0.0:
+            extract_start = max(0.0, duration - chunk_seconds)
+            length = duration - extract_start
+            emit_from = position
+        chunks.append((extract_start, length, emit_from))
         position += chunk_seconds
     _emit("status", text=(
         "OpenVINO Whisper Turbo: preparando %s fragmentos de %.0f s…" %
@@ -361,7 +376,7 @@ def transcribe_openvino(path, model_dir, device=DEFAULT_OPENVINO_DEVICE,
     temp_dir = os.path.join(temp_root or os.path.dirname(os.path.abspath(path)),
                             ".smouk-openvino-audio")
     os.makedirs(temp_dir, exist_ok=True)
-    for start, length in chunks:
+    for start, length, emit_from in chunks:
         _trace("chunk.start", index=completed + 1, total=len(chunks),
                start=start, seconds=length)
         file_path = _audio_chunk(path, source_start + start, length, temp_dir, ffmpeg_path)
@@ -379,7 +394,7 @@ def transcribe_openvino(path, model_dir, device=DEFAULT_OPENVINO_DEVICE,
                       for token in text.split()]
         suspicious_catalan = (len(text) < 12 or
                               (normalized and set(normalized) <= {"i", "y", "..."}))
-        if suspicious_catalan:
+        if suspicious_catalan and ALLOW_SPANISH_FALLBACK:
             # Some programme inserts switch briefly to Spanish.  The forced
             # Catalan decoder answers with a lone "I" for those sections;
             # retry only suspicious chunks in Spanish so real Catalan remains
@@ -402,6 +417,19 @@ def transcribe_openvino(path, model_dir, device=DEFAULT_OPENVINO_DEVICE,
                 text = spanish_text
                 _trace("chunk.language_fallback", index=completed + 1,
                        from_language="ca", to_language="es")
+        # A long window that decodes to only a couple of characters is a
+        # decoder collapse, not a usable subtitle.  Never stretch that token
+        # over the entire window: doing so is what made the Timeline drift at
+        # 00:01:29.  The next/overlapping window can still provide real text.
+        discarded_suspicious = False
+        tokens = [token.casefold().strip(".,;:!?¿¡") for token in text.split()]
+        repeated_token = any(tokens.count(token) >= 8 for token in set(tokens) if token)
+        if (length >= 8.0 and (len(text.strip()) < 24 or repeated_token)):
+            _trace("chunk.discard_suspicious", index=completed + 1,
+                   seconds=length, text=text[:80])
+            decoded_chunks = []
+            text = ""
+            discarded_suspicious = True
         if decoded_chunks:
             for chunk_index, chunk in enumerate(decoded_chunks):
                 text = str(getattr(chunk, "text", "")).strip()
@@ -413,18 +441,25 @@ def transcribe_openvino(path, model_dir, device=DEFAULT_OPENVINO_DEVICE,
                     next_start = (float(getattr(decoded_chunks[chunk_index + 1],
                                                   "start_ts", -1.0))
                                   if chunk_index + 1 < len(decoded_chunks) else length)
-                    relative_end = next_start if next_start > relative_start else length
+                    relative_end = (next_start if next_start > relative_start
+                                    else min(length, relative_start + 3.0))
+                absolute_start = start + relative_start
+                absolute_end = min(start + length, start + relative_end)
+                if absolute_end <= emit_from:
+                    continue
                 segments.append({
-                    "start": start + relative_start,
-                    "end": min(start + length, start + relative_end),
+                    "start": max(emit_from, absolute_start),
+                    "end": absolute_end,
                     "text": text,
                 })
             _trace("chunk.timestamps", index=completed + 1,
                    segments=len(decoded_chunks))
-        else:
+        elif not discarded_suspicious:
             text = " ".join(str(item).strip() for item in decoded.texts).strip()
             if text:
-                segments.append({"start": start, "end": start + length, "text": text})
+                if start + length > emit_from:
+                    segments.append({"start": max(emit_from, start),
+                                     "end": start + length, "text": text})
         completed += 1
         _emit("progress", value=int(round(completed * 85.0 / len(chunks))))
         _emit("status", text=(
