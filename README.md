@@ -802,6 +802,18 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
 - Protege New, Open y Save frente a backups generados por las versiones de OCR
 
+### 0.0.97
+
+Mantiene el catalán como idioma principal y reintenta en castellano solo los
+fragmentos cuya salida catalana es vacía o el token espurio `I`. Esto cubre
+insertos bilingües sin perder la transcripción de voz catalana.
+
+### 0.0.96
+
+Limita los bloques de Whisper OpenVINO a 30 segundos, que es el contexto de
+audio del modelo. Los bloques de 60 segundos solo reconocían correctamente la
+primera mitad y producían tokens repetidos en la segunda mitad.
+
 ### 0.0.95
 
 Los clips de subtítulos editables guardan ahora su duración real. Antes

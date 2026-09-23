@@ -12,7 +12,10 @@ import traceback
 
 DEFAULT_MODEL = "openvino-whisper-large-v3-turbo-int4-ov"
 DEFAULT_OPENVINO_DEVICE = "GPU"
-DEFAULT_OPENVINO_CHUNK_SECONDS = 60.0
+# Whisper's encoder has a 30-second audio context.  Passing 60-second chunks
+# makes the second half collapse to repeated one-token hallucinations (often
+# just "I"), which then become empty/incorrect subtitles in the Timeline.
+DEFAULT_OPENVINO_CHUNK_SECONDS = 30.0
 MAX_SUBTITLE_LINE_CHARS = 26
 MAX_SUBTITLE_CUE_CHARS = MAX_SUBTITLE_LINE_CHARS * 2
 MIN_SUBTITLE_CUE_SECONDS = 1.0
@@ -366,7 +369,39 @@ def transcribe_openvino(path, model_dir, device=DEFAULT_OPENVINO_DEVICE,
         _trace("chunk.inference.start", index=completed + 1)
         decoded = pipe.generate(audio, config)
         _trace("chunk.inference.finish", index=completed + 1)
+        decoded_texts = [str(item).strip() for item in getattr(decoded, "texts", []) or []]
         decoded_chunks = list(getattr(decoded, "chunks", []) or [])
+        text = " ".join(item for item in decoded_texts if item).strip()
+        if decoded_chunks:
+            text = " ".join(str(getattr(item, "text", "")).strip()
+                            for item in decoded_chunks).strip()
+        normalized = [token.casefold().strip(".,;:!?¿¡")
+                      for token in text.split()]
+        suspicious_catalan = (len(text) < 12 or
+                              (normalized and set(normalized) <= {"i", "y", "..."}))
+        if suspicious_catalan:
+            # Some programme inserts switch briefly to Spanish.  The forced
+            # Catalan decoder answers with a lone "I" for those sections;
+            # retry only suspicious chunks in Spanish so real Catalan remains
+            # on the fast path.
+            spanish_config = ov_genai.WhisperGenerationConfig()
+            spanish_config.language = "<|es|>"
+            spanish_config.task = "transcribe"
+            spanish_config.return_timestamps = True
+            spanish_config.max_new_tokens = 448
+            spanish_decoded = pipe.generate(audio, spanish_config)
+            spanish_chunks = list(getattr(spanish_decoded, "chunks", []) or [])
+            spanish_text = " ".join(
+                str(getattr(item, "text", "")).strip() for item in spanish_chunks).strip()
+            if not spanish_text:
+                spanish_text = " ".join(str(item).strip()
+                                        for item in getattr(spanish_decoded, "texts", []) or []).strip()
+            if len(spanish_text) >= max(12, len(text) * 2):
+                decoded = spanish_decoded
+                decoded_chunks = spanish_chunks
+                text = spanish_text
+                _trace("chunk.language_fallback", index=completed + 1,
+                       from_language="ca", to_language="es")
         if decoded_chunks:
             for chunk_index, chunk in enumerate(decoded_chunks):
                 text = str(getattr(chunk, "text", "")).strip()

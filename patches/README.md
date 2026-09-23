@@ -110,3 +110,5 @@ git am /path/to/patches/0001-FFmpeg-9-*.patch
 | `0095-SMOUK-0.0.93-safe-busy-transcription-progress.patch` | **openshot-qt** | Uses a Qt-owned busy indicator while GPU transcription runs, avoiding the Qt5Core crash caused by worker progress updates. |
 | `0096-SMOUK-0.0.94-transcribe-timeline-clip-range.patch` | **openshot-qt / scripts** | Transcribes only each timeline clip's source IN/OUT range and maps cues back to the clip. |
 | `0097-SMOUK-0.0.95-subtitle-clip-duration.patch` | **openshot-qt** | Sets each editable subtitle clip duration to its cue duration instead of the SVG default. |
+| `0098-SMOUK-0.0.96-whisper-30-second-context.patch` | **openshot-qt / scripts** | Uses Whisper's 30-second audio context to prevent missing middle speech and repeated-token cues. |
+| `0099-SMOUK-0.0.97-spanish-fallback-for-bilingual-audio.patch` | **scripts / openshot-qt** | Retries suspicious Catalan chunks in Spanish for bilingual inserts. |
