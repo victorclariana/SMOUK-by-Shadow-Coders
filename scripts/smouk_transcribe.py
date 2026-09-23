@@ -213,35 +213,29 @@ def _usable_word(text):
 
 
 def _stable_segment_words(segment):
-    """Use Whisper word marks unless they contain an impossible silent gap."""
+    """Preserve valid Whisper word marks and repair only an invalid word."""
     start, end = float(segment["start"]), float(segment["end"])
     words = [dict(item) for item in segment.get("words", []) if _usable_word(item.get("word"))]
-    bad = not words
-    previous = start
-    for item in words:
-        word_start, word_end = float(item["start"]), float(item["end"])
-        bad = bad or word_end <= word_start or word_start < previous - 0.02
-        # A single displayed word cannot credibly bridge a long spoken gap.
-        bad = bad or word_start - previous > 1.5 or word_end - word_start > 2.5
-        previous = word_end
-    if not bad:
-        return words
-    tokens = [token for token in str(segment.get("text", "")).split() if _usable_word(token)]
-    if not tokens:
+    if not words:
         return []
-    weights = [max(1, len(token)) for token in tokens]
-    total = float(sum(weights))
-    elapsed = 0.0
-    rebuilt = []
-    for token, weight in zip(tokens, weights):
-        word_start = start + (end - start) * elapsed / total
-        elapsed += weight
-        rebuilt.append({"start": word_start,
-                        "end": start + (end - start) * elapsed / total,
-                        "word": token})
-    _emit("trace", step="word_timestamps.rebuilt", start=start, end=end,
-          words=len(rebuilt))
-    return rebuilt
+    repaired = []
+    previous_end = start
+    for index, item in enumerate(words):
+        item["start"] = max(previous_end, float(item["start"]))
+        item["end"] = float(item["end"])
+        next_start = (float(words[index + 1]["start"])
+                      if index + 1 < len(words) else end)
+        # Faster-Whisper can assign an entire silent stretch to one ordinary
+        # word. Clamp that one word only: the surrounding words retain their
+        # native, accurate marks instead of being shifted over the segment.
+        if item["end"] <= item["start"] or item["end"] - item["start"] > 2.5:
+            item["end"] = min(next_start, item["start"] + 1.0)
+            _emit("trace", step="word_timestamp.clamped", word=item["word"],
+                  start=item["start"], end=item["end"])
+        if item["end"] > item["start"]:
+            repaired.append(item)
+            previous_end = item["end"]
+    return repaired
 
 
 def cues_to_srt(cues):

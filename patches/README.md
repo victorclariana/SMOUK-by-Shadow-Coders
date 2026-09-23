@@ -114,3 +114,4 @@ git am /path/to/patches/0001-FFmpeg-9-*.patch
 | `0099-SMOUK-0.0.97-spanish-fallback-for-bilingual-audio.patch` | **scripts / openshot-qt** | Retries suspicious Catalan chunks in Spanish for bilingual inserts. |
 | `0100-SMOUK-0.0.98-catalan-tail-context.patch` | **scripts / openshot-qt** | Keeps Catalan as the default, disables the Spanish retry unless explicitly enabled, uses short anchored chunks, and filters collapsed/repeated decoder output at fragment boundaries. |
 | `0101-SMOUK-0.0.99-bsc-timeline-audio.patch` | **scripts / openshot-qt** | Replaces the OpenVINO chunk path with BSC Catalan Whisper over the exact Timeline IN–OUT audio, preserving word timestamps and saving raw Whisper output before Timeline placement. |
+| `0102-SMOUK-0.0.100-local-word-timestamp-repair.patch` | **scripts** | Limits only impossible individual BSC word durations instead of redistributing a whole valid segment. |

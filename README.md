@@ -802,6 +802,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
 - Protege New, Open y Save frente a backups generados por las versiones de OCR
 
+### 0.0.100
+
+Les marques de paraula correctes de BSC ja no es redistribueixen si només una
+marca és defectuosa. SMOUK limita únicament aquella paraula impossible i
+preserva la sincronització ja correcta abans i després.
+
 ### 0.0.99
 
 La transcripció es refactoritza sobre el model català BSC, que conserva les
