@@ -10,16 +10,8 @@ import textwrap
 import traceback
 
 
-DEFAULT_MODEL = "openvino-whisper-large-v3-turbo-int4-ov"
-DEFAULT_OPENVINO_DEVICE = "GPU"
-# Short windows keep timestamps anchored to the spoken audio.  On this Intel
-# GPU the 30-second context occasionally collapses after a scene change; ten
-# seconds gives the decoder a fresh alignment before that failure can spread.
-DEFAULT_OPENVINO_CHUNK_SECONDS = 10.0
-# The current workflow is Catalan-only.  Spanish retry was useful for an
-# earlier bilingual sample, but it can turn a short/ambiguous Catalan tail
-# into a completely unrelated Spanish hallucination.  Keep it opt-in.
-ALLOW_SPANISH_FALLBACK = os.environ.get("SMOUK_ALLOW_SPANISH_FALLBACK", "0") == "1"
+DEFAULT_MODEL = "BSC-LT/faster-whisper-large-v3-ca-punctuated-3370h"
+DEFAULT_BEAM_SIZE = 3
 MAX_SUBTITLE_LINE_CHARS = 26
 MAX_SUBTITLE_CUE_CHARS = MAX_SUBTITLE_LINE_CHARS * 2
 MIN_SUBTITLE_CUE_SECONDS = 1.0
@@ -45,6 +37,12 @@ def _timecode(seconds):
     minutes, remainder = divmod(remainder, 60_000)
     secs, millis = divmod(remainder, 1000)
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
+
+def recommended_cpu_threads(logical_cpus=None):
+    """Leave two logical CPUs free for the editor while BSC decodes."""
+    logical_cpus = int(logical_cpus or os.cpu_count() or 1)
+    return logical_cpus if logical_cpus <= 4 else min(10, logical_cpus - 2)
 
 
 def _normalized_token(token):
@@ -169,47 +167,23 @@ def words_to_cues(words, max_chars=MAX_SUBTITLE_CUE_CHARS,
 def _merge_short_cues(cues, max_chars=MAX_SUBTITLE_CUE_CHARS,
                       max_seconds=6.0, line_width=MAX_SUBTITLE_LINE_CHARS,
                       min_seconds=MIN_SUBTITLE_CUE_SECONDS):
-    """Join brief cues to a neighbor when the resulting text remains readable."""
-    cues = [dict(cue) for cue in cues]
-    index = 0
-    while index < len(cues):
-        cue = cues[index]
-        if cue["end"] - cue["start"] >= min_seconds:
-            index += 1
+    """Make each cue readable in one bounded pass.
+
+    Older versions repeatedly merged a short cue with either neighbour and
+    restarted the loop. With dense word timestamps that could oscillate
+    forever after Whisper had already completed. Subtitle timing must never
+    depend on that optional cosmetic merge.
+    """
+    result = []
+    for cue in cues:
+        item = dict(cue)
+        item["end"] = max(float(item["end"]), float(item["start"]) + min_seconds)
+        if result and item["start"] < result[-1]["end"]:
+            item["start"] = result[-1]["end"]
+        if item["end"] <= item["start"]:
             continue
-
-        options = []
-        for neighbor_index in (index - 1, index + 1):
-            if not 0 <= neighbor_index < len(cues):
-                continue
-            left_index, right_index = sorted((index, neighbor_index))
-            left, right = cues[left_index], cues[right_index]
-            text = " ".join((left["text"] + " " + right["text"]).split())
-            lines = _balanced_lines(text, width=line_width)
-            start, end = min(left["start"], right["start"]), max(left["end"], right["end"])
-            gap = max(0.0, right["start"] - left["end"])
-            if (len(text) <= max_chars and len(lines) <= 2 and
-                    all(len(line) <= line_width for line in lines) and
-                    end - start <= max_seconds and gap <= 1.5):
-                options.append((gap, left_index, right_index, text, start, end))
-
-        if options:
-            _gap, left_index, right_index, text, start, end = min(options)
-            cues[left_index] = {
-                "start": start, "end": end,
-                "text": "\n".join(_balanced_lines(text, width=line_width)),
-            }
-            del cues[right_index]
-            index = max(0, left_index - 1)
-            continue
-
-        # If an isolated, very short utterance cannot be merged without
-        # overflowing two lines, keep it visible for at least one second.
-        cues[index]["end"] = max(cue["end"], cue["start"] + min_seconds)
-        if index + 1 < len(cues) and cues[index]["end"] > cues[index + 1]["start"]:
-            cues[index + 1]["start"] = cues[index]["end"]
-        index += 1
-    return cues
+        result.append(item)
+    return result
 
 
 def segments_to_cues(segments):
@@ -232,6 +206,42 @@ def segments_to_cues(segments):
                 "start": word_start, "end": word_end, "word": word,
             })
     return words_to_cues(estimated_words)
+
+
+def _usable_word(text):
+    return bool(re.search(r"[\wÀ-ÖØ-öø-ÿ]", str(text), flags=re.UNICODE))
+
+
+def _stable_segment_words(segment):
+    """Use Whisper word marks unless they contain an impossible silent gap."""
+    start, end = float(segment["start"]), float(segment["end"])
+    words = [dict(item) for item in segment.get("words", []) if _usable_word(item.get("word"))]
+    bad = not words
+    previous = start
+    for item in words:
+        word_start, word_end = float(item["start"]), float(item["end"])
+        bad = bad or word_end <= word_start or word_start < previous - 0.02
+        # A single displayed word cannot credibly bridge a long spoken gap.
+        bad = bad or word_start - previous > 1.5 or word_end - word_start > 2.5
+        previous = word_end
+    if not bad:
+        return words
+    tokens = [token for token in str(segment.get("text", "")).split() if _usable_word(token)]
+    if not tokens:
+        return []
+    weights = [max(1, len(token)) for token in tokens]
+    total = float(sum(weights))
+    elapsed = 0.0
+    rebuilt = []
+    for token, weight in zip(tokens, weights):
+        word_start = start + (end - start) * elapsed / total
+        elapsed += weight
+        rebuilt.append({"start": word_start,
+                        "end": start + (end - start) * elapsed / total,
+                        "word": token})
+    _emit("trace", step="word_timestamps.rebuilt", start=start, end=end,
+          words=len(rebuilt))
+    return rebuilt
 
 
 def cues_to_srt(cues):
@@ -280,42 +290,9 @@ def _media_duration(path, ffmpeg_path=None):
     return max(0.001, float(output.decode("ascii", errors="ignore").strip()))
 
 
-def _audio_chunk(path, start, duration, temp_dir, ffmpeg_path=None):
-    output = os.path.join(temp_dir, "chunk-%012d.wav" % int(round(start * 1000)))
-    _run_media_command([
-        _tool_path("ffmpeg.exe", ffmpeg_path), "-hide_banner", "-loglevel", "error", "-y",
-        "-ss", "%.3f" % start, "-t", "%.3f" % duration,
-        "-i", os.path.abspath(path), "-vn", "-ac", "1", "-ar", "16000",
-        "-c:a", "pcm_s16le", output,
-    ])
-    return output
-
-
-def _load_openvino_audio(path):
-    _trace("audio.load.start", path=os.path.abspath(path))
-    import soundfile as sf
-    import numpy as np
-    audio, sample_rate = sf.read(path, dtype="float32")
-    if getattr(audio, "ndim", 1) > 1:
-        audio = np.mean(audio, axis=1)
-    if int(sample_rate) != 16000:
-        raise RuntimeError("OpenVINO requiere audio PCM mono a 16 kHz")
-    _trace("audio.load.finish", samples=int(len(audio)), sample_rate=int(sample_rate))
-    return audio
-
-
-def transcribe_openvino(path, model_dir, device=DEFAULT_OPENVINO_DEVICE,
-                        chunk_seconds=DEFAULT_OPENVINO_CHUNK_SECONDS,
-                        ffmpeg_path=None, temp_root=None, source_start=0.0,
-                        source_duration=None):
-    """Transcribe Catalan locally with the verified OpenVINO Turbo model."""
-    _trace("python.start", pid=os.getpid(), python=sys.executable)
-    _trace("openvino.import.start")
-    import openvino as ov
-    import openvino_genai as ov_genai
-    _trace("openvino.import.finish", version=str(getattr(ov, "__version__", "unknown")))
-
-    _trace("media.duration.start", path=os.path.abspath(path))
+def transcribe_bsc(path, model_dir, ffmpeg_path, temp_root, source_start, source_duration,
+                   model_name=DEFAULT_MODEL, beam_size=DEFAULT_BEAM_SIZE):
+    """Extract exactly the timeline IN–OUT and transcribe it with BSC Whisper."""
     full_duration = _media_duration(path, ffmpeg_path)
     source_start = max(0.0, float(source_start or 0.0))
     if source_start >= full_duration:
@@ -323,154 +300,49 @@ def transcribe_openvino(path, model_dir, device=DEFAULT_OPENVINO_DEVICE,
     duration = min(full_duration - source_start,
                    float(source_duration) if source_duration is not None else full_duration)
     duration = max(0.001, duration)
-    _trace("media.duration.finish", seconds=duration)
-    chunks = []
-    position = 0.0
-    while position < duration:
-        actual_end = min(duration, position + chunk_seconds)
-        length = actual_end - position
-        if length < 0.5:
-            break
-        # Whisper's 30-second context is especially important for the final
-        # piece.  A short tail (for example 19 seconds after three full
-        # chunks) otherwise loses its linguistic context and often collapses
-        # to one token.  Re-read the last 30 seconds and emit only the part
-        # that was not already covered by the preceding chunk.
-        extract_start = position
-        emit_from = position
-        if length < chunk_seconds and position > 0.0:
-            extract_start = max(0.0, duration - chunk_seconds)
-            length = duration - extract_start
-            emit_from = position
-        chunks.append((extract_start, length, emit_from))
-        position += chunk_seconds
-    _emit("status", text=(
-        "OpenVINO Whisper Turbo: preparando %s fragmentos de %.0f s…" %
-        (len(chunks), chunk_seconds)))
-    model_path = os.path.abspath(model_dir)
-    _trace("model.validate", path=model_path,
-           encoder=os.path.isfile(os.path.join(model_path, "openvino_encoder_model.bin")))
-    if not os.path.isdir(model_path):
-        raise RuntimeError("No se encuentra el modelo OpenVINO: %s" % model_path)
-    available = {str(item).upper() for item in ov.Core().available_devices}
-    selected_device = str(device or "AUTO").upper()
-    if selected_device == "GPU" and "GPU" not in available:
-        selected_device = "CPU"
-    _trace("device.selected", requested=str(device), selected=selected_device,
-           available=sorted(available))
-    _emit("status", text=("Cargando OpenVINO Whisper Turbo en %s…" % selected_device))
-    _trace("pipeline.load.start", device=selected_device)
-    pipe = ov_genai.WhisperPipeline(model_path, selected_device)
-    _trace("pipeline.load.finish", device=selected_device)
-    config = ov_genai.WhisperGenerationConfig()
-    config.language = "<|ca|>"
-    config.task = "transcribe"
-    # Ask Whisper for its native segment boundaries.  Without these, the
-    # previous implementation spread all words across the whole 60-second
-    # extraction window, which caused subtitles to drift and then resync at
-    # every window boundary.
-    config.return_timestamps = True
-    config.max_new_tokens = 448
-    words, segments = [], []
-    completed = 0
-    temp_dir = os.path.join(temp_root or os.path.dirname(os.path.abspath(path)),
-                            ".smouk-openvino-audio")
+    temp_dir = os.path.join(temp_root, ".smouk-bsc-audio")
     os.makedirs(temp_dir, exist_ok=True)
-    for start, length, emit_from in chunks:
-        _trace("chunk.start", index=completed + 1, total=len(chunks),
-               start=start, seconds=length)
-        file_path = _audio_chunk(path, source_start + start, length, temp_dir, ffmpeg_path)
-        audio = _load_openvino_audio(file_path)
-        _trace("chunk.inference.start", index=completed + 1)
-        decoded = pipe.generate(audio, config)
-        _trace("chunk.inference.finish", index=completed + 1)
-        decoded_texts = [str(item).strip() for item in getattr(decoded, "texts", []) or []]
-        decoded_chunks = list(getattr(decoded, "chunks", []) or [])
-        text = " ".join(item for item in decoded_texts if item).strip()
-        if decoded_chunks:
-            text = " ".join(str(getattr(item, "text", "")).strip()
-                            for item in decoded_chunks).strip()
-        normalized = [token.casefold().strip(".,;:!?¿¡")
-                      for token in text.split()]
-        suspicious_catalan = (len(text) < 12 or
-                              (normalized and set(normalized) <= {"i", "y", "..."}))
-        if suspicious_catalan and ALLOW_SPANISH_FALLBACK:
-            # Some programme inserts switch briefly to Spanish.  The forced
-            # Catalan decoder answers with a lone "I" for those sections;
-            # retry only suspicious chunks in Spanish so real Catalan remains
-            # on the fast path.
-            spanish_config = ov_genai.WhisperGenerationConfig()
-            spanish_config.language = "<|es|>"
-            spanish_config.task = "transcribe"
-            spanish_config.return_timestamps = True
-            spanish_config.max_new_tokens = 448
-            spanish_decoded = pipe.generate(audio, spanish_config)
-            spanish_chunks = list(getattr(spanish_decoded, "chunks", []) or [])
-            spanish_text = " ".join(
-                str(getattr(item, "text", "")).strip() for item in spanish_chunks).strip()
-            if not spanish_text:
-                spanish_text = " ".join(str(item).strip()
-                                        for item in getattr(spanish_decoded, "texts", []) or []).strip()
-            if len(spanish_text) >= max(12, len(text) * 2):
-                decoded = spanish_decoded
-                decoded_chunks = spanish_chunks
-                text = spanish_text
-                _trace("chunk.language_fallback", index=completed + 1,
-                       from_language="ca", to_language="es")
-        # A long window that decodes to only a couple of characters is a
-        # decoder collapse, not a usable subtitle.  Never stretch that token
-        # over the entire window: doing so is what made the Timeline drift at
-        # 00:01:29.  The next/overlapping window can still provide real text.
-        discarded_suspicious = False
-        tokens = [token.casefold().strip(".,;:!?¿¡") for token in text.split()]
-        repeated_token = any(tokens.count(token) >= 8 for token in set(tokens) if token)
-        if (length >= 8.0 and (len(text.strip()) < 24 or repeated_token)):
-            _trace("chunk.discard_suspicious", index=completed + 1,
-                   seconds=length, text=text[:80])
-            decoded_chunks = []
-            text = ""
-            discarded_suspicious = True
-        if decoded_chunks:
-            for chunk_index, chunk in enumerate(decoded_chunks):
-                text = str(getattr(chunk, "text", "")).strip()
-                if not text:
-                    continue
-                relative_start = max(0.0, float(getattr(chunk, "start_ts", 0.0)))
-                relative_end = float(getattr(chunk, "end_ts", -1.0))
-                if relative_end <= relative_start:
-                    next_start = (float(getattr(decoded_chunks[chunk_index + 1],
-                                                  "start_ts", -1.0))
-                                  if chunk_index + 1 < len(decoded_chunks) else length)
-                    relative_end = (next_start if next_start > relative_start
-                                    else min(length, relative_start + 3.0))
-                absolute_start = start + relative_start
-                absolute_end = min(start + length, start + relative_end)
-                if absolute_end <= emit_from:
-                    continue
-                segments.append({
-                    "start": max(emit_from, absolute_start),
-                    "end": absolute_end,
-                    "text": text,
-                })
-            _trace("chunk.timestamps", index=completed + 1,
-                   segments=len(decoded_chunks))
-        elif not discarded_suspicious:
-            text = " ".join(str(item).strip() for item in decoded.texts).strip()
-            if text:
-                if start + length > emit_from:
-                    segments.append({"start": max(emit_from, start),
-                                     "end": start + length, "text": text})
-        completed += 1
-        _emit("progress", value=int(round(completed * 85.0 / len(chunks))))
-        _emit("status", text=(
-            "OpenVINO Whisper Turbo: fragmento %s/%s transcrito…" %
-            (completed, len(chunks))))
-        _emit("partial", words=len(text.split()), text=text[-400:])
-        try:
-            os.remove(file_path)
-        except OSError:
-            pass
-    return duration, words, sorted(segments, key=lambda value: value["start"])
+    audio_path = os.path.join(temp_dir, "timeline-in-out.wav")
+    _emit("trace", step="timeline_range", source_start=source_start,
+          source_end=source_start + duration, duration=duration)
+    _emit("status", text="Extracting the exact Timeline IN–OUT audio…")
+    _run_media_command([
+        _tool_path("ffmpeg.exe", ffmpeg_path), "-hide_banner", "-loglevel", "error", "-y",
+        "-ss", "%.6f" % source_start, "-t", "%.6f" % duration,
+        "-i", os.path.abspath(path), "-vn", "-ac", "1", "-ar", "16000",
+        "-c:a", "pcm_s16le", audio_path,
+    ])
+    from faster_whisper import WhisperModel
+    threads = recommended_cpu_threads()
+    _emit("status", text="Loading BSC Catalan Whisper…")
+    model = WhisperModel(model_name, device="cpu", compute_type="int8",
+                         cpu_threads=threads, download_root=os.path.abspath(model_dir))
+    _emit("status", text="Transcribing the extracted Timeline audio in Catalan…")
+    raw_segments, words = [], []
+    segments, info = model.transcribe(
+        audio_path, language="ca", task="transcribe", beam_size=max(1, int(beam_size)),
+        vad_filter=True, vad_parameters={"threshold": 0.35, "speech_pad_ms": 500},
+        word_timestamps=True, condition_on_previous_text=True,
+    )
+    for segment in segments:
+        raw = {"start": float(segment.start), "end": float(segment.end),
+               "text": str(segment.text).strip(), "words": []}
+        for word in getattr(segment, "words", None) or []:
+            raw["words"].append({"start": float(word.start), "end": float(word.end),
+                                 "word": str(word.word).strip()})
+        words.extend(_stable_segment_words(raw))
+        raw_segments.append(raw)
+        percent = int(round(min(duration, raw["end"]) * 85.0 / duration))
+        _emit("progress", value=percent)
+        _emit("partial", words=len(raw["words"]), text=raw["text"])
+    try:
+        os.remove(audio_path)
+    except OSError:
+        pass
+    return duration, words, raw_segments, {
+        "source_start": source_start, "source_end": source_start + duration,
+        "audio_duration": float(getattr(info, "duration", duration) or duration),
+    }
 
 
 def main():
@@ -479,25 +351,17 @@ def main():
     parser.add_argument("--output", required=True)
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--model-dir", required=True)
-    parser.add_argument("--openvino-device", default=os.environ.get(
-        "SMOUK_OPENVINO_DEVICE", DEFAULT_OPENVINO_DEVICE))
-    parser.add_argument("--openvino-chunk-seconds", type=float, default=float(
-        os.environ.get("SMOUK_OPENVINO_CHUNK_SECONDS", DEFAULT_OPENVINO_CHUNK_SECONDS)))
+    parser.add_argument("--beam-size", type=int, default=DEFAULT_BEAM_SIZE)
     parser.add_argument("--ffmpeg-path", default=os.environ.get("SMOUK_FFMPEG_PATH"))
     parser.add_argument("--start", type=float, default=0.0)
     parser.add_argument("--duration", type=float, default=None)
     args = parser.parse_args()
 
-    _trace("main.arguments", input=os.path.abspath(args.input),
-           output=os.path.abspath(args.output), model=args.model,
-           device=args.openvino_device, start=args.start, duration=args.duration)
-    model_path = os.path.join(os.path.abspath(args.model_dir), args.model)
     try:
-        duration, words, fallback_segments = transcribe_openvino(
-            args.input, model_path, args.openvino_device,
-            max(5.0, args.openvino_chunk_seconds), args.ffmpeg_path,
+        duration, words, fallback_segments, timeline_range = transcribe_bsc(
+            args.input, args.model_dir, args.ffmpeg_path,
             os.path.dirname(os.path.abspath(args.output)), args.start,
-            args.duration)
+            args.duration, args.model, args.beam_size)
     except Exception as exc:
         _emit("error", message=str(exc), traceback=traceback.format_exc())
         raise
@@ -525,6 +389,8 @@ def main():
         "cues": cues,
         "srt": srt,
         "vtt": vtt,
+        "timeline_range": timeline_range,
+        "raw_segments": fallback_segments,
     }
     output = os.path.abspath(args.output)
     os.makedirs(os.path.dirname(output), exist_ok=True)
@@ -532,6 +398,12 @@ def main():
     _emit("status", text="Saving the transcription and subtitle files…")
     with open(output, "w", encoding="utf-8") as handle:
         json.dump(result, handle, ensure_ascii=False, indent=2)
+    raw_output = os.path.splitext(output)[0] + ".whisper-raw.json"
+    with open(raw_output, "w", encoding="utf-8") as handle:
+        json.dump({"source": result["source"], "timeline_range": timeline_range,
+                   "segments": fallback_segments}, handle, ensure_ascii=False, indent=2)
+    _emit("trace", step="raw_transcript.saved", path=raw_output,
+          segments=len(fallback_segments))
     with open(os.path.splitext(output)[0] + ".srt", "w", encoding="utf-8") as handle:
         handle.write(srt)
     with open(os.path.splitext(output)[0] + ".vtt", "w", encoding="utf-8") as handle:

@@ -802,6 +802,14 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
 - Protege New, Open y Save frente a backups generados por las versiones de OCR
 
+### 0.0.99
+
+La transcripció es refactoritza sobre el model català BSC, que conserva les
+marques de paraula. Abans de transcriure, SMOUK extreu estrictament l'àudio
+entre l'IN i l'OUT del clip del Timeline. El resultat brut de Whisper es desa
+com `*.whisper-raw.json` abans de crear cap clip de subtítol, per separar de
+forma verificable un error de reconeixement d'un error de col·locació.
+
 ### 0.0.98
 
 La transcripció OpenVINO manté el català com a idioma de treball i ja no
