@@ -35,13 +35,6 @@ vertical y la primera automatización de subtítulos en catalán.
 Usamos versiones `0.0.x` durante esta etapa inicial. Cada cambio funcional o
 de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
-### 0.0.104
-
-- Muestra en tiempo real la fase y los segundos transcurridos durante la
-  extracción, carga, transcripción y colocación de subtítulos.
-- Reactiva una barra de progreso normal actualizada exclusivamente desde el
-  temporizador Qt, sin escribir widgets desde el proceso Python.
-
 ### 0.0.103
 
 - Amplía el contorno negro de los subtítulos verticales a 2,9 píxeles.
