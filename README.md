@@ -35,6 +35,13 @@ vertical y la primera automatización de subtítulos en catalán.
 Usamos versiones `0.0.x` durante esta etapa inicial. Cada cambio funcional o
 de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
+### 0.0.105
+
+- Oculta la barra de progreso durante la transcripción para evitar los
+  cuelgues nativos observados durante la inferencia.
+- Mantiene el detalle de fase, porcentaje y segundos transcurridos en la
+  etiqueta de estado, incluida la colocación de cada subtítulo.
+
 ### 0.0.104
 
 - Muestra en tiempo real la fase y los segundos transcurridos durante la

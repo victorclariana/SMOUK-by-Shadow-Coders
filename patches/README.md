@@ -119,3 +119,4 @@ git am /path/to/patches/0001-FFmpeg-9-*.patch
 | `0104-SMOUK-0.0.102-vertical-subtitle-style.patch` | **openshot-qt** | Moves generated subtitles to the lower-middle safe band, enlarges the heavy white type, and applies a 2.6 px black outline. |
 | `0105-SMOUK-0.0.103-subtitle-outline-2.9px.patch` | **openshot-qt** | Enlarges the generated subtitle outline from 2.6 to 2.9 px. |
 | `0106-SMOUK-0.0.104-safe-subtitle-progress.patch` | **scripts / openshot-qt** | Adds elapsed-second phase messages and a normal progress bar updated only by the Qt polling timer, including Timeline placement. |
+| `0107-SMOUK-0.0.105-text-only-subtitle-progress.patch` | **openshot-qt** | Removes live QProgressBar updates and reports percentage, phase, and elapsed seconds through the safe status label. |
