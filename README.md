@@ -35,6 +35,12 @@ vertical y la primera automatización de subtítulos en catalán.
 Usamos versiones `0.0.x` durante esta etapa inicial. Cada cambio funcional o
 de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
+### 0.0.102
+
+- Ajusta los subtítulos verticales a la banda útil inferior del formato 9:16,
+  aumenta la tipografía y aplica un borde negro grueso inspirado en la
+  referencia de emisión.
+
 ### 0.0.101
 
 - Se rehízo el flujo local de subtítulos: extracción estricta del IN–OUT del

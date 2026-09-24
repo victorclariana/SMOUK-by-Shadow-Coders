@@ -299,8 +299,8 @@ class TitleRuntimeTests(unittest.TestCase):
         self.assertIn('y="540.00"', svg)
         self.assertEqual(effect['top']['Points'][0]['co']['Y'], v.VERTICAL_CAPTION_TOP)
         self.assertEqual(effect['bottom']['Points'][0]['co']['Y'], v.VERTICAL_CAPTION_BOTTOM)
-        self.assertLess(v.VERTICAL_TITLE_SLOT_RATIOS[4], v.VERTICAL_SUBTITLE_CENTER)
-        self.assertGreater(v.VERTICAL_TITLE_SLOT_RATIOS[5], v.VERTICAL_SUBTITLE_CENTER)
+        self.assertLess(v.VERTICAL_TITLE_SLOT_RATIOS[5], v.VERTICAL_SUBTITLE_CENTER)
+        self.assertGreater(v.VERTICAL_TITLE_SLOT_RATIOS[6], v.VERTICAL_SUBTITLE_CENTER)
         self.assertGreater(v.VERTICAL_TITLE_SLOT_RATIOS[6], v.VERTICAL_TITLE_SLOT_RATIOS[5])
 
     def test_persistent_title_blind_spots_are_merged(self):
