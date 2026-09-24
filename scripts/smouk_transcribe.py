@@ -15,6 +15,8 @@ DEFAULT_BEAM_SIZE = 3
 MAX_SUBTITLE_LINE_CHARS = 26
 MAX_SUBTITLE_CUE_CHARS = MAX_SUBTITLE_LINE_CHARS * 2
 MIN_SUBTITLE_CUE_SECONDS = 1.0
+MAX_WORD_SECONDS = 2.5
+MAX_CUE_GAP_SECONDS = 0.8
 APOSTROPHES = ("'", "’", "ʼ")
 TRAILING_REPEAT_WORDS = {
     "a", "al", "de", "del", "el", "els", "en", "i", "la", "les",
@@ -101,11 +103,56 @@ def _balanced_lines(text, width=MAX_SUBTITLE_LINE_CHARS):
                          break_on_hyphens=False)
 
 
+def _cue_line_count(text, width=MAX_SUBTITLE_LINE_CHARS):
+    return len(_balanced_lines(text, width=width))
+
+
+def _is_sentence_end(word):
+    return str(word).rstrip().endswith((".", "?", "!", "…"))
+
+
+def _clean_subtitle_text(text):
+    """Normalize token joins emitted by Whisper without changing wording."""
+    value = " ".join(str(text).split())
+    value = re.sub(r"\s+([,.;:!?¿¡%])", r"\1", value)
+    value = re.sub(r"([\wÀ-ÖØ-öø-ÿ])\s+([-])\s*([\wÀ-ÖØ-öø-ÿ])", r"\1\2\3", value)
+    value = re.sub(r"\s+([’'ʼ])\s*", r"\1", value)
+    return value
+
+
+def _rebalance_orphan_words(cues, max_chars, max_seconds, line_width):
+    """Move one-word sentence tails to the following/previous screen.
+
+    Broadcast subtitles should not leave a single conjunction or the first
+    word after a full stop stranded on its own.  This pass is deliberately
+    bounded: it never retries a merge indefinitely and never changes native
+    timestamps outside the two cues involved.
+    """
+    if not cues:
+        return cues
+    result = [dict(cue) for cue in cues]
+    for index in range(len(result) - 1):
+        left, right = result[index], result[index + 1]
+        right_words = str(right.get("text", "")).replace("\n", " ").split()
+        left_words = str(left.get("text", "")).replace("\n", " ").split()
+        if len(right_words) != 1 or not left_words:
+            continue
+        candidate = " ".join(left_words + right_words)
+        if (_cue_line_count(candidate, line_width) <= 2 and
+                len(candidate) <= max_chars and
+                right["end"] - left["start"] <= max_seconds):
+            left["text"] = "\n".join(_balanced_lines(candidate, line_width))
+            left["end"] = right["end"]
+            result.pop(index + 1)
+            return _rebalance_orphan_words(result, max_chars, max_seconds, line_width)
+    return result
+
+
 def words_to_cues(words, max_chars=MAX_SUBTITLE_CUE_CHARS,
                   max_seconds=6.0, pause_seconds=0.55,
                   line_width=MAX_SUBTITLE_LINE_CHARS,
                   min_seconds=MIN_SUBTITLE_CUE_SECONDS):
-    """Group timestamped words into readable two-line subtitle cues."""
+    """Group aligned words into stable, readable two-line subtitle cues."""
     clean = []
     for word in words:
         text = str(word.get("word", "")).strip()
@@ -132,7 +179,7 @@ def words_to_cues(words, max_chars=MAX_SUBTITLE_CUE_CHARS,
     def finish():
         if not current:
             return
-        cue_text = " ".join(item["word"] for item in current)
+        cue_text = _clean_subtitle_text(" ".join(item["word"] for item in current))
         cues.append({
             "start": current[0]["start"],
             "end": max(current[-1]["end"], current[0]["start"] + 0.2),
@@ -154,14 +201,14 @@ def words_to_cues(words, max_chars=MAX_SUBTITLE_CUE_CHARS,
             word["end"] - current[0]["start"] > max_seconds
         ))
         sentence_break = bool(current and current_duration >= min_seconds and
-                              current[-1]["word"].endswith((".", "?", "!")) and
-                              word["start"] - current[-1]["end"] >= 0.18)
+                              _is_sentence_end(current[-1]["word"]))
         if long_pause or too_long or sentence_break:
             finish()
         current.append(word)
     finish()
-    return _merge_short_cues(cues, max_chars=max_chars, max_seconds=max_seconds,
+    cues = _merge_short_cues(cues, max_chars=max_chars, max_seconds=max_seconds,
                              line_width=line_width, min_seconds=min_seconds)
+    return _rebalance_orphan_words(cues, max_chars, max_seconds, line_width)
 
 
 def _merge_short_cues(cues, max_chars=MAX_SUBTITLE_CUE_CHARS,
@@ -213,28 +260,44 @@ def _usable_word(text):
 
 
 def _stable_segment_words(segment):
-    """Preserve valid Whisper word marks and repair only an invalid word."""
+    """Return monotonic word marks, rebuilding a damaged segment when needed.
+
+    Whisper occasionally assigns a long silent interval to one word.  Clamping
+    that word alone leaves a hole and shifts every following subtitle.  When a
+    segment contains an impossible mark, all of its words are therefore
+    re-timed proportionally inside the trusted segment boundaries.  Clean
+    segments retain the model's native marks.
+    """
     start, end = float(segment["start"]), float(segment["end"])
     words = [dict(item) for item in segment.get("words", []) if _usable_word(item.get("word"))]
     if not words:
         return []
-    repaired = []
+    native = []
     previous_end = start
-    for index, item in enumerate(words):
-        item["start"] = max(previous_end, float(item["start"]))
-        item["end"] = float(item["end"])
-        next_start = (float(words[index + 1]["start"])
-                      if index + 1 < len(words) else end)
-        # Faster-Whisper can assign an entire silent stretch to one ordinary
-        # word. Clamp that one word only: the surrounding words retain their
-        # native, accurate marks instead of being shifted over the segment.
-        if item["end"] <= item["start"] or item["end"] - item["start"] > 2.5:
-            item["end"] = min(next_start, item["start"] + 1.0)
-            _emit("trace", step="word_timestamp.clamped", word=item["word"],
-                  start=item["start"], end=item["end"])
-        if item["end"] > item["start"]:
-            repaired.append(item)
-            previous_end = item["end"]
+    damaged = False
+    for item in words:
+        item_start = float(item.get("start", start))
+        item_end = float(item.get("end", item_start))
+        if item_start < previous_end or item_end <= item_start or item_end - item_start > MAX_WORD_SECONDS:
+            damaged = True
+        native.append({"start": item_start, "end": item_end, "word": item["word"]})
+        previous_end = max(previous_end, item_end)
+    if not damaged:
+        return native
+
+    weights = [max(1, len(re.sub(r"[^\wÀ-ÖØ-öø-ÿ]", "", item["word"])))
+               for item in native]
+    total = float(sum(weights)) or 1.0
+    cursor = start
+    repaired = []
+    for item, weight in zip(native, weights):
+        item_start = cursor
+        item_end = min(end, item_start + (end - start) * weight / total)
+        repaired.append({"start": item_start, "end": max(item_start + 0.02, item_end),
+                         "word": item["word"]})
+        cursor = item_end
+    _emit("trace", step="word_timestamp.segment_rebuilt", segment_start=start,
+          segment_end=end, words=len(repaired))
     return repaired
 
 
@@ -255,6 +318,36 @@ def cues_to_vtt(cues):
         end = _timecode(cue["end"]).replace(",", ".")
         blocks.append(f"{start} --> {end}\n{cue['text']}")
     return "\n\n".join(blocks) + ("\n" if blocks else "")
+
+
+def validate_cues(cues, duration):
+    """Validate the final subtitle contract before OpenShot sees it."""
+    ordered = sorted(cues, key=lambda item: float(item.get("start", 0.0)))
+    gaps, overlaps, out_of_range = [], [], []
+    previous_end = None
+    for cue in ordered:
+        start = float(cue.get("start", 0.0))
+        end = float(cue.get("end", start))
+        if start < -0.01 or end > float(duration) + 0.05:
+            out_of_range.append({"start": start, "end": end})
+        if previous_end is not None:
+            delta = start - previous_end
+            if delta < -0.01:
+                overlaps.append({"start": start, "previous_end": previous_end})
+            elif delta > MAX_CUE_GAP_SECONDS:
+                gaps.append({"start": previous_end, "end": start, "seconds": delta})
+        previous_end = max(previous_end or end, end)
+    validation = {
+        "cue_count": len(ordered),
+        "gaps_over_threshold": gaps,
+        "overlaps": overlaps,
+        "out_of_range": out_of_range,
+        "single_word_cues": sum(
+            1 for cue in ordered
+            if len(str(cue.get("text", "")).replace("\n", " ").split()) <= 1),
+        "passed": not overlaps and not out_of_range,
+    }
+    return validation
 
 
 def _run_media_command(command):
@@ -316,7 +409,8 @@ def transcribe_bsc(path, model_dir, ffmpeg_path, temp_root, source_start, source
     segments, info = model.transcribe(
         audio_path, language="ca", task="transcribe", beam_size=max(1, int(beam_size)),
         vad_filter=True, vad_parameters={"threshold": 0.35, "speech_pad_ms": 500},
-        word_timestamps=True, condition_on_previous_text=True,
+        word_timestamps=True, condition_on_previous_text=False,
+        without_timestamps=False,
     )
     for segment in segments:
         raw = {"start": float(segment.start), "end": float(segment.end),
@@ -324,7 +418,17 @@ def transcribe_bsc(path, model_dir, ffmpeg_path, temp_root, source_start, source
         for word in getattr(segment, "words", None) or []:
             raw["words"].append({"start": float(word.start), "end": float(word.end),
                                  "word": str(word.word).strip()})
-        words.extend(_stable_segment_words(raw))
+        segment_words = _stable_segment_words(raw)
+        # A very short tail made only of isolated tokens is a common Whisper
+        # end-of-file hallucination. Do not turn it into visible subtitles.
+        lexical = [item for item in segment_words
+                   if len(re.sub(r"[^\wÀ-ÖØ-öø-ÿ]", "", item["word"])) >= 3]
+        if (raw["end"] - raw["start"] < 1.2 and len(segment_words) >= 8 and
+                len(lexical) <= 2):
+            _emit("trace", step="segment.discarded_hallucination", start=raw["start"],
+                  end=raw["end"], text=raw["text"])
+            continue
+        words.extend(segment_words)
         raw_segments.append(raw)
         percent = int(round(min(duration, raw["end"]) * 85.0 / duration))
         _emit("progress", value=percent)
@@ -373,6 +477,10 @@ def main():
             fallback_segments[-1]["text"])
 
     cues = words_to_cues(words) if words else segments_to_cues(fallback_segments)
+    validation = validate_cues(cues, duration)
+    _emit("trace", step="subtitle.validation", **validation)
+    if validation["overlaps"] or validation["out_of_range"]:
+        raise RuntimeError("La validación temporal de subtítulos ha detectado solapamientos o tiempos fuera del IN–OUT")
     srt = cues_to_srt(cues)
     vtt = cues_to_vtt(cues)
     result = {
@@ -385,6 +493,7 @@ def main():
         "vtt": vtt,
         "timeline_range": timeline_range,
         "raw_segments": fallback_segments,
+        "validation": validation,
     }
     output = os.path.abspath(args.output)
     os.makedirs(os.path.dirname(output), exist_ok=True)

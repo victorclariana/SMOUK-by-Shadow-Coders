@@ -35,6 +35,16 @@ vertical y la primera automatización de subtítulos en catalán.
 Usamos versiones `0.0.x` durante esta etapa inicial. Cada cambio funcional o
 de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
+### 0.0.101
+
+- Se rehízo el flujo local de subtítulos: extracción estricta del IN–OUT del
+  Timeline, reconocimiento BSC con contexto controlado, reparación de marcas
+  temporales imposibles y validación antes de crear clips.
+- Los subtítulos se agrupan en dos líneas, respetan los finales de frase y
+  evitan dejar una sola palabra aislada entre pantallas.
+- Se guardan la transcripción bruta, el resultado final y un informe de
+  validación temporal antes de insertar nada en OpenShot.
+
 ### 0.0.1
 
 - Se creó la base del proyecto SMOUK sobre OpenShot, junto con el lanzador de
