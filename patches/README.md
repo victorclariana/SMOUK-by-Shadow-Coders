@@ -117,3 +117,4 @@ git am /path/to/patches/0001-FFmpeg-9-*.patch
 | `0102-SMOUK-0.0.100-local-word-timestamp-repair.patch` | **scripts** | Limits only impossible individual BSC word durations instead of redistributing a whole valid segment. |
 | `0103-SMOUK-0.0.101-reliable-subtitle-cues.patch` | **scripts / openshot-qt** | Rebuilds damaged word-timestamp segments, disables decoder carry-over, groups sentence-aware two-line cues, removes orphan words, validates gaps/overlaps, and records the raw/final timing report before Timeline placement. |
 | `0104-SMOUK-0.0.102-vertical-subtitle-style.patch` | **openshot-qt** | Moves generated subtitles to the lower-middle safe band, enlarges the heavy white type, and applies a 2.6 px black outline. |
+| `0105-SMOUK-0.0.103-subtitle-outline-2.9px.patch` | **openshot-qt** | Enlarges the generated subtitle outline from 2.6 to 2.9 px. |
