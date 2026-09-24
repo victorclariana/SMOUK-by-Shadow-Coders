@@ -42,6 +42,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   en amarillo y permite editarlos manualmente. Los timecodes originales se
   conservan y el botón Aceptar reutiliza el reparto de subtítulos existente.
 
+### 0.0.105
+
+- Recorta los cues finales de Whisper al OUT exacto del Timeline antes de la
+  validación, evitando que una cola fraccional fuera de rango bloquee la
+  transcripción y la ventana de revisión.
+
 ### 0.0.103
 
 - Amplía el contorno negro de los subtítulos verticales a 2,9 píxeles.

@@ -350,6 +350,25 @@ def validate_cues(cues, duration):
     return validation
 
 
+def clamp_cues_to_duration(cues, duration):
+    """Clip Whisper's fractional tail to the exact extracted IN–OUT range."""
+    limit = max(0.001, float(duration))
+    clamped = []
+    changed = 0
+    for cue in cues:
+        start = max(0.0, min(limit, float(cue.get("start", 0.0))))
+        end = max(0.0, min(limit, float(cue.get("end", start))))
+        if end <= start:
+            changed += 1
+            continue
+        if start != float(cue.get("start", start)) or end != float(cue.get("end", end)):
+            changed += 1
+        item = dict(cue)
+        item["start"], item["end"] = start, end
+        clamped.append(item)
+    return clamped, changed
+
+
 def _run_media_command(command):
     _trace("media.command.start", command=[str(item) for item in command])
     completed = subprocess.run(command, stdout=subprocess.PIPE,
@@ -477,6 +496,10 @@ def main():
             fallback_segments[-1]["text"])
 
     cues = words_to_cues(words) if words else segments_to_cues(fallback_segments)
+    cues, clamped_count = clamp_cues_to_duration(cues, duration)
+    if clamped_count:
+        _emit("trace", step="subtitle.cues_clamped_to_timeline_out",
+              count=clamped_count, duration=duration)
     validation = validate_cues(cues, duration)
     _emit("trace", step="subtitle.validation", **validation)
     if validation["overlaps"] or validation["out_of_range"]:
