@@ -92,6 +92,7 @@ def main():
     args = parser.parse_args()
     source = json.loads(Path(args.input).read_text(encoding="utf-8"))
     outputs = source.get("outputs", [])
+    print(json.dumps({"event": "status", "text": "Loading ParlaBE Catalan correction model…"}, ensure_ascii=False), flush=True)
     AutoTokenizer, AutoModelForSeq2SeqLM = _load_runtime()
     model_root = Path(args.model_dir)
     cache_dir = model_root / "parlabe"
@@ -106,6 +107,8 @@ def main():
     model.eval()
 
     review = []
+    total = sum(len(_sentences_for_cues(result.get("cues", []))) for result in outputs)
+    completed = 0
     for result_index, result in enumerate(outputs):
         for sentence_index, item in enumerate(_sentences_for_cues(result.get("cues", []))):
             original = item["original"]
@@ -119,6 +122,10 @@ def main():
             corrected = tokenizer.decode(generated[0], skip_special_tokens=True).strip() or original
             if corrected.lower().startswith(("corregeix la frase:", "corregeix només")):
                 corrected = original
+            completed += 1
+            print(json.dumps({"event": "status", "text":
+                              f"Reviewing ParlaBE sentence {completed} of {total}…"},
+                             ensure_ascii=False), flush=True)
             review.append({
                 "result_index": result_index,
                 "sentence_index": sentence_index,
@@ -129,6 +136,7 @@ def main():
     payload = {"outputs": outputs, "sentences": review,
                "model": MODEL_ID, "times_preserved": True}
     Path(args.output).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps({"event": "complete", "sentences": len(review)}, ensure_ascii=False), flush=True)
 
 
 if __name__ == "__main__":

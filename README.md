@@ -48,6 +48,11 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   validación, evitando que una cola fraccional fuera de rango bloquee la
   transcripción y la ventana de revisión.
 
+### 0.0.106
+
+- Añade estado visible durante la carga y revisión de ParlaBE para distinguir
+  la corrección Python de un cuelgue y mostrar el avance por frase.
+
 ### 0.0.103
 
 - Amplía el contorno negro de los subtítulos verticales a 2,9 píxeles.

@@ -120,3 +120,4 @@ git am /path/to/patches/0001-FFmpeg-9-*.patch
 | `0105-SMOUK-0.0.103-subtitle-outline-2.9px.patch` | **openshot-qt** | Enlarges the generated subtitle outline from 2.6 to 2.9 px. |
 | `0106-SMOUK-0.0.104-transcription-review-dialog.patch` | **scripts / openshot-qt** | Adds a ParlaBE sentence-review dialog before subtitle Timeline placement, preserving original timecodes and allowing manual edits. |
 | `0107-SMOUK-0.0.105-clamp-subtitle-cues-to-timeline-out.patch` | **scripts / openshot-qt** | Clamps fractional Whisper tail cues to the exact Timeline OUT before validation. |
+| `0108-SMOUK-0.0.106-parlabe-review-status.patch` | **scripts / openshot-qt** | Reports ParlaBE model loading and sentence-review progress in the Subtitles panel. |
