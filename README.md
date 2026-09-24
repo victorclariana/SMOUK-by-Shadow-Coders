@@ -35,6 +35,13 @@ vertical y la primera automatización de subtítulos en catalán.
 Usamos versiones `0.0.x` durante esta etapa inicial. Cada cambio funcional o
 de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
+### 0.0.104
+
+- Añade una revisión intermedia de la transcripción catalana: ParlaBE corrige
+  frases antes de crear los clips del Timeline, muestra los cambios resaltados
+  en amarillo y permite editarlos manualmente. Los timecodes originales se
+  conservan y el botón Aceptar reutiliza el reparto de subtítulos existente.
+
 ### 0.0.103
 
 - Amplía el contorno negro de los subtítulos verticales a 2,9 píxeles.
