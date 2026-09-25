@@ -1,0 +1,379 @@
+From d48e07fe1c29e068d858cc4d78aaaeb2aebb2f92 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 20:10:39 +0200
+Subject: [PATCH] SMOUK 0.0.124 add persistent PSD mask dock
+
+---
+ src/windows/main_window.py     |  26 +++-
+ src/windows/verticalization.py | 276 +++++++++++++++++++++++++++++++++
+ 2 files changed, 301 insertions(+), 1 deletion(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index d7c68981d..319b6ee13 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -53,6 +53,7 @@ from qt_api import (
+     QApplication, QMenu, QMessageBox, QDialog, QFileDialog, QInputDialog,
+     QAction, QActionGroup, QSizePolicy,
+     QStatusBar, QToolBar, QToolButton,
++    QHBoxLayout, QLabel,
+     QLineEdit, QComboBox, QTextEdit, QShortcut, QTabBar, QTabWidget, QAbstractButton,
+     QPlainTextEdit, QSpinBox, QDoubleSpinBox
+ )
+@@ -102,7 +103,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.123"
++SMOUK_VERSION = "0.0.124"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+@@ -5621,6 +5622,29 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         self.dockVerticalization.setFocusPolicy(Qt.NoFocus)
+         self.dockVerticalization.setMinimumWidth(VERTICALIZATION_DOCK_MIN_WIDTH)
+         self.dockVerticalization.setWidget(self.verticalization_content)
++        # Keep the MASK settings affordance in the dock title bar, where it
++        # remains visible while the long verticalization panel is scrolled.
++        title_bar = QWidget(self.dockVerticalization)
++        title_layout = QHBoxLayout(title_bar)
++        title_layout.setContentsMargins(8, 0, 2, 0)
++        title_layout.setSpacing(2)
++        title_layout.addWidget(QLabel(_("Verticalization"), title_bar))
++        title_layout.addStretch(1)
++        mask_settings_button = QToolButton(title_bar)
++        mask_settings_button.setObjectName("verticalizationMaskTitleSettings")
++        mask_settings_button.setText("⚙")
++        mask_settings_button.setToolTip(_("MASK settings"))
++        mask_settings_button.setAutoRaise(True)
++        mask_settings_button.clicked.connect(self.verticalization_content._open_mask_settings)
++        title_layout.addWidget(mask_settings_button)
++        close_button = QToolButton(title_bar)
++        close_button.setObjectName("verticalizationDockClose")
++        close_button.setText("×")
++        close_button.setToolTip(_("Close dock"))
++        close_button.setAutoRaise(True)
++        close_button.clicked.connect(self.dockVerticalization.close)
++        title_layout.addWidget(close_button)
++        self.dockVerticalization.setTitleBarWidget(title_bar)
+         self.dockVerticalization.hide()
+         self.addDockWidget(Qt.RightDockWidgetArea, self.dockVerticalization)
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 73c8abc16..f18dbc22f 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -37,6 +37,7 @@ from difflib import SequenceMatcher
+ 
+ from qt_api import (
+     Qt, QtCore, QWidget, QFrame, QLabel, QScrollArea, QToolButton, QVBoxLayout,
++    QHBoxLayout,
+     QCheckBox, QComboBox, QPushButton, QProgressBar, QSlider, QMessageBox,
+     QProcess, QImage, QFileDialog, show_open_file_dialog, QDialog, QTextEdit,
+     QDialogButtonBox, QTextCursor, QTextCharFormat, QColor,
+@@ -318,6 +319,67 @@ class TranscriptionReviewDialog(QDialog):
+         self.accept()
+ 
+ 
++class MaskSettingsDialog(QDialog):
++    """Non-blocking configuration dialog for the optional PSD readability mask."""
++
++    def __init__(self, owner, parent=None):
++        super().__init__(parent or owner)
++        self.owner = owner
++        self.setWindowTitle("MASK")
++        self.setMinimumWidth(460)
++        layout = QVBoxLayout(self)
++        title = QLabel("MASK", self)
++        title.setStyleSheet("font-weight: bold; font-size: 16px;")
++        layout.addWidget(title)
++        description = QLabel(
++            "Carga una máscara PSD transparente centrada en la zona 9:16. "
++            "La pista queda por encima del vídeo y por debajo de títulos y subtítulos.", self)
++        description.setWordWrap(True)
++        layout.addWidget(description)
++
++        row = QHBoxLayout()
++        self.browse = QPushButton("Browse PSD", self)
++        self.browse.clicked.connect(lambda: owner._on_browse_mask(self))
++        row.addWidget(self.browse)
++        self.path_label = QLabel("No PSD selected", self)
++        self.path_label.setWordWrap(True)
++        row.addWidget(self.path_label, 1)
++        layout.addLayout(row)
++
++        self.x_label = QLabel(self)
++        self.y_label = QLabel(self)
++        self.x_slider = QSlider(Qt.Horizontal, self)
++        self.y_slider = QSlider(Qt.Horizontal, self)
++        for slider in (self.x_slider, self.y_slider):
++            slider.setRange(-100, 100)
++            slider.setSingleStep(1)
++        self.x_slider.valueChanged.connect(lambda value: owner._on_mask_position_changed("x", value, self))
++        self.y_slider.valueChanged.connect(lambda value: owner._on_mask_position_changed("y", value, self))
++        layout.addWidget(self.x_label)
++        layout.addWidget(self.x_slider)
++        layout.addWidget(self.y_label)
++        layout.addWidget(self.y_slider)
++
++        buttons = QDialogButtonBox(QDialogButtonBox.Close, parent=self)
++        buttons.rejected.connect(self.close)
++        buttons.accepted.connect(self.close)
++        layout.addWidget(buttons)
++        self.refresh_from_settings()
++
++    def refresh_from_settings(self):
++        settings = get_app().get_settings()
++        path = str(settings.get("smouk_mask_path_v1") or "")
++        self.path_label.setText(path or "No PSD selected")
++        self.x_slider.blockSignals(True)
++        self.y_slider.blockSignals(True)
++        self.x_slider.setValue(int(round(float(settings.get("smouk_mask_x_v1") or 0.0) * 100)))
++        self.y_slider.setValue(int(round(float(settings.get("smouk_mask_y_v1") or 0.0) * 100)))
++        self.x_slider.blockSignals(False)
++        self.y_slider.blockSignals(False)
++        self.x_label.setText("X: %+.2f (centrado = 0.00)" % (self.x_slider.value() / 100.0))
++        self.y_label.setText("Y: %+.2f (centrado = 0.00)" % (self.y_slider.value() / 100.0))
++
++
+ class VerticalizationDockContent(QWidget):
+     """SMOUK verticalization dock, organized as collapsible sections.
+ 
+@@ -333,6 +395,7 @@ class VerticalizationDockContent(QWidget):
+         ("titles", "Titles", "Add identifying titles."),
+         ("subtitles", "Subtitles", "Generate Catalan subtitles."),
+         ("logo", "Logo", "Add a company logo overlay."),
++        ("mask", "Mask", "Add a transparent PSD readability mask."),
+         ("poster", "Poster", "Export a PNG poster from a frame."),
+         ("export", "Export", "Export the vertical video."),
+     ]
+@@ -383,6 +446,7 @@ class VerticalizationDockContent(QWidget):
+         self._build_auto_reframe_controls(_)
+         self._build_transcription_controls(_)
+         self._build_logo_controls(_)
++        self._build_mask_controls(_)
+         self._build_source_import_controls(_)
+         self._build_title_import_controls(_)
+         self._connect_reframe_sync()
+@@ -535,6 +599,218 @@ class VerticalizationDockContent(QWidget):
+         self.sections["logo"].add_widget(self.logo_opacity_label)
+         self.sections["logo"].add_widget(self.logo_opacity_slider)
+ 
++    def _build_mask_controls(self, _):
++        """Add the persistent PSD mask controls without touching subtitles."""
++        self.btn_mask_settings = QPushButton("⚙  MASK settings", self)
++        self.btn_mask_settings.setObjectName("verticalizationMaskSettings")
++        self.btn_mask_settings.clicked.connect(self._open_mask_settings)
++        self.btn_mask_visibility = QPushButton("Show mask in Timeline", self)
++        self.btn_mask_visibility.setObjectName("verticalizationMaskVisibility")
++        self.btn_mask_visibility.setCheckable(True)
++        self.btn_mask_visibility.toggled.connect(self._on_mask_visibility_changed)
++        self.mask_results = QLabel("No PSD mask has been added.", self)
++        self.mask_results.setObjectName("verticalizationMaskResults")
++        self.mask_results.setWordWrap(True)
++        self.sections["mask"].add_widget(self.btn_mask_settings)
++        self.sections["mask"].add_widget(self.btn_mask_visibility)
++        self.sections["mask"].add_widget(self.mask_results)
++        self._mask_dialog = None
++        self._load_mask_settings()
++
++    @staticmethod
++    def _mask_settings():
++        return get_app().get_settings()
++
++    @staticmethod
++    def _save_mask_setting(key, value):
++        settings = get_app().get_settings()
++        settings.set(key, value)
++        if hasattr(settings, "save"):
++            settings.save()
++
++    @staticmethod
++    def _mask_track_number():
++        """Keep the mask above ordinary video but below generated overlays."""
++        for track in Track.filter():
++            if track.data.get("smouk_mask_track"):
++                return int(track.data.get("number", 0))
++        video_numbers = []
++        for clip in VerticalizationDockContent._timeline_video_clips():
++            try:
++                video_numbers.append(int(clip.data.get("layer", clip.data.get("number", 0))))
++            except (TypeError, ValueError):
++                pass
++        number = max(video_numbers or [0]) + 100000
++        # Generated titles, logos and subtitles use million-scale layers.
++        track = Track()
++        track.data = {
++            "number": number, "y": 0, "label": "SMOUK Mask", "lock": False,
++            "smouk_mask_track": True,
++        }
++        track.save()
++        return number
++
++    @staticmethod
++    def _clear_generated_mask():
++        for clip in Clip.filter():
++            if clip.data.get("smouk_mask_clip"):
++                clip.delete()
++
++    @staticmethod
++    def _mask_clip():
++        return next((clip for clip in Clip.filter()
++                     if clip.data.get("smouk_mask_clip")), None)
++
++    def _mask_duration_and_position(self):
++        clips = self._timeline_video_clips()
++        if not clips:
++            return 0.0, 0.0
++        start = min(float(clip.data.get("position", 0.0)) for clip in clips)
++        end = max(
++            float(clip.data.get("position", 0.0)) +
++            max(0.0, float(clip.data.get("end", 0.0)) - float(clip.data.get("start", 0.0)))
++            for clip in clips)
++        return start, max(0.04, end - start)
++
++    @staticmethod
++    def _mask_transform(x=0.0, y=0.0):
++        point = lambda value: {"Points": [{
++            "co": {"X": 1.0, "Y": float(value)},
++            "interpolation": openshot.BEZIER,
++        }]}
++        return {
++            # PSD templates are authored at the 608x1080 guide size. Native
++            # scale avoids any horizontal compression or typography changes.
++            "scale": openshot.SCALE_NONE,
++            "gravity": openshot.GRAVITY_CENTER,
++            "location_x": point(x),
++            "location_y": point(y),
++            "smouk_mask_vertical_safe": True,
++        }
++
++    def _load_mask_settings(self):
++        settings = self._mask_settings()
++        visible = bool(settings.get("smouk_mask_visible_v1"))
++        self.btn_mask_visibility.blockSignals(True)
++        self.btn_mask_visibility.setChecked(visible)
++        self.btn_mask_visibility.setText("Hide mask from Timeline" if visible else "Show mask in Timeline")
++        self.btn_mask_visibility.blockSignals(False)
++        path = str(settings.get("smouk_mask_path_v1") or "")
++        if path:
++            self.mask_results.setText("PSD mask configured: %s" % os.path.basename(path))
++
++    def _open_mask_settings(self):
++        if self._mask_dialog is None:
++            self._mask_dialog = MaskSettingsDialog(self, self)
++            self._mask_dialog.finished.connect(lambda *_: setattr(self, "_mask_dialog", None))
++        else:
++            self._mask_dialog.refresh_from_settings()
++        # Do not use exec_: this dialog is deliberately non-blocking, matching
++        # the post-transcription crash fix and keeping Qt's main loop healthy.
++        self._mask_dialog.open()
++
++    def _on_browse_mask(self, dialog=None):
++        project_path = getattr(get_app().project, "current_filepath", "")
++        directory = os.path.dirname(project_path) if project_path else ""
++
++        def on_selected(urls):
++            if not urls:
++                return
++            path = urls[0].toLocalFile()
++            if not path or not path.lower().endswith(".psd"):
++                QMessageBox.warning(self, "MASK", "Please choose a Photoshop PSD file.")
++                return
++            try:
++                self._save_mask_setting("smouk_mask_path_v1", path)
++                self._add_mask(path)
++                self._save_mask_setting("smouk_mask_visible_v1", True)
++                self.btn_mask_visibility.blockSignals(True)
++                self.btn_mask_visibility.setChecked(True)
++                self.btn_mask_visibility.setText("Hide mask from Timeline")
++                self.btn_mask_visibility.blockSignals(False)
++                if dialog is not None:
++                    dialog.refresh_from_settings()
++            except Exception:
++                log.exception("SMOUK could not add PSD mask %s", path)
++                QMessageBox.warning(self, "MASK", "The PSD mask could not be added. See openshot-qt.log.")
++
++        show_open_file_dialog(self, "Choose transparent PSD mask", directory,
++                              "Photoshop files (*.psd)", on_selected,
++                              allow_multiple=False)
++
++    def _on_mask_position_changed(self, axis, value, dialog=None):
++        normalized = max(-1.0, min(1.0, float(value) / 100.0))
++        self._save_mask_setting("smouk_mask_%s_v1" % axis, normalized)
++        if dialog is not None:
++            dialog.refresh_from_settings()
++        clip = self._mask_clip()
++        if clip is None:
++            return
++        settings = self._mask_settings()
++        clip.data.update(self._mask_transform(
++            float(settings.get("smouk_mask_x_v1") or 0.0),
++            float(settings.get("smouk_mask_y_v1") or 0.0)))
++        clip.save()
++        if get_app().window is not None:
++            get_app().window.refreshFrameSignal.emit()
++
++    def _on_mask_visibility_changed(self, visible):
++        visible = bool(visible)
++        self._save_mask_setting("smouk_mask_visible_v1", visible)
++        self.btn_mask_visibility.setText("Hide mask from Timeline" if visible else "Show mask in Timeline")
++        if visible and self._mask_clip() is None:
++            path = str(self._mask_settings().get("smouk_mask_path_v1") or "")
++            if path and os.path.isfile(path):
++                try:
++                    self._add_mask(path)
++                except Exception:
++                    log.exception("SMOUK could not show PSD mask")
++        elif not visible:
++            self._clear_generated_mask()
++        if get_app().window is not None:
++            get_app().window.refreshFrameSignal.emit()
++
++    def _add_mask(self, path):
++        """Create a full visible-timeline PSD clip on the mask track."""
++        window = get_app().window
++        if window is None:
++            raise RuntimeError("OpenShot window is not available")
++        file_obj = File.get(path=path)
++        if not file_obj:
++            file_data, _duration = inspect_media(path)
++            file_data["media_type"] = get_media_type(file_data)
++            file_obj = File()
++            file_obj.data = file_data
++            file_obj.save()
++        file_obj.data["smouk_mask_asset"] = True
++        file_obj.data["name"] = "SMOUK Mask - " + os.path.basename(path)
++        file_obj.save()
++        self._clear_generated_mask()
++        track = self._mask_track_number()
++        clip_data = window.timeline.addClip(
++            file_obj.id, QtCore.QPoint(0, 0), track,
++            ignore_refresh=False, call_manual_move=False)
++        if not clip_data:
++            raise RuntimeError("OpenShot could not create the mask clip")
++        clip = Clip.get(id=clip_data.get("id"))
++        if not clip:
++            raise RuntimeError("Mask clip was not persisted")
++        position, duration = self._mask_duration_and_position()
++        settings = self._mask_settings()
++        clip.data.update({
++            "position": position, "start": 0.0, "end": duration,
++            "duration": duration, "layer": track, "title": file_obj.data["name"],
++            "file_id": file_obj.id, "reader": file_obj.data, "smouk_mask_clip": True,
++        })
++        clip.data.update(self._mask_transform(
++            float(settings.get("smouk_mask_x_v1") or 0.0),
++            float(settings.get("smouk_mask_y_v1") or 0.0)))
++        clip.save()
++        get_app().updates.transaction_id = None
++        window.refreshFilesSignal.emit()
++        window.refreshFrameSignal.emit()
++        self.mask_results.setText("PSD mask active: %s" % os.path.basename(path))
++
+     @staticmethod
+     def _logo_track_number():
+         """Return the stable topmost layer reserved for the SMOUK logo."""
+-- 
+2.55.0.windows.3
+

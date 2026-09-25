@@ -131,6 +131,13 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   Una fila de más de 21 caracteres mueve palabras al siguiente cue temporal y
   queda bloqueada antes de generar el SVG.
 
+### 0.0.124
+
+- Añade el apartado MASK al dock Verticalization. Permite cargar una máscara
+  PSD transparente centrada en la guía 9:16, ajustar su posición X/Y, mostrarla
+  u ocultarla en una pista propia entre el vídeo y los overlays, y conservar
+  todos esos valores en la configuración de OpenShot.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era
