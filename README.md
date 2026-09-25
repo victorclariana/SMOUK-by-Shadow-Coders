@@ -84,6 +84,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   sus intervalos temporales antes de crear los clips y fija el borde negro en
   1.9 px, sin deformar la tipografía.
 
+### 0.0.116
+
+- Redistribuye cualquier texto corregido que exceda dos líneas en intervalos
+  temporales interpolados dentro del mismo tramo de voz. El renderizador solo
+  recibe líneas seguras de una o dos filas dentro de la guía 9:16.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era

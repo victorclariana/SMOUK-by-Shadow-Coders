@@ -32,3 +32,8 @@ La distribución debe resolver el espacio mediante saltos de palabra y
 puntuación dentro de una o dos filas. Si una corrección manual hace crecer la
 frase, sus palabras se reparten entre los intervalos temporales disponibles
 antes de crear los clips. Nunca se debe deformar horizontalmente la fuente.
+
+Cuando el texto corregido no cabe en dos filas, se divide en nuevos intervalos
+temporales interpolados dentro del intervalo original, conservando el orden y
+la sincronía de la voz. El SVG nunca recibe una tercera fila ni una fuente
+comprimida.
