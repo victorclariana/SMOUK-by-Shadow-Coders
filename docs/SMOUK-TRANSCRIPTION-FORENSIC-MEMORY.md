@@ -49,3 +49,7 @@ filas permanezcan dentro del rectángulo blanco.
 
 Los cues posteriores a la revisión se ordenan y se fusionan si sus intervalos
 se solapan. Nunca se crean dos clips de subtítulos con tiempo común.
+
+El reparto posterior usa una partición con capacidad de 40 caracteres por cue;
+no se permite dejar el texto sobrante en el último cue si eso produce una fila
+fuera de la guía.

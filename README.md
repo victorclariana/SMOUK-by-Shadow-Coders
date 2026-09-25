@@ -119,6 +119,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - Fusiona cualquier solapamiento temporal detectado después de la revisión en
   un único clip, impidiendo que dos subtítulos se dibujen simultáneamente.
 
+### 0.0.122
+
+- Reparte las frases corregidas con una partición con capacidad: cada cue se
+  limita a 40 caracteres y solo se aceptan cortes que permiten que todos los
+  cues restantes respeten también el límite de dos filas.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era

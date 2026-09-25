@@ -1,0 +1,71 @@
+From 8a4f0a18a57b6198921db7688e0996c51b3be216 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 17:26:58 +0200
+Subject: [PATCH] SMOUK 0.0.122 capacity-aware subtitle split
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 28 ++++++++++++++++++++++++----
+ 2 files changed, 25 insertions(+), 5 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index cc03c96d4..98ad84730 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.121"
++SMOUK_VERSION = "0.0.122"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 522cbea72..b1c27c178 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -2325,16 +2325,36 @@ class VerticalizationDockContent(QWidget):
+         if len(lengths) != count or sum(lengths) <= 0:
+             lengths = [1] * count
+         total = float(sum(lengths))
++        memo = {}
++
++        def feasible(start, slots):
++            key = (start, slots)
++            if key in memo:
++                return memo[key]
++            if slots == 1:
++                memo[key] = len(" ".join(words[start:])) <= max_chars
++                return memo[key]
++            for end in range(start + 1, len(words) - slots + 2):
++                if len(" ".join(words[start:end])) <= max_chars and feasible(end, slots - 1):
++                    memo[key] = True
++                    return True
++            memo[key] = False
++            return False
++
+         result = []
+         start = 0
+         for index in range(count):
+             if index == count - 1:
+                 end = len(words)
+             else:
+-                end = max(start + 1, int(round(len(words) * sum(lengths[:index + 1]) / total)))
+-                end = min(end, len(words) - (count - index - 1))
+-                while end > start + 1 and len(" ".join(words[start:end])) > max_chars:
+-                    end -= 1
++                desired = int(round(len(words) * sum(lengths[:index + 1]) / total))
++                valid = [candidate for candidate in range(start + 1, len(words) - count + index + 1)
++                         if len(" ".join(words[start:candidate])) <= max_chars and
++                         feasible(candidate, count - index - 1)]
++                if not valid:
++                    valid = [candidate for candidate in range(start + 1, len(words) - count + index + 1)
++                             if len(" ".join(words[start:candidate])) <= max_chars]
++                end = min(valid, key=lambda candidate: abs(candidate - desired)) if valid else start + 1
+             result.append(" ".join(words[start:end]))
+             start = end
+         return result
+-- 
+2.55.0.windows.3
+
