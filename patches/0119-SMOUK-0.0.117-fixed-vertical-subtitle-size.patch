@@ -1,0 +1,63 @@
+From 1844d521eb27841bd3e5b248e95a5c098a7e1bdb Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 16:17:18 +0200
+Subject: [PATCH] SMOUK 0.0.117 fix vertical subtitle size
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 11 +++++------
+ 2 files changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 50435862c..0f0fd2fa9 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.116"
++SMOUK_VERSION = "0.0.117"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 310ee6903..719ac13fc 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -2365,7 +2365,7 @@ class VerticalizationDockContent(QWidget):
+             result["reviewed_with_parlabe"] = True
+ 
+     @classmethod
+-    def _redistribute_review_cues(cls, cues, max_chars=52):
++    def _redistribute_review_cues(cls, cues, max_chars=44):
+         """Keep every post-review cue within one or two safe rows.
+ 
+         If a manual correction made one original timed cue too long, divide
+@@ -2636,11 +2636,10 @@ class VerticalizationDockContent(QWidget):
+         # The reference broadcast band uses a large, heavy face in the lower
+         # middle of the 9:16 guide.  Keep the text inside the guide width while
+         # allowing the two-line treatment to remain clearly readable.
+-        text_width = guide_width * (1.0 - 2.0 * VERTICAL_TITLE_SAFE_MARGIN)
+         # Fixed typography: no textLength, scale or per-cue font adjustment.
+-        # The usable width determines one constant pixel size for the whole
+-        # subtitle track; long corrected text is wrapped into more rows.
+-        font_size = min(128.0 * guide_fraction, text_width / (26.0 * 0.72))
++        # The 9:16 profile uses the fixed 40.5 px face; text is redistributed
++        # into timed two-line cues before this renderer is called.
++        font_size = 128.0 * guide_fraction
+         line_height = font_size * 1.15
+         center_y = float(height) * VERTICAL_SUBTITLE_CENTER
+         first_y = center_y - (len(lines) - 1) * line_height / 2.0
+@@ -2658,7 +2657,7 @@ class VerticalizationDockContent(QWidget):
+                 int(width), int(height), int(width), int(height), "".join(tspans))
+ 
+     @staticmethod
+-    def _subtitle_lines(text, width=26):
++    def _subtitle_lines(text, width=22):
+         """Match the BSC subtitle wrapping after ParlaBE edits."""
+         clean = " ".join(str(text or "").split())
+         if not clean:
+-- 
+2.55.0.windows.3
+

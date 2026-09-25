@@ -90,6 +90,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   temporales interpolados dentro del mismo tramo de voz. El renderizador solo
   recibe líneas seguras de una o dos filas dentro de la guía 9:16.
 
+### 0.0.117
+
+- Fija la medida tipográfica del perfil 9:16 en 40.5 px, reduce cada fila a
+  22 caracteres útiles y redistribuye los intervalos en grupos de 44
+  caracteres para conservar dos líneas sin compresión ni desbordamiento.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era

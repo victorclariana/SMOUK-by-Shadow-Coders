@@ -37,3 +37,7 @@ Cuando el texto corregido no cabe en dos filas, se divide en nuevos intervalos
 temporales interpolados dentro del intervalo original, conservando el orden y
 la sincronía de la voz. El SVG nunca recibe una tercera fila ni una fuente
 comprimida.
+
+Para el perfil 9:16 la medida fija de referencia es 40.5 px, con un máximo de
+22 caracteres por fila y 44 por pantalla. Esta medida no se reduce para
+acomodar frases: se crean más pantallas sincronizadas cuando es necesario.
