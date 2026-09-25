@@ -1,0 +1,91 @@
+From 545ac1981da87f5083030ee80e62e7c8d995daf8 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 16:29:25 +0200
+Subject: [PATCH] SMOUK 0.0.118 remove short review cues
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 50 ++++++++++++----------------------
+ 2 files changed, 18 insertions(+), 34 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 0f0fd2fa9..fcf1170da 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.117"
++SMOUK_VERSION = "0.0.118"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 719ac13fc..651058d6b 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -2365,43 +2365,27 @@ class VerticalizationDockContent(QWidget):
+             result["reviewed_with_parlabe"] = True
+ 
+     @classmethod
+-    def _redistribute_review_cues(cls, cues, max_chars=44):
+-        """Keep every post-review cue within one or two safe rows.
+-
+-        If a manual correction made one original timed cue too long, divide
+-        its words over adjacent interpolated intervals before SVG creation.
+-        The fixed subtitle font is never resized or distorted.
+-        """
++    def _redistribute_review_cues(cls, cues):
++        """Use original timed cues and remove unreadable sub-second screens."""
+         redistributed = []
+         for cue in cues:
++            item = dict(cue)
++            item["start"] = float(cue.get("start", 0.0))
++            item["end"] = float(cue.get("end", item["start"]))
+             text = " ".join(str(cue.get("text", "")).replace("\n", " ").split())
+-            words = text.split()
+-            chunks = []
+-            current = []
+-            for word in words:
+-                proposed = " ".join(current + [word])
+-                if current and len(proposed) > max_chars:
+-                    chunks.append(" ".join(current))
+-                    current = [word]
+-                else:
+-                    current.append(word)
+-            if current:
+-                chunks.append(" ".join(current))
+-            if not chunks:
+-                continue
+-            start = float(cue.get("start", 0.0))
+-            end = float(cue.get("end", start))
+-            span = max(0.0, end - start)
+-            total = float(sum(max(1, len(chunk)) for chunk in chunks))
+-            cursor = start
+-            for index, chunk in enumerate(chunks):
+-                next_cursor = end if index == len(chunks) - 1 else cursor + span * max(1, len(chunk)) / total
+-                item = dict(cue)
+-                item["start"] = cursor
+-                item["end"] = next_cursor
+-                item["text"] = "\n".join(cls._subtitle_lines(chunk))
++            item["text"] = "\n".join(cls._subtitle_lines(text))
++            if redistributed and item["end"] - item["start"] < 1.0:
++                previous = redistributed.pop()
++                item["start"] = previous["start"]
++                item["text"] = "\n".join(cls._subtitle_lines(
++                    previous["text"].replace("\n", " ") + " " + text))
++            elif redistributed and redistributed[-1]["end"] - redistributed[-1]["start"] < 1.0:
++                previous = redistributed.pop()
++                item["start"] = previous["start"]
++                item["text"] = "\n".join(cls._subtitle_lines(
++                    previous["text"].replace("\n", " ") + " " + text))
++            if item["text"]:
+                 redistributed.append(item)
+-                cursor = next_cursor
+         return redistributed
+ 
+     def _read_transcription_output(self):
+-- 
+2.55.0.windows.3
+

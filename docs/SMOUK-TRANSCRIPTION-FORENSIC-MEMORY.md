@@ -33,10 +33,10 @@ puntuación dentro de una o dos filas. Si una corrección manual hace crecer la
 frase, sus palabras se reparten entre los intervalos temporales disponibles
 antes de crear los clips. Nunca se debe deformar horizontalmente la fuente.
 
-Cuando el texto corregido no cabe en dos filas, se divide en nuevos intervalos
-temporales interpolados dentro del intervalo original, conservando el orden y
-la sincronía de la voz. El SVG nunca recibe una tercera fila ni una fuente
-comprimida.
+Cuando el texto corregido no cabe en dos filas, se reparte entre los cues
+temporales originales. No se crean intervalos interpolados: cualquier pantalla
+inferior a 1 segundo se fusiona con una pantalla vecina para conservar la
+legibilidad. El SVG nunca recibe una tercera fila ni una fuente comprimida.
 
 Para el perfil 9:16 la medida fija de referencia es 40.5 px, con un máximo de
 22 caracteres por fila y 44 por pantalla. Esta medida no se reduce para

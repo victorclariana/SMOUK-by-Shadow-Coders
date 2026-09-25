@@ -96,6 +96,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   22 caracteres útiles y redistribuye los intervalos en grupos de 44
   caracteres para conservar dos líneas sin compresión ni desbordamiento.
 
+### 0.0.118
+
+- Elimina la creación de intervalos interpolados cortos después de la revisión.
+  Se conservan los tiempos originales y cualquier pantalla inferior a 1
+  segundo se fusiona con una pantalla vecina para mantener legibilidad.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era
