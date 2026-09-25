@@ -66,6 +66,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   tiempo colapsadas y palabras repetidas, como el falso texto “Arada, Ada i
   Ada”, sin alterar palabras válidas del resto de la transcripción.
 
+### 0.0.113
+
+- Fija una única medida, color blanco y borde negro para toda la tipografía de
+  subtítulos. Las líneas excepcionales se comprimen solo horizontalmente para
+  respetar la guía 9:16, sin reducir la altura tipográfica de esa pantalla.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era

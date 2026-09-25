@@ -127,3 +127,4 @@ git am /path/to/patches/0001-FFmpeg-9-*.patch
 | `0112-SMOUK-0.0.110-safe-review-subtitle-visuals.patch` | **openshot-qt** | Restores the 0.0.108 safe review flow and limits the change to fixed two-line subtitle sizing inside the 9:16 guide. |
 | `0113-SMOUK-0.0.111-clamp-long-subtitle-lines.patch` | **openshot-qt** | Shrinks only exceptionally long subtitle rows so they remain inside the 9:16 guide on Windows SVG rendering. |
 | `0114-SMOUK-0.0.112-filter-terminal-micro-hallucinations.patch` | **scripts / openshot-qt** | Filters collapsed repeated Whisper tail hallucinations without changing valid subtitle timing. |
+| `0115-SMOUK-0.0.113-fixed-subtitle-typography.patch` | **openshot-qt** | Keeps subtitle font size, white fill and 2.9 px black border fixed for every cue while fitting exceptional long rows inside 9:16. |

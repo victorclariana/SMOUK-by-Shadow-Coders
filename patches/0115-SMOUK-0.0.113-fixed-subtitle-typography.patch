@@ -1,0 +1,67 @@
+From c3790af3f44dccfa4d9cbe22b7dad774ba4e5885 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 14:12:57 +0200
+Subject: [PATCH] SMOUK 0.0.113 fix subtitle typography
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 20 ++++++++++----------
+ 2 files changed, 11 insertions(+), 11 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index dcd61a4e7..6b3415dd8 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.112"
++SMOUK_VERSION = "0.0.113"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 9d63b06fc..ae2818fd5 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -2593,26 +2593,26 @@ class VerticalizationDockContent(QWidget):
+         # middle of the 9:16 guide.  Keep the text inside the guide width while
+         # allowing the two-line treatment to remain clearly readable.
+         text_width = guide_width * (1.0 - 2.0 * VERTICAL_TITLE_SAFE_MARGIN)
+-        # QSvgRenderer does not consistently honour textLength on every
+-        # Windows build. Keep the normal broadcast size, but shrink only an
+-        # unusually long row before rendering so no cue can cross the guide.
+-        font_size = 128.0 * guide_fraction
+-        longest_line = max(len(line) for line in lines)
+-        if longest_line > 26:
+-            font_size = min(font_size, text_width / (longest_line * 0.60))
++        # The subtitle face is fixed for every cue.  Keep its height and
++        # stroke identical; only an exceptionally long row may be compressed
++        # horizontally so it remains inside the active guide.
++        font_size = min(128.0 * guide_fraction, guide_width / (26.0 * 0.60))
+         line_height = font_size * 1.15
+         center_y = float(height) * VERTICAL_SUBTITLE_CENTER
+         first_y = center_y - (len(lines) - 1) * line_height / 2.0
+         tspans = []
+         for index, line in enumerate(lines):
+             y = first_y + index * line_height
+-            tspans.append('<text x="{:.2f}" y="{:.2f}" text-anchor="middle" '
++            horizontal_scale = min(1.0, text_width / max(font_size * 0.50 * len(line), 1.0))
++            center_x = float(width) / 2.0
++            tspans.append('<g transform="translate({:.2f},0) scale({:.6f},1) translate({:.2f},0)">'
++                          '<text x="{:.2f}" y="{:.2f}" text-anchor="middle" '
+                           'font-family="Arial Black, Arial, sans-serif" font-size="{:.2f}" '
+                           'font-weight="900" fill="#ffffff" stroke="#000000" '
+                           'stroke-width="2.9" stroke-linejoin="round" paint-order="stroke" '
+                           'textLength="{:.2f}" lengthAdjust="spacingAndGlyphs">{}</text>'.format(
+-                              float(width) / 2.0, y, font_size, text_width,
+-                              html.escape(line)))
++                              center_x, horizontal_scale, -center_x,
++                              center_x, y, font_size, text_width, html.escape(line)) + '</g>')
+         return ('<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" '
+                 'viewBox="0 0 {} {}">{}</svg>').format(
+                 int(width), int(height), int(width), int(height), "".join(tspans))
+-- 
+2.55.0.windows.3
+
