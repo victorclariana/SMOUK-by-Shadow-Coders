@@ -153,6 +153,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   reconstruye realmente, de modo que permanece visible junto al título del dock
   al cambiar de tema, acoplarlo o tabularlo.
 
+### 0.0.127
+
+- Hace que el ojo de MASK afecte inmediatamente al visor y al render mediante
+  una curva de alpha reversible en el clip, además de conservar el estado
+  `Track.enabled` en el proyecto.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era

@@ -1,0 +1,86 @@
+From 99c02f51477dd812438b17cff8c931083226630a Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 26 Sep 2026 00:32:34 +0200
+Subject: [PATCH] SMOUK 0.0.127 make mask eye affect output
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 28 ++++++++++++++++++++++++++++
+ 2 files changed, 29 insertions(+), 1 deletion(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 17a018dad..ef5626753 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -103,7 +103,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.126"
++SMOUK_VERSION = "0.0.127"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index c9bf7faa4..14fc437bf 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -698,6 +698,24 @@ class VerticalizationDockContent(QWidget):
+             "smouk_mask_vertical_safe": True,
+         }
+ 
++    @staticmethod
++    def _mask_alpha(value, duration):
++        """Return a full-duration alpha curve for the single mask clip.
++
++        OpenShot's update listener intentionally ignores layer-only updates;
++        the clip alpha is therefore the live preview/render switch while the
++        track's ``enabled`` value remains persisted for project semantics.
++        """
++        fps = get_app().project.get("fps") or {"num": 25, "den": 1}
++        try:
++            fps_value = float(fps.get("num", 25)) / float(fps.get("den", 1) or 1)
++        except (TypeError, ValueError, ZeroDivisionError):
++            fps_value = 25.0
++        end_frame = max(1, int(round(float(duration) * fps_value)))
++        point = lambda frame: {"co": {"X": frame, "Y": float(value)},
++                               "interpolation": openshot.BEZIER}
++        return {"Points": [point(1), point(end_frame)]}
++
+     def _load_mask_settings(self):
+         settings = self._mask_settings()
+         track = self._mask_track()
+@@ -715,6 +733,10 @@ class VerticalizationDockContent(QWidget):
+         if track is not None and has_visible_setting:
+             track.data["enabled"] = visible
+             track.save()
++        if clip is not None:
++            clip.data["alpha"] = self._mask_alpha(
++                1.0 if visible else 0.0, float(clip.data.get("duration", 1.0)))
++            clip.save()
+         self.btn_mask_visibility.blockSignals(True)
+         self.btn_mask_visibility.setChecked(visible)
+         self.btn_mask_visibility.setText("👁  Mask track output: ON" if visible else "👁  Mask track output: OFF")
+@@ -796,6 +818,11 @@ class VerticalizationDockContent(QWidget):
+             # deleting the clip, it preserves the PSD, timing, and position.
+             track.data["enabled"] = visible
+             track.save()
++        clip = self._mask_clip()
++        if clip is not None:
++            clip.data["alpha"] = self._mask_alpha(
++                1.0 if visible else 0.0, float(clip.data.get("duration", 1.0)))
++            clip.save()
+         if get_app().window is not None:
+             get_app().window.refreshFrameSignal.emit()
+ 
+@@ -831,6 +858,7 @@ class VerticalizationDockContent(QWidget):
+             "duration": duration, "layer": track, "title": file_obj.data["name"],
+             "file_id": file_obj.id, "reader": file_obj.data, "smouk_mask_clip": True,
+         })
++        clip.data["alpha"] = self._mask_alpha(1.0, duration)
+         clip.data.update(self._mask_transform(
+             float(settings.get("smouk_mask_x_v1") or 0.0),
+             float(settings.get("smouk_mask_y_v1") or 0.0), duration))
+-- 
+2.55.0.windows.3
+
