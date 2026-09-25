@@ -35,6 +35,13 @@ vertical y la primera automatización de subtítulos en catalán.
 Usamos versiones `0.0.x` durante esta etapa inicial. Cada cambio funcional o
 de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
+### 0.0.108
+
+- Elimina la actualización de widget inmediatamente posterior a BSC, que era
+  el único efecto Qt entre la transcripción válida y el crash nativo.
+- Desglosa la preparación de ParlaBE en trazas persistentes para identificar
+  de forma exacta cualquier fallo posterior sin perder el estado del proceso.
+
 ### 0.0.107
 
 - Corrige el cierre nativo de Qt que ocurría tras completar BSC y antes de la
