@@ -1,0 +1,231 @@
+From 67150cf1870ac7c30763269e014809d11a67dde2 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 26 Sep 2026 00:17:52 +0200
+Subject: [PATCH] SMOUK 0.0.125 fix mask output settings and positioning
+
+---
+ src/settings/_default.settings | 32 ++++++++++++++++
+ src/windows/main_window.py     |  5 ++-
+ src/windows/verticalization.py | 69 ++++++++++++++++++++++++----------
+ 3 files changed, 85 insertions(+), 21 deletions(-)
+
+diff --git a/src/settings/_default.settings b/src/settings/_default.settings
+index 2704d3047..c3c638c12 100644
+--- a/src/settings/_default.settings
++++ b/src/settings/_default.settings
+@@ -1563,5 +1563,37 @@
+     "value": "100",
+     "type": "hidden",
+     "restart": false
++  },
++  {
++    "category": "SMOUK",
++    "title": "SMOUK mask PSD path",
++    "setting": "smouk_mask_path_v1",
++    "value": "",
++    "type": "hidden",
++    "restart": false
++  },
++  {
++    "category": "SMOUK",
++    "title": "SMOUK mask X position",
++    "setting": "smouk_mask_x_v1",
++    "value": 0.0,
++    "type": "hidden",
++    "restart": false
++  },
++  {
++    "category": "SMOUK",
++    "title": "SMOUK mask Y position",
++    "setting": "smouk_mask_y_v1",
++    "value": 0.0,
++    "type": "hidden",
++    "restart": false
++  },
++  {
++    "category": "SMOUK",
++    "title": "SMOUK mask track output",
++    "setting": "smouk_mask_visible_v1",
++    "value": false,
++    "type": "hidden",
++    "restart": false
+   }
+ ]
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 319b6ee13..db88a30bb 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -103,7 +103,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.124"
++SMOUK_VERSION = "0.0.125"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+@@ -5635,6 +5635,9 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         mask_settings_button.setText("⚙")
+         mask_settings_button.setToolTip(_("MASK settings"))
+         mask_settings_button.setAutoRaise(True)
++        mask_settings_button.setFixedSize(28, 24)
++        mask_settings_button.setStyleSheet(
++            "QToolButton { font-family: 'Segoe UI Symbol'; font-size: 17px; padding: 0; }")
+         mask_settings_button.clicked.connect(self.verticalization_content._open_mask_settings)
+         title_layout.addWidget(mask_settings_button)
+         close_button = QToolButton(title_bar)
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index f18dbc22f..c9bf7faa4 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -325,7 +325,7 @@ class MaskSettingsDialog(QDialog):
+     def __init__(self, owner, parent=None):
+         super().__init__(parent or owner)
+         self.owner = owner
+-        self.setWindowTitle("MASK")
++        self.setWindowTitle("SETTINGS VERTICALIZATION")
+         self.setMinimumWidth(460)
+         layout = QVBoxLayout(self)
+         title = QLabel("MASK", self)
+@@ -601,17 +601,13 @@ class VerticalizationDockContent(QWidget):
+ 
+     def _build_mask_controls(self, _):
+         """Add the persistent PSD mask controls without touching subtitles."""
+-        self.btn_mask_settings = QPushButton("⚙  MASK settings", self)
+-        self.btn_mask_settings.setObjectName("verticalizationMaskSettings")
+-        self.btn_mask_settings.clicked.connect(self._open_mask_settings)
+-        self.btn_mask_visibility = QPushButton("Show mask in Timeline", self)
++        self.btn_mask_visibility = QPushButton("👁  Mask track output", self)
+         self.btn_mask_visibility.setObjectName("verticalizationMaskVisibility")
+         self.btn_mask_visibility.setCheckable(True)
+         self.btn_mask_visibility.toggled.connect(self._on_mask_visibility_changed)
+         self.mask_results = QLabel("No PSD mask has been added.", self)
+         self.mask_results.setObjectName("verticalizationMaskResults")
+         self.mask_results.setWordWrap(True)
+-        self.sections["mask"].add_widget(self.btn_mask_settings)
+         self.sections["mask"].add_widget(self.btn_mask_visibility)
+         self.sections["mask"].add_widget(self.mask_results)
+         self._mask_dialog = None
+@@ -650,6 +646,11 @@ class VerticalizationDockContent(QWidget):
+         track.save()
+         return number
+ 
++    @staticmethod
++    def _mask_track():
++        return next((track for track in Track.filter()
++                     if track.data.get("smouk_mask_track")), None)
++
+     @staticmethod
+     def _clear_generated_mask():
+         for clip in Clip.filter():
+@@ -673,9 +674,18 @@ class VerticalizationDockContent(QWidget):
+         return start, max(0.04, end - start)
+ 
+     @staticmethod
+-    def _mask_transform(x=0.0, y=0.0):
++    def _mask_transform(x=0.0, y=0.0, duration=1.0):
++        fps = get_app().project.get("fps") or {"num": 25, "den": 1}
++        try:
++            fps_value = float(fps.get("num", 25)) / float(fps.get("den", 1) or 1)
++        except (TypeError, ValueError, ZeroDivisionError):
++            fps_value = 25.0
++        end_frame = max(1, int(round(float(duration) * fps_value)))
+         point = lambda value: {"Points": [{
+-            "co": {"X": 1.0, "Y": float(value)},
++            "co": {"X": 1, "Y": float(value)},
++            "interpolation": openshot.BEZIER,
++        }, {
++            "co": {"X": end_frame, "Y": float(value)},
+             "interpolation": openshot.BEZIER,
+         }]}
+         return {
+@@ -690,14 +700,27 @@ class VerticalizationDockContent(QWidget):
+ 
+     def _load_mask_settings(self):
+         settings = self._mask_settings()
+-        visible = bool(settings.get("smouk_mask_visible_v1"))
++        track = self._mask_track()
++        path = str(settings.get("smouk_mask_path_v1") or "")
++        clip = self._mask_clip()
++        if not path and clip is not None:
++            path = str(clip.data.get("reader", {}).get("path", ""))
++            if path:
++                self._save_mask_setting("smouk_mask_path_v1", path)
++        has_visible_setting = (hasattr(settings, "has_user_value") and
++                               settings.has_user_value("smouk_mask_visible_v1"))
++        visible_setting = settings.get("smouk_mask_visible_v1")
++        visible = (bool(visible_setting) if has_visible_setting else
++                   (bool(track.data.get("enabled", True)) if track is not None else False))
++        if track is not None and has_visible_setting:
++            track.data["enabled"] = visible
++            track.save()
+         self.btn_mask_visibility.blockSignals(True)
+         self.btn_mask_visibility.setChecked(visible)
+-        self.btn_mask_visibility.setText("Hide mask from Timeline" if visible else "Show mask in Timeline")
++        self.btn_mask_visibility.setText("👁  Mask track output: ON" if visible else "👁  Mask track output: OFF")
+         self.btn_mask_visibility.blockSignals(False)
+-        path = str(settings.get("smouk_mask_path_v1") or "")
+         if path:
+-            self.mask_results.setText("PSD mask configured: %s" % os.path.basename(path))
++            self.mask_results.setText("PSD mask: %s" % os.path.basename(path))
+ 
+     def _open_mask_settings(self):
+         if self._mask_dialog is None:
+@@ -726,7 +749,7 @@ class VerticalizationDockContent(QWidget):
+                 self._save_mask_setting("smouk_mask_visible_v1", True)
+                 self.btn_mask_visibility.blockSignals(True)
+                 self.btn_mask_visibility.setChecked(True)
+-                self.btn_mask_visibility.setText("Hide mask from Timeline")
++                self.btn_mask_visibility.setText("👁  Mask track output: ON")
+                 self.btn_mask_visibility.blockSignals(False)
+                 if dialog is not None:
+                     dialog.refresh_from_settings()
+@@ -749,7 +772,8 @@ class VerticalizationDockContent(QWidget):
+         settings = self._mask_settings()
+         clip.data.update(self._mask_transform(
+             float(settings.get("smouk_mask_x_v1") or 0.0),
+-            float(settings.get("smouk_mask_y_v1") or 0.0)))
++            float(settings.get("smouk_mask_y_v1") or 0.0),
++            float(clip.data.get("duration", 1.0))))
+         clip.save()
+         if get_app().window is not None:
+             get_app().window.refreshFrameSignal.emit()
+@@ -757,16 +781,21 @@ class VerticalizationDockContent(QWidget):
+     def _on_mask_visibility_changed(self, visible):
+         visible = bool(visible)
+         self._save_mask_setting("smouk_mask_visible_v1", visible)
+-        self.btn_mask_visibility.setText("Hide mask from Timeline" if visible else "Show mask in Timeline")
+-        if visible and self._mask_clip() is None:
++        self.btn_mask_visibility.setText("👁  Mask track output: ON" if visible else "👁  Mask track output: OFF")
++        track = self._mask_track()
++        if track is None:
+             path = str(self._mask_settings().get("smouk_mask_path_v1") or "")
+-            if path and os.path.isfile(path):
++            if visible and path and os.path.isfile(path):
+                 try:
+                     self._add_mask(path)
++                    track = self._mask_track()
+                 except Exception:
+                     log.exception("SMOUK could not show PSD mask")
+-        elif not visible:
+-            self._clear_generated_mask()
++        if track is not None:
++            # OpenShot's Track.enabled is the track-output switch: unlike
++            # deleting the clip, it preserves the PSD, timing, and position.
++            track.data["enabled"] = visible
++            track.save()
+         if get_app().window is not None:
+             get_app().window.refreshFrameSignal.emit()
+ 
+@@ -804,7 +833,7 @@ class VerticalizationDockContent(QWidget):
+         })
+         clip.data.update(self._mask_transform(
+             float(settings.get("smouk_mask_x_v1") or 0.0),
+-            float(settings.get("smouk_mask_y_v1") or 0.0)))
++            float(settings.get("smouk_mask_y_v1") or 0.0), duration))
+         clip.save()
+         get_app().updates.transaction_id = None
+         window.refreshFilesSignal.emit()
+-- 
+2.55.0.windows.3
+

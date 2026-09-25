@@ -139,3 +139,4 @@ git am /path/to/patches/0001-FFmpeg-9-*.patch
 | `0124-SMOUK-0.0.122-capacity-aware-review-split.patch` | **openshot-qt** | Partitions corrected sentences so every existing timed cue stays within 40 characters and two safe rows. |
 | `0125-SMOUK-0.0.123-validate-subtitle-row-width.patch` | **openshot-qt** | Validates each rendered row at 21 characters and moves overflow to the next original timed cue before SVG creation. |
 | `0126-SMOUK-0.0.124-persistent-psd-mask-dock.patch` | **openshot-qt** | Adds the persistent MASK dock section, non-blocking gear dialog, PSD file selection, X/Y positioning, and a dedicated mask track below generated overlays. |
+| `0127-SMOUK-0.0.125-mask-track-output-and-settings.patch` | **openshot-qt** | Uses reversible Track.enabled output switching, persists MASK settings through declared OpenShot preferences, fixes timed X/Y keyframes, and names the general dialog SETTINGS VERTICALIZATION. |

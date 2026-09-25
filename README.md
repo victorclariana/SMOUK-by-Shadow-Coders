@@ -138,6 +138,15 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   u ocultarla en una pista propia entre el vídeo y los overlays, y conservar
   todos esos valores en la configuración de OpenShot.
 
+### 0.0.125
+
+- Convierte MASK en una salida de pista reversible tipo ojo: conserva el PSD y
+  su posición al ocultarlo, permite volver a activarlo y aplica el estado al
+  visor y al render mediante `Track.enabled`.
+- Declara las claves de ruta, posición y visibilidad en la configuración oficial
+  para que se guarden realmente entre sesiones. El engranaje abre ahora
+  `SETTINGS VERTICALIZATION`, preparado para la configuración general del dock.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era
