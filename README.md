@@ -60,6 +60,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   para que ningún SVG pueda salir de los márgenes de la guía 9:16 cuando el
   renderizador de Windows no respeta `textLength`.
 
+### 0.0.112
+
+- Descarta únicamente los microsegmentos terminales de Whisper con marcas de
+  tiempo colapsadas y palabras repetidas, como el falso texto “Arada, Ada i
+  Ada”, sin alterar palabras válidas del resto de la transcripción.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era

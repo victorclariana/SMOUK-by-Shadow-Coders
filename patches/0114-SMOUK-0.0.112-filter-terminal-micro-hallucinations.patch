@@ -1,0 +1,25 @@
+From cddce2e404aad226629ecca52caf04fda6915094 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 14:10:28 +0200
+Subject: [PATCH] SMOUK 0.0.112 filter terminal Whisper hallucinations
+
+---
+ src/windows/main_window.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 553133b6e..dcd61a4e7 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.111"
++SMOUK_VERSION = "0.0.112"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+-- 
+2.55.0.windows.3
+

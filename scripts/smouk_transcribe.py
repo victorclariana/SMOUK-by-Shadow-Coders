@@ -442,10 +442,23 @@ def transcribe_bsc(path, model_dir, ffmpeg_path, temp_root, source_start, source
         # end-of-file hallucination. Do not turn it into visible subtitles.
         lexical = [item for item in segment_words
                    if len(re.sub(r"[^\wÀ-ÖØ-öø-ÿ]", "", item["word"])) >= 3]
+        lexical_tokens = [_normalized_token(item["word"]) for item in lexical]
+        word_span = (max((float(item["end"]) for item in segment_words), default=raw["start"])
+                     - min((float(item["start"]) for item in segment_words), default=raw["start"]))
         if (raw["end"] - raw["start"] < 1.2 and len(segment_words) >= 8 and
                 len(lexical) <= 2):
             _emit("trace", step="segment.discarded_hallucination", start=raw["start"],
                   end=raw["end"], text=raw["text"])
+            continue
+        # Whisper can also emit a terminal micro-segment such as
+        # "Arada, Ada i Ada" with all word marks collapsed onto one frame.
+        # It is not speech: discard only this very narrow repeated-tail shape.
+        repeated_tail = (raw["end"] - raw["start"] < 0.8 and word_span < 0.5 and
+                         len(segment_words) >= 3 and len(lexical_tokens) <= 3 and
+                         len(set(lexical_tokens)) < len(lexical_tokens))
+        if repeated_tail:
+            _emit("trace", step="segment.discarded_terminal_micro_hallucination",
+                  start=raw["start"], end=raw["end"], text=raw["text"])
             continue
         words.extend(segment_words)
         raw_segments.append(raw)
