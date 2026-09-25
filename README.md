@@ -54,6 +54,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   parche a la presentación visual: subtítulos de hasta dos líneas, tipografía
   estable dentro de la guía 9:16, blanco al 100% y borde negro de 2.9 px.
 
+### 0.0.111
+
+- Ajusta automáticamente solo las líneas de subtítulo excepcionalmente largas
+  para que ningún SVG pueda salir de los márgenes de la guía 9:16 cuando el
+  renderizador de Windows no respeta `textLength`.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era

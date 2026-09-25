@@ -1,0 +1,46 @@
+From a9144eccefbdacaadf8aea570a9080453fa50f3b Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 13:55:52 +0200
+Subject: [PATCH] SMOUK 0.0.111 keep long subtitles inside guide
+
+---
+ src/windows/main_window.py     | 2 +-
+ src/windows/verticalization.py | 8 +++++++-
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 437354997..553133b6e 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.110"
++SMOUK_VERSION = "0.0.111"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 788e3b41f..9d63b06fc 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -2592,8 +2592,14 @@ class VerticalizationDockContent(QWidget):
+         # The reference broadcast band uses a large, heavy face in the lower
+         # middle of the 9:16 guide.  Keep the text inside the guide width while
+         # allowing the two-line treatment to remain clearly readable.
+-        font_size = 128.0 * guide_fraction
+         text_width = guide_width * (1.0 - 2.0 * VERTICAL_TITLE_SAFE_MARGIN)
++        # QSvgRenderer does not consistently honour textLength on every
++        # Windows build. Keep the normal broadcast size, but shrink only an
++        # unusually long row before rendering so no cue can cross the guide.
++        font_size = 128.0 * guide_fraction
++        longest_line = max(len(line) for line in lines)
++        if longest_line > 26:
++            font_size = min(font_size, text_width / (longest_line * 0.60))
+         line_height = font_size * 1.15
+         center_y = float(height) * VERTICAL_SUBTITLE_CENTER
+         first_y = center_y - (len(lines) - 1) * line_height / 2.0
+-- 
+2.55.0.windows.3
+
