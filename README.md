@@ -159,6 +159,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   una curva de alpha reversible en el clip, además de conservar el estado
   `Track.enabled` en el proyecto.
 
+### 0.0.128
+
+- Separa la creación de la pista de la salida de la máscara: `SHOW MASK TRACK`
+  crea la pista desde el PSD guardado cuando falta, y el ojo solo controla su
+  visibilidad en visor y render.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era

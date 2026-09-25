@@ -1,0 +1,128 @@
+From 0e6496f03d49ec393ab626c14f1029bc7c40f1c8 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 26 Sep 2026 01:58:45 +0200
+Subject: [PATCH] SMOUK 0.0.128 add show mask track action
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 55 ++++++++++++++++++++++++++++------
+ 2 files changed, 47 insertions(+), 10 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index ef5626753..7a3626725 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -103,7 +103,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.127"
++SMOUK_VERSION = "0.0.128"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 14fc437bf..c3b0baf7f 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -601,6 +601,11 @@ class VerticalizationDockContent(QWidget):
+ 
+     def _build_mask_controls(self, _):
+         """Add the persistent PSD mask controls without touching subtitles."""
++        self.btn_mask_track = QPushButton("SHOW MASK TRACK", self)
++        self.btn_mask_track.setObjectName("verticalizationShowMaskTrack")
++        self.btn_mask_track.setToolTip(
++            "Create the SMOUK Mask track from the PSD saved in Verticalization settings.")
++        self.btn_mask_track.clicked.connect(self._on_show_mask_track)
+         self.btn_mask_visibility = QPushButton("👁  Mask track output", self)
+         self.btn_mask_visibility.setObjectName("verticalizationMaskVisibility")
+         self.btn_mask_visibility.setCheckable(True)
+@@ -608,6 +613,7 @@ class VerticalizationDockContent(QWidget):
+         self.mask_results = QLabel("No PSD mask has been added.", self)
+         self.mask_results.setObjectName("verticalizationMaskResults")
+         self.mask_results.setWordWrap(True)
++        self.sections["mask"].add_widget(self.btn_mask_track)
+         self.sections["mask"].add_widget(self.btn_mask_visibility)
+         self.sections["mask"].add_widget(self.mask_results)
+         self._mask_dialog = None
+@@ -741,8 +747,13 @@ class VerticalizationDockContent(QWidget):
+         self.btn_mask_visibility.setChecked(visible)
+         self.btn_mask_visibility.setText("👁  Mask track output: ON" if visible else "👁  Mask track output: OFF")
+         self.btn_mask_visibility.blockSignals(False)
++        self.btn_mask_track.setEnabled(bool(path))
+         if path:
+-            self.mask_results.setText("PSD mask: %s" % os.path.basename(path))
++            if track is None or clip is None:
++                self.mask_results.setText(
++                    "PSD mask saved: %s (track not created)" % os.path.basename(path))
++            else:
++                self.mask_results.setText("PSD mask: %s" % os.path.basename(path))
+ 
+     def _open_mask_settings(self):
+         if self._mask_dialog is None:
+@@ -773,6 +784,7 @@ class VerticalizationDockContent(QWidget):
+                 self.btn_mask_visibility.setChecked(True)
+                 self.btn_mask_visibility.setText("👁  Mask track output: ON")
+                 self.btn_mask_visibility.blockSignals(False)
++                self.btn_mask_track.setEnabled(True)
+                 if dialog is not None:
+                     dialog.refresh_from_settings()
+             except Exception:
+@@ -805,14 +817,6 @@ class VerticalizationDockContent(QWidget):
+         self._save_mask_setting("smouk_mask_visible_v1", visible)
+         self.btn_mask_visibility.setText("👁  Mask track output: ON" if visible else "👁  Mask track output: OFF")
+         track = self._mask_track()
+-        if track is None:
+-            path = str(self._mask_settings().get("smouk_mask_path_v1") or "")
+-            if visible and path and os.path.isfile(path):
+-                try:
+-                    self._add_mask(path)
+-                    track = self._mask_track()
+-                except Exception:
+-                    log.exception("SMOUK could not show PSD mask")
+         if track is not None:
+             # OpenShot's Track.enabled is the track-output switch: unlike
+             # deleting the clip, it preserves the PSD, timing, and position.
+@@ -826,6 +830,39 @@ class VerticalizationDockContent(QWidget):
+         if get_app().window is not None:
+             get_app().window.refreshFrameSignal.emit()
+ 
++    def _on_show_mask_track(self):
++        """Create the persisted MASK track only when the user requests it."""
++        path = str(self._mask_settings().get("smouk_mask_path_v1") or "")
++        if not path or not os.path.isfile(path):
++            QMessageBox.warning(
++                self, "MASK", "Choose a PSD in SETTINGS VERTICALIZATION first.")
++            return
++        if self._mask_track() is not None and self._mask_clip() is not None:
++            self.mask_results.setText(
++                "PSD mask track already exists: %s" % os.path.basename(path))
++            return
++        try:
++            self._add_mask(path)
++            settings = self._mask_settings()
++            visible = bool(settings.get("smouk_mask_visible_v1"))
++            track = self._mask_track()
++            clip = self._mask_clip()
++            if track is not None:
++                track.data["enabled"] = visible
++                track.save()
++            if clip is not None:
++                clip.data["alpha"] = self._mask_alpha(
++                    1.0 if visible else 0.0, float(clip.data.get("duration", 1.0)))
++                clip.save()
++            self.mask_results.setText(
++                "PSD mask track ready: %s" % os.path.basename(path))
++            if get_app().window is not None:
++                get_app().window.refreshFrameSignal.emit()
++        except Exception:
++            log.exception("SMOUK could not create the PSD mask track")
++            QMessageBox.warning(
++                self, "MASK", "The PSD mask track could not be created. See openshot-qt.log.")
++
+     def _add_mask(self, path):
+         """Create a full visible-timeline PSD clip on the mask track."""
+         window = get_app().window
+-- 
+2.55.0.windows.3
+
