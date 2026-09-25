@@ -1,0 +1,80 @@
+From 1890edecfe1b6f551ac7e8017f5dacfed8b34705 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 17:45:53 +0200
+Subject: [PATCH] SMOUK 0.0.123 validate subtitle row width
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 33 +++++++++++++++++++++++++++++++++
+ 2 files changed, 34 insertions(+), 1 deletion(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 98ad84730..d7c68981d 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.122"
++SMOUK_VERSION = "0.0.123"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index b1c27c178..73c8abc16 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -2381,9 +2381,39 @@ class VerticalizationDockContent(QWidget):
+             self._transcription_outputs[result_index]["cues"][cue_index]["text"] = "\n".join(
+                 self._subtitle_lines(merged))
+         for result in self._transcription_outputs:
++            result["cues"] = self._fit_review_cue_capacity(result.get("cues", []))
+             result["cues"] = self._redistribute_review_cues(result.get("cues", []))
+             result["reviewed_with_parlabe"] = True
+ 
++    @staticmethod
++    def _fit_review_cue_capacity(cues, max_chars=40):
++        """Move excess corrected words into the next original cue."""
++        fitted = []
++        carry = ""
++        for cue in cues:
++            item = dict(cue)
++            text = " ".join((carry + " " + str(cue.get("text", ""))).split())
++            carry = ""
++            words = text.split()
++            def safe(value):
++                rows = VerticalizationDockContent._subtitle_lines(value)
++                return len(rows) <= 2 and all(len(row) <= 21 for row in rows)
++            cut = len(words)
++            while cut > 1 and (len(" ".join(words[:cut])) > max_chars or
++                               not safe(" ".join(words[:cut]))):
++                cut -= 1
++            if cut < len(words):
++                text = " ".join(words[:cut])
++                carry = " ".join(words[cut:])
++            item["text"] = text
++            fitted.append(item)
++        if carry and fitted:
++            # There is no later timed cue; keep the words in the last cue so
++            # transcription is never silently lost. Normal inputs have a
++            # following original cue and never take this branch.
++            fitted[-1]["text"] = " ".join((fitted[-1]["text"] + " " + carry).split())
++        return fitted
++
+     @classmethod
+     def _redistribute_review_cues(cls, cues, max_chars=42):
+         """Use original timed cues and remove unreadable sub-second screens."""
+@@ -2642,6 +2672,9 @@ class VerticalizationDockContent(QWidget):
+         lines = self._subtitle_lines(clean_text)
+         if not lines:
+             return ""
++        if len(lines) > 2 or any(len(line) > 21 for line in lines):
++            log.error("SMOUK rejected subtitle outside 9:16 capacity: %r", lines)
++            return ""
+         # The reference broadcast band uses a large, heavy face in the lower
+         # middle of the 9:16 guide.  Keep the text inside the guide width while
+         # allowing the two-line treatment to remain clearly readable.
+-- 
+2.55.0.windows.3
+

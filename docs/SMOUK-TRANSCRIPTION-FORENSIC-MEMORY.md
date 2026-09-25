@@ -53,3 +53,7 @@ se solapan. Nunca se crean dos clips de subtítulos con tiempo común.
 El reparto posterior usa una partición con capacidad de 40 caracteres por cue;
 no se permite dejar el texto sobrante en el último cue si eso produce una fila
 fuera de la guía.
+
+Antes de generar cada SVG se valida cada fila individual: ninguna puede superar
+21 caracteres. El sobrante se mueve al siguiente cue original y el SVG se
+rechaza si todavía no cumple el límite.

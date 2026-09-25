@@ -125,6 +125,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   limita a 40 caracteres y solo se aceptan cortes que permiten que todos los
   cues restantes respeten también el límite de dos filas.
 
+### 0.0.123
+
+- Valida cada fila después de la partición, no solo el total de caracteres.
+  Una fila de más de 21 caracteres mueve palabras al siguiente cue temporal y
+  queda bloqueada antes de generar el SVG.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era

@@ -137,3 +137,4 @@ git am /path/to/patches/0001-FFmpeg-9-*.patch
 | `0122-SMOUK-0.0.120-enforce-safe-post-review-width.patch` | **openshot-qt** | Uses the effective 40-character post-review limit so no corrected subtitle can exceed the 9:16 safe width. |
 | `0123-SMOUK-0.0.121-no-overlapping-review-cues.patch` | **openshot-qt** | Merges any post-review temporal overlap into one clip before Timeline placement. |
 | `0124-SMOUK-0.0.122-capacity-aware-review-split.patch` | **openshot-qt** | Partitions corrected sentences so every existing timed cue stays within 40 characters and two safe rows. |
+| `0125-SMOUK-0.0.123-validate-subtitle-row-width.patch` | **openshot-qt** | Validates each rendered row at 21 characters and moves overflow to the next original timed cue before SVG creation. |
