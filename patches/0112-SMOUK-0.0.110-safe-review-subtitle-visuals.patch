@@ -1,0 +1,103 @@
+From b02be04e87a62cf0a6b226e869b4e7c410ed5d4e Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 13:25:23 +0200
+Subject: [PATCH] SMOUK 0.0.110 restore safe review flow with subtitle visual
+ fix
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 44 ++++++++++++++++++++++++++++------
+ 2 files changed, 38 insertions(+), 8 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 81e8f6cb4..437354997 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.108"
++SMOUK_VERSION = "0.0.110"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index d0fd5c600..788e3b41f 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -2354,7 +2354,9 @@ class VerticalizationDockContent(QWidget):
+                 if piece:
+                     updates.setdefault((result_index, index), []).append(piece)
+         for (result_index, cue_index), pieces in updates.items():
+-            self._transcription_outputs[result_index]["cues"][cue_index]["text"] = " ".join(pieces)
++            merged = " ".join(pieces)
++            self._transcription_outputs[result_index]["cues"][cue_index]["text"] = "\n".join(
++                self._subtitle_lines(merged))
+         for result in self._transcription_outputs:
+             result["reviewed_with_parlabe"] = True
+ 
+@@ -2583,14 +2585,15 @@ class VerticalizationDockContent(QWidget):
+         ratio = max(0.01, min(16.0 / 9.0, self._output_ratio()))
+         guide_fraction = ratio / (16.0 / 9.0)
+         guide_width = min(float(width), float(height) * ratio)
+-        lines = [line.strip() for line in str(text).splitlines() if line.strip()][:2]
++        clean_text = " ".join(str(text).replace("\n", " ").split())
++        lines = self._subtitle_lines(clean_text)[:2]
+         if not lines:
+             return ""
+         # The reference broadcast band uses a large, heavy face in the lower
+         # middle of the 9:16 guide.  Keep the text inside the guide width while
+         # allowing the two-line treatment to remain clearly readable.
+-        font_size = min(128.0 * guide_fraction,
+-                        guide_width / max(max(len(line) for line in lines) * 0.60, 1.0))
++        font_size = 128.0 * guide_fraction
++        text_width = guide_width * (1.0 - 2.0 * VERTICAL_TITLE_SAFE_MARGIN)
+         line_height = font_size * 1.15
+         center_y = float(height) * VERTICAL_SUBTITLE_CENTER
+         first_y = center_y - (len(lines) - 1) * line_height / 2.0
+@@ -2600,11 +2603,38 @@ class VerticalizationDockContent(QWidget):
+             tspans.append('<text x="{:.2f}" y="{:.2f}" text-anchor="middle" '
+                           'font-family="Arial Black, Arial, sans-serif" font-size="{:.2f}" '
+                           'font-weight="900" fill="#ffffff" stroke="#000000" '
+-                          'stroke-width="2.9" stroke-linejoin="round" paint-order="stroke">{}</text>'.format(
+-                              float(width) / 2.0, y, font_size, html.escape(line)))
++                          'stroke-width="2.9" stroke-linejoin="round" paint-order="stroke" '
++                          'textLength="{:.2f}" lengthAdjust="spacingAndGlyphs">{}</text>'.format(
++                              float(width) / 2.0, y, font_size, text_width,
++                              html.escape(line)))
+         return ('<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" '
+                 'viewBox="0 0 {} {}">{}</svg>').format(
+-                    int(width), int(height), int(width), int(height), "".join(tspans))
++                int(width), int(height), int(width), int(height), "".join(tspans))
++
++    @staticmethod
++    def _subtitle_lines(text, width=26):
++        """Match the BSC subtitle wrapping after ParlaBE edits."""
++        clean = " ".join(str(text or "").split())
++        if not clean:
++            return []
++        if len(clean) <= width:
++            return [clean]
++        words = clean.split()
++        candidates = []
++        weak_endings = {"a", "amb", "d'", "de", "del", "dels", "el", "els",
++                        "i", "la", "les", "per", "pel", "pels"}
++        for index in range(1, len(words)):
++            left = " ".join(words[:index])
++            right = " ".join(words[index:])
++            if len(left) > width or len(right) > width:
++                continue
++            penalty = 20 if words[index - 1].lower() in weak_endings else 0
++            candidates.append((abs(len(left) - len(right)) + penalty, left, right))
++        if candidates:
++            _score, left, right = min(candidates)
++            return [left, right]
++        middle = max(1, min(len(words) - 1, len(words) // 2))
++        return [" ".join(words[:middle]), " ".join(words[middle:])]
+ 
+     @staticmethod
+     def _subtitle_clip_segments(video_clip, cue):
+-- 
+2.55.0.windows.3
+

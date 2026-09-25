@@ -48,6 +48,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - Resalta con amarillo únicamente los caracteres insertados o sustituidos por
   ParlaBE en la ventana de revisión.
 
+### 0.0.110
+
+- Recupera exactamente el flujo seguro de revisión de 0.0.108 y limita este
+  parche a la presentación visual: subtítulos de hasta dos líneas, tipografía
+  estable dentro de la guía 9:16, blanco al 100% y borde negro de 2.9 px.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era
