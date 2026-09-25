@@ -23,6 +23,9 @@ La interfaz se desarrolla en `openshot-qt` (Python/Qt). Los motores
 `libopenshot` y `libopenshot-audio` siguen proporcionando edición,
 reproducción, audio y renderizado.
 
+La causa documentada del crash nativo de la frontera BSC–ParlaBE está en
+[la memoria forense permanente](docs/SMOUK-TRANSCRIPTION-FORENSIC-MEMORY.md).
+
 ## Estado actual
 
 Estamos en una fase inicial de desarrollo. La investigación técnica y el plan
@@ -34,6 +37,16 @@ vertical y la primera automatización de subtítulos en catalán.
 
 Usamos versiones `0.0.x` durante esta etapa inicial. Cada cambio funcional o
 de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
+
+### 0.0.109
+
+- Añade el estado textual de cada fase bajo la barra de subtitulado sin
+  modificar la barra ni tocar la interfaz durante la inferencia BSC.
+- Recupera el ajuste de dos líneas de 26 caracteres después de la revisión
+  ParlaBE y fija la tipografía SVG, usando compresión horizontal para mantener
+  el texto dentro de la guía 9:16.
+- Resalta con amarillo únicamente los caracteres insertados o sustituidos por
+  ParlaBE en la ventana de revisión.
 
 ### 0.0.108
 

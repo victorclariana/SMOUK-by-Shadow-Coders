@@ -123,3 +123,4 @@ git am /path/to/patches/0001-FFmpeg-9-*.patch
 | `0108-SMOUK-0.0.106-parlabe-review-status.patch` | **scripts / openshot-qt** | Reports ParlaBE model loading and sentence-review progress in the Subtitles panel. |
 | `0109-SMOUK-0.0.107-safe-transcription-review-boundary.patch` | **openshot-qt** | Separates worker completion, ParlaBE startup, and the asynchronous review dialog across safe Qt event-loop boundaries, with forensic transition logs. |
 | `0110-SMOUK-0.0.108-post-inference-qt-mutation-guard.patch` | **openshot-qt** | Removes the unsafe post-inference widget update before ParlaBE and adds step-level forensic traces for review setup. |
+| `0111-SMOUK-0.0.109-subtitle-layout-and-safe-phase-status.patch` | **openshot-qt** | Restores fixed two-line subtitle layout after review, adds safe phase text, and highlights ParlaBE edits at character level. |

@@ -1,0 +1,22 @@
+# Memoria forense permanente de subtitulado
+
+## Fallo Qt5Core tras BSC (SMOUK 0.0.107–0.0.108)
+
+El proceso BSC terminaba correctamente: el audio del IN–OUT se extraía, los
+timecodes se validaban y el JSON bruto se guardaba. El crash sucedía al entrar
+en la preparación de la revisión ParlaBE, antes de lanzar el proceso ParlaBE y
+antes de crear la ventana.
+
+Windows registró repetidamente `python.exe` (`C:\msys64\mingw64\bin\python.exe`)
+con módulo fallido `Qt5Core.dll` 5.15.19 y excepción `0xc0000602`. No era una
+excepción Python ni un error del modelo BSC. El detonante reproducible era una
+mutación de un widget Qt (`transcription_results.setText`) en la frontera que
+seguía a la inferencia nativa. El uso de `QDialog.exec_()` en esa misma ruta
+añadía además un bucle de eventos anidado inseguro.
+
+La regla permanente es: después de la inferencia BSC no se deben modificar
+widgets desde el drenaje del proceso ni desde la primera transición de salida;
+se debe esperar a que el lector y el proceso terminen, cruzar un límite del
+bucle Qt y usar `QDialog.open()` con señales. Los estados visibles deben ser
+coarse y programados en fases seguras; el detalle completo se conserva en
+`openshot-qt.log`.
