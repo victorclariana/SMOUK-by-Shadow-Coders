@@ -78,6 +78,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   La fuente mantiene tamaño, proporciones, blanco y borde fijos; las frases
   largas se redistribuyen por palabras y puntuación en más líneas para caber.
 
+### 0.0.115
+
+- Impone una o dos líneas como máximo, redistribuye el texto corregido entre
+  sus intervalos temporales antes de crear los clips y fija el borde negro en
+  1.9 px, sin deformar la tipografía.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era

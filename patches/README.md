@@ -129,3 +129,4 @@ git am /path/to/patches/0001-FFmpeg-9-*.patch
 | `0114-SMOUK-0.0.112-filter-terminal-micro-hallucinations.patch` | **scripts / openshot-qt** | Filters collapsed repeated Whisper tail hallucinations without changing valid subtitle timing. |
 | `0115-SMOUK-0.0.113-fixed-subtitle-typography.patch` | **openshot-qt** | Keeps subtitle font size, white fill and 2.9 px black border fixed for every cue while fitting exceptional long rows inside 9:16. |
 | `0116-SMOUK-0.0.114-no-subtitle-compression.patch` | **openshot-qt** | Removes all horizontal compression and wraps long corrected phrases into safe punctuation-aware rows with fixed typography. |
+| `0117-SMOUK-0.0.115-two-line-fixed-subtitle-layout.patch` | **openshot-qt** | Enforces one or two rows, redistributes corrected words across timed cues, and uses the fixed 1.9 px border without font distortion. |

@@ -29,5 +29,6 @@ comprimirse solo en horizontal para respetar la guía 9:16; nunca se reduce la
 medida de la fuente de una pantalla respecto de otra.
 
 La distribución debe resolver el espacio mediante saltos de palabra y
-puntuación, incluso usando más de dos filas cuando una corrección manual hace
-crecer la frase. Nunca se debe deformar horizontalmente la fuente.
+puntuación dentro de una o dos filas. Si una corrección manual hace crecer la
+frase, sus palabras se reparten entre los intervalos temporales disponibles
+antes de crear los clips. Nunca se debe deformar horizontalmente la fuente.

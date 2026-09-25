@@ -1,0 +1,91 @@
+From a26255ea2a8b4c8334dc498803ffff459c93ebba Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 15:47:21 +0200
+Subject: [PATCH] SMOUK 0.0.115 enforce two-line fixed subtitles
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 33 ++++++++++++++++++---------------
+ 2 files changed, 19 insertions(+), 16 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index abc866ac4..1dd868f5e 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.114"
++SMOUK_VERSION = "0.0.115"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index d6da32392..8a050ae1b 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -2315,6 +2315,7 @@ class VerticalizationDockContent(QWidget):
+ 
+     @staticmethod
+     def _split_review_text(text, count, original_lengths=None):
++        max_chars = 52
+         words = str(text or "").split()
+         if count <= 1:
+             return [" ".join(words)]
+@@ -2332,6 +2333,8 @@ class VerticalizationDockContent(QWidget):
+             else:
+                 end = max(start + 1, int(round(len(words) * sum(lengths[:index + 1]) / total)))
+                 end = min(end, len(words) - (count - index - 1))
++                while end > start + 1 and len(" ".join(words[start:end])) > max_chars:
++                    end -= 1
+             result.append(" ".join(words[start:end]))
+             start = end
+         return result
+@@ -2606,7 +2609,7 @@ class VerticalizationDockContent(QWidget):
+             tspans.append('<text x="{:.2f}" y="{:.2f}" text-anchor="middle" '
+                           'font-family="Arial Black, Arial, sans-serif" font-size="{:.2f}" '
+                           'font-weight="900" fill="#ffffff" stroke="#000000" '
+-                          'stroke-width="2.9" stroke-linejoin="round" paint-order="stroke" '
++                          'stroke-width="1.9" stroke-linejoin="round" paint-order="stroke" '
+                           '>{}</text>'.format(
+                               float(width) / 2.0, y, font_size, html.escape(line)))
+         return ('<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" '
+@@ -2635,20 +2638,20 @@ class VerticalizationDockContent(QWidget):
+         if candidates:
+             _score, left, right = min(candidates)
+             return [left, right]
+-        # More than two rows are preferable to changing the fixed type size.
+-        # Prefer sentence punctuation, then fill the longest safe row.
+-        lines = []
+-        while words:
+-            end = min(len(words), max(1, width))
+-            while end > 1 and len(" ".join(words[:end])) > width:
+-                end -= 1
+-            punctuation = [index for index in range(1, end + 1)
+-                           if words[index - 1].rstrip().endswith((".", "?", "!", "…", ",", ";", ":"))]
+-            if punctuation and end < len(words):
+-                end = punctuation[-1]
+-            lines.append(" ".join(words[:end]))
+-            words = words[end:]
+-        return lines
++        # The broadcast contract is one or two rows. Choose the best word
++        # boundary; corrected text is split across timed cues before render.
++        candidates = []
++        for index in range(1, len(words)):
++            left = " ".join(words[:index])
++            right = " ".join(words[index:])
++            punctuation_bonus = -20 if words[index - 1].rstrip().endswith((".", "?", "!", "…", ",", ";", ":")) else 0
++            overflow = max(0, len(left) - width) + max(0, len(right) - width)
++            candidates.append((overflow * 100 + abs(len(left) - len(right)) + punctuation_bonus,
++                              left, right))
++        if candidates:
++            _score, left, right = min(candidates)
++            return [left, right]
++        return [clean]
+ 
+     @staticmethod
+     def _subtitle_clip_segments(video_clip, cue):
+-- 
+2.55.0.windows.3
+
