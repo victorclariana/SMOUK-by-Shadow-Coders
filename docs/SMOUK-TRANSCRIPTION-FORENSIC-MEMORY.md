@@ -20,3 +20,10 @@ se debe esperar a que el lector y el proceso terminen, cruzar un límite del
 bucle Qt y usar `QDialog.open()` con señales. Los estados visibles deben ser
 coarse y programados en fases seguras; el detalle completo se conserva en
 `openshot-qt.log`.
+
+## Regla permanente de tipografía
+
+La tipografía de subtítulos conserva siempre la misma medida vertical, relleno
+blanco al 100% y borde negro de 2.9 px. Una línea excepcionalmente larga puede
+comprimirse solo en horizontal para respetar la guía 9:16; nunca se reduce la
+medida de la fuente de una pantalla respecto de otra.
