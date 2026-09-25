@@ -147,6 +147,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   para que se guarden realmente entre sesiones. El engranaje abre ahora
   `SETTINGS VERTICALIZATION`, preparado para la configuración general del dock.
 
+### 0.0.126
+
+- Integra el engranaje de Verticalization en el `HiddenTitleBar` que OpenShot
+  reconstruye realmente, de modo que permanece visible junto al título del dock
+  al cambiar de tema, acoplarlo o tabularlo.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era

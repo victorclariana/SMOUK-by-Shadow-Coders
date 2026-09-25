@@ -1,0 +1,137 @@
+From 1c171a624d8b02cd8a02ad052e46811e971754cc Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 26 Sep 2026 00:27:16 +0200
+Subject: [PATCH] SMOUK 0.0.126 place settings gear in dock title bar
+
+---
+ src/classes/title_bar.py   | 20 +++++++++++++++--
+ src/windows/main_window.py | 46 ++++++++++++++++----------------------
+ 2 files changed, 37 insertions(+), 29 deletions(-)
+
+diff --git a/src/classes/title_bar.py b/src/classes/title_bar.py
+index b3801a121..90fa265c4 100644
+--- a/src/classes/title_bar.py
++++ b/src/classes/title_bar.py
+@@ -25,16 +25,18 @@
+  along with OpenShot Library.  If not, see <http://www.gnu.org/licenses/>.
+  """
+ 
+-from qt_api import Qt, QEvent, QWidget, QDockWidget, QHBoxLayout, QPushButton, QLabel
++from qt_api import Qt, QEvent, QWidget, QDockWidget, QHBoxLayout, QPushButton, QLabel, QToolButton
+ 
+ from classes.app import get_app
+ 
+ 
+ class HiddenTitleBar(QWidget):
+-    def __init__(self, dock_widget, title_text="", show_buttons=True):
++    def __init__(self, dock_widget, title_text="", show_buttons=True,
++                 settings_callback=None):
+         super().__init__()
+         self.dock_widget = dock_widget
+         self.show_buttons = show_buttons
++        self.settings_callback = settings_callback
+         self._tr = None
+         self.dragging = False  # Flag for dragging
+         self.start_pos = None
+@@ -61,6 +63,20 @@ class HiddenTitleBar(QWidget):
+         # Add a spacer to push buttons to the right
+         layout.addStretch()
+ 
++        self.settings_button = None
++        if self.settings_callback is not None:
++            self.settings_button = QToolButton()
++            self.settings_button.setObjectName("dock-settings-button")
++            self.settings_button.setText("⚙")
++            self.settings_button.setToolTip("Verticalization settings")
++            self.settings_button.setAccessibleName("Verticalization settings")
++            self.settings_button.setAutoRaise(True)
++            self.settings_button.setFixedSize(28, 24)
++            self.settings_button.setStyleSheet(
++                "QToolButton { font-family: 'Segoe UI Symbol'; font-size: 17px; padding: 0; }")
++            self.settings_button.clicked.connect(self.settings_callback)
++            layout.addWidget(self.settings_button)
++
+         self.close_button = None
+         self.undock_button = None
+ 
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index db88a30bb..17a018dad 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -103,7 +103,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.125"
++SMOUK_VERSION = "0.0.126"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+@@ -5316,6 +5316,13 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+                     | QDockWidget.DockWidgetFloatable))
+             if dock_widget.objectName() == "dockTimeline":
+                 required_state = "timeline"
++            elif dock_widget.objectName() == "dockVerticalization" and not dock_widget.isFloating():
++                # Verticalization has one dock-level settings control, outside
++                # all collapsible sections and independent of the theme.
++                if tabified_widgets:
++                    required_state = f"verticalization-tabbed:{feature_state}"
++                else:
++                    required_state = f"verticalization-docked:{dock_widget.windowTitle()}:{feature_state}"
+             elif theme and theme.name == ThemeName.COSMIC.value:
+                 if tabified_widgets:
+                     required_state = f"tabbed:{feature_state}"
+@@ -5333,6 +5340,17 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+ 
+             if required_state == "timeline":
+                 dock_widget.setTitleBarWidget(QWidget())
++            elif required_state.startswith("verticalization-tabbed:"):
++                dock_widget.setTitleBarWidget(
++                    HiddenTitleBar(
++                        dock_widget, "", show_buttons=show_titlebar_buttons,
++                        settings_callback=self.verticalization_content._open_mask_settings))
++            elif required_state.startswith("verticalization-docked:"):
++                dock_widget.setTitleBarWidget(
++                    HiddenTitleBar(
++                        dock_widget, dock_widget.windowTitle(),
++                        show_buttons=show_titlebar_buttons,
++                        settings_callback=self.verticalization_content._open_mask_settings))
+             elif required_state.startswith("tabbed:"):
+                 dock_widget.setTitleBarWidget(
+                     HiddenTitleBar(dock_widget, "", show_buttons=show_titlebar_buttons))
+@@ -5622,32 +5640,6 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         self.dockVerticalization.setFocusPolicy(Qt.NoFocus)
+         self.dockVerticalization.setMinimumWidth(VERTICALIZATION_DOCK_MIN_WIDTH)
+         self.dockVerticalization.setWidget(self.verticalization_content)
+-        # Keep the MASK settings affordance in the dock title bar, where it
+-        # remains visible while the long verticalization panel is scrolled.
+-        title_bar = QWidget(self.dockVerticalization)
+-        title_layout = QHBoxLayout(title_bar)
+-        title_layout.setContentsMargins(8, 0, 2, 0)
+-        title_layout.setSpacing(2)
+-        title_layout.addWidget(QLabel(_("Verticalization"), title_bar))
+-        title_layout.addStretch(1)
+-        mask_settings_button = QToolButton(title_bar)
+-        mask_settings_button.setObjectName("verticalizationMaskTitleSettings")
+-        mask_settings_button.setText("⚙")
+-        mask_settings_button.setToolTip(_("MASK settings"))
+-        mask_settings_button.setAutoRaise(True)
+-        mask_settings_button.setFixedSize(28, 24)
+-        mask_settings_button.setStyleSheet(
+-            "QToolButton { font-family: 'Segoe UI Symbol'; font-size: 17px; padding: 0; }")
+-        mask_settings_button.clicked.connect(self.verticalization_content._open_mask_settings)
+-        title_layout.addWidget(mask_settings_button)
+-        close_button = QToolButton(title_bar)
+-        close_button.setObjectName("verticalizationDockClose")
+-        close_button.setText("×")
+-        close_button.setToolTip(_("Close dock"))
+-        close_button.setAutoRaise(True)
+-        close_button.clicked.connect(self.dockVerticalization.close)
+-        title_layout.addWidget(close_button)
+-        self.dockVerticalization.setTitleBarWidget(title_bar)
+         self.dockVerticalization.hide()
+         self.addDockWidget(Qt.RightDockWidgetArea, self.dockVerticalization)
+ 
+-- 
+2.55.0.windows.3
+
