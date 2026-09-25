@@ -128,3 +128,4 @@ git am /path/to/patches/0001-FFmpeg-9-*.patch
 | `0113-SMOUK-0.0.111-clamp-long-subtitle-lines.patch` | **openshot-qt** | Shrinks only exceptionally long subtitle rows so they remain inside the 9:16 guide on Windows SVG rendering. |
 | `0114-SMOUK-0.0.112-filter-terminal-micro-hallucinations.patch` | **scripts / openshot-qt** | Filters collapsed repeated Whisper tail hallucinations without changing valid subtitle timing. |
 | `0115-SMOUK-0.0.113-fixed-subtitle-typography.patch` | **openshot-qt** | Keeps subtitle font size, white fill and 2.9 px black border fixed for every cue while fitting exceptional long rows inside 9:16. |
+| `0116-SMOUK-0.0.114-no-subtitle-compression.patch` | **openshot-qt** | Removes all horizontal compression and wraps long corrected phrases into safe punctuation-aware rows with fixed typography. |

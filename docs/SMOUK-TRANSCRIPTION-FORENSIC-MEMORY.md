@@ -27,3 +27,7 @@ La tipografía de subtítulos conserva siempre la misma medida vertical, relleno
 blanco al 100% y borde negro de 2.9 px. Una línea excepcionalmente larga puede
 comprimirse solo en horizontal para respetar la guía 9:16; nunca se reduce la
 medida de la fuente de una pantalla respecto de otra.
+
+La distribución debe resolver el espacio mediante saltos de palabra y
+puntuación, incluso usando más de dos filas cuando una corrección manual hace
+crecer la frase. Nunca se debe deformar horizontalmente la fuente.

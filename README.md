@@ -72,6 +72,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   subtítulos. Las líneas excepcionales se comprimen solo horizontalmente para
   respetar la guía 9:16, sin reducir la altura tipográfica de esa pantalla.
 
+### 0.0.114
+
+- Elimina toda compresión horizontal, `textLength` y escalado de subtítulos.
+  La fuente mantiene tamaño, proporciones, blanco y borde fijos; las frases
+  largas se redistribuyen por palabras y puntuación en más líneas para caber.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era

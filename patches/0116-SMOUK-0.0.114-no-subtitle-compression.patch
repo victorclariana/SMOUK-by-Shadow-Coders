@@ -1,0 +1,95 @@
+From 1001a3d8b1c78218be37081b35822517138974d8 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 14:39:49 +0200
+Subject: [PATCH] SMOUK 0.0.114 remove subtitle compression
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 36 +++++++++++++++++++++-------------
+ 2 files changed, 23 insertions(+), 15 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 6b3415dd8..abc866ac4 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.113"
++SMOUK_VERSION = "0.0.114"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index ae2818fd5..d6da32392 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -2586,33 +2586,29 @@ class VerticalizationDockContent(QWidget):
+         guide_fraction = ratio / (16.0 / 9.0)
+         guide_width = min(float(width), float(height) * ratio)
+         clean_text = " ".join(str(text).replace("\n", " ").split())
+-        lines = self._subtitle_lines(clean_text)[:2]
++        lines = self._subtitle_lines(clean_text)
+         if not lines:
+             return ""
+         # The reference broadcast band uses a large, heavy face in the lower
+         # middle of the 9:16 guide.  Keep the text inside the guide width while
+         # allowing the two-line treatment to remain clearly readable.
+         text_width = guide_width * (1.0 - 2.0 * VERTICAL_TITLE_SAFE_MARGIN)
+-        # The subtitle face is fixed for every cue.  Keep its height and
+-        # stroke identical; only an exceptionally long row may be compressed
+-        # horizontally so it remains inside the active guide.
+-        font_size = min(128.0 * guide_fraction, guide_width / (26.0 * 0.60))
++        # Fixed typography: no textLength, scale or per-cue font adjustment.
++        # The usable width determines one constant pixel size for the whole
++        # subtitle track; long corrected text is wrapped into more rows.
++        font_size = min(128.0 * guide_fraction, text_width / (26.0 * 0.60))
+         line_height = font_size * 1.15
+         center_y = float(height) * VERTICAL_SUBTITLE_CENTER
+         first_y = center_y - (len(lines) - 1) * line_height / 2.0
+         tspans = []
+         for index, line in enumerate(lines):
+             y = first_y + index * line_height
+-            horizontal_scale = min(1.0, text_width / max(font_size * 0.50 * len(line), 1.0))
+-            center_x = float(width) / 2.0
+-            tspans.append('<g transform="translate({:.2f},0) scale({:.6f},1) translate({:.2f},0)">'
+-                          '<text x="{:.2f}" y="{:.2f}" text-anchor="middle" '
++            tspans.append('<text x="{:.2f}" y="{:.2f}" text-anchor="middle" '
+                           'font-family="Arial Black, Arial, sans-serif" font-size="{:.2f}" '
+                           'font-weight="900" fill="#ffffff" stroke="#000000" '
+                           'stroke-width="2.9" stroke-linejoin="round" paint-order="stroke" '
+-                          'textLength="{:.2f}" lengthAdjust="spacingAndGlyphs">{}</text>'.format(
+-                              center_x, horizontal_scale, -center_x,
+-                              center_x, y, font_size, text_width, html.escape(line)) + '</g>')
++                          '>{}</text>'.format(
++                              float(width) / 2.0, y, font_size, html.escape(line)))
+         return ('<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" '
+                 'viewBox="0 0 {} {}">{}</svg>').format(
+                 int(width), int(height), int(width), int(height), "".join(tspans))
+@@ -2639,8 +2635,20 @@ class VerticalizationDockContent(QWidget):
+         if candidates:
+             _score, left, right = min(candidates)
+             return [left, right]
+-        middle = max(1, min(len(words) - 1, len(words) // 2))
+-        return [" ".join(words[:middle]), " ".join(words[middle:])]
++        # More than two rows are preferable to changing the fixed type size.
++        # Prefer sentence punctuation, then fill the longest safe row.
++        lines = []
++        while words:
++            end = min(len(words), max(1, width))
++            while end > 1 and len(" ".join(words[:end])) > width:
++                end -= 1
++            punctuation = [index for index in range(1, end + 1)
++                           if words[index - 1].rstrip().endswith((".", "?", "!", "…", ",", ";", ":"))]
++            if punctuation and end < len(words):
++                end = punctuation[-1]
++            lines.append(" ".join(words[:end]))
++            words = words[end:]
++        return lines
+ 
+     @staticmethod
+     def _subtitle_clip_segments(video_clip, cue):
+-- 
+2.55.0.windows.3
+
