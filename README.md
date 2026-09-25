@@ -108,6 +108,17 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   Redistribuye las palabras con un máximo de 21 caracteres por fila y 42 por
   pantalla para compensar el espacio adicional sin deformar la fuente.
 
+### 0.0.120
+
+- Corrige el límite posterior a la revisión manual: cada pantalla se reparte
+  con un máximo efectivo de 40 caracteres para garantizar dos filas de 21 o
+  menos y respetar siempre el rectángulo 9:16.
+
+### 0.0.121
+
+- Fusiona cualquier solapamiento temporal detectado después de la revisión en
+  un único clip, impidiendo que dos subtítulos se dibujen simultáneamente.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era

@@ -42,3 +42,10 @@ Para el perfil 9:16 la medida fija de referencia es 42 px, con borde negro de
 2.2 px, un máximo de 21 caracteres por fila y 42 por pantalla. Esta medida no
 se reduce para acomodar frases: las palabras se redistribuyen en los cues
 temporales existentes cuando es necesario.
+
+Después de la corrección manual se usa un límite efectivo de 40 caracteres por
+cue para dejar margen a la anchura real de Arial Black y garantizar que las dos
+filas permanezcan dentro del rectángulo blanco.
+
+Los cues posteriores a la revisión se ordenan y se fusionan si sus intervalos
+se solapan. Nunca se crean dos clips de subtítulos con tiempo común.
