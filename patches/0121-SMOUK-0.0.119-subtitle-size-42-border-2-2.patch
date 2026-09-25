@@ -1,0 +1,69 @@
+From 47ee8fa68172499ea4fc36b116b0e717752a98f4 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 16:39:51 +0200
+Subject: [PATCH] SMOUK 0.0.119 set subtitle size 42 and border 2.2
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 10 +++++-----
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index fcf1170da..65e79c1d1 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -102,7 +102,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.118"
++SMOUK_VERSION = "0.0.119"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 651058d6b..bd8667568 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -2365,7 +2365,7 @@ class VerticalizationDockContent(QWidget):
+             result["reviewed_with_parlabe"] = True
+ 
+     @classmethod
+-    def _redistribute_review_cues(cls, cues):
++    def _redistribute_review_cues(cls, cues, max_chars=42):
+         """Use original timed cues and remove unreadable sub-second screens."""
+         redistributed = []
+         for cue in cues:
+@@ -2621,9 +2621,9 @@ class VerticalizationDockContent(QWidget):
+         # middle of the 9:16 guide.  Keep the text inside the guide width while
+         # allowing the two-line treatment to remain clearly readable.
+         # Fixed typography: no textLength, scale or per-cue font adjustment.
+-        # The 9:16 profile uses the fixed 40.5 px face; text is redistributed
++        # The 9:16 profile uses the fixed 42 px face; text is redistributed
+         # into timed two-line cues before this renderer is called.
+-        font_size = 128.0 * guide_fraction
++        font_size = 42.0
+         line_height = font_size * 1.15
+         center_y = float(height) * VERTICAL_SUBTITLE_CENTER
+         first_y = center_y - (len(lines) - 1) * line_height / 2.0
+@@ -2633,7 +2633,7 @@ class VerticalizationDockContent(QWidget):
+             tspans.append('<text x="{:.2f}" y="{:.2f}" text-anchor="middle" '
+                           'font-family="Arial Black, Arial, sans-serif" font-size="{:.2f}" '
+                           'font-weight="900" fill="#ffffff" stroke="#000000" '
+-                          'stroke-width="1.9" stroke-linejoin="round" paint-order="stroke" '
++                          'stroke-width="2.2" stroke-linejoin="round" paint-order="stroke" '
+                           '>{}</text>'.format(
+                               float(width) / 2.0, y, font_size, html.escape(line)))
+         return ('<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" '
+@@ -2641,7 +2641,7 @@ class VerticalizationDockContent(QWidget):
+                 int(width), int(height), int(width), int(height), "".join(tspans))
+ 
+     @staticmethod
+-    def _subtitle_lines(text, width=22):
++    def _subtitle_lines(text, width=21):
+         """Match the BSC subtitle wrapping after ParlaBE edits."""
+         clean = " ".join(str(text or "").split())
+         if not clean:
+-- 
+2.55.0.windows.3
+

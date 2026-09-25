@@ -133,3 +133,4 @@ git am /path/to/patches/0001-FFmpeg-9-*.patch
 | `0118-SMOUK-0.0.116-review-cue-space-distribution.patch` | **openshot-qt** | Splits overlong corrected cues into interpolated voice-synchronised intervals so every subtitle stays within two safe rows. |
 | `0119-SMOUK-0.0.117-fixed-vertical-subtitle-size.patch` | **scripts / openshot-qt** | Fixes the 9:16 subtitle face at 40.5 px and limits rows to 22 characters so the fixed type fits without distortion. |
 | `0120-SMOUK-0.0.118-no-short-review-cues.patch` | **openshot-qt** | Removes interpolated 7-frame review screens, preserves original timing and merges any sub-second cue with its neighbour. |
+| `0121-SMOUK-0.0.119-subtitle-size-42-border-2-2.patch` | **scripts / openshot-qt** | Raises fixed subtitle typography to 42 px, sets the border to 2.2 px, and redistributes text at 21 characters per row. |

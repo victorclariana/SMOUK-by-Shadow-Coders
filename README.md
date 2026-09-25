@@ -102,6 +102,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   Se conservan los tiempos originales y cualquier pantalla inferior a 1
   segundo se fusiona con una pantalla vecina para mantener legibilidad.
 
+### 0.0.119
+
+- Fija la tipografía de subtítulos en 42 px y el borde negro en 2.2 px.
+  Redistribuye las palabras con un máximo de 21 caracteres por fila y 42 por
+  pantalla para compensar el espacio adicional sin deformar la fuente.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era

@@ -38,6 +38,7 @@ temporales originales. No se crean intervalos interpolados: cualquier pantalla
 inferior a 1 segundo se fusiona con una pantalla vecina para conservar la
 legibilidad. El SVG nunca recibe una tercera fila ni una fuente comprimida.
 
-Para el perfil 9:16 la medida fija de referencia es 40.5 px, con un máximo de
-22 caracteres por fila y 44 por pantalla. Esta medida no se reduce para
-acomodar frases: se crean más pantallas sincronizadas cuando es necesario.
+Para el perfil 9:16 la medida fija de referencia es 42 px, con borde negro de
+2.2 px, un máximo de 21 caracteres por fila y 42 por pantalla. Esta medida no
+se reduce para acomodar frases: las palabras se redistribuyen en los cues
+temporales existentes cuando es necesario.
