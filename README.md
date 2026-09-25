@@ -35,6 +35,14 @@ vertical y la primera automatización de subtítulos en catalán.
 Usamos versiones `0.0.x` durante esta etapa inicial. Cada cambio funcional o
 de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 
+### 0.0.107
+
+- Corrige el cierre nativo de Qt que ocurría tras completar BSC y antes de la
+  revisión: la salida del proceso, ParlaBE y el diálogo ahora cruzan límites
+  separados del bucle de eventos.
+- Sustituye el diálogo bloqueante `exec_()` por un diálogo modal asíncrono y
+  conserva trazas de cada transición en `openshot-qt.log`.
+
 ### 0.0.104
 
 - Añade una revisión intermedia de la transcripción catalana: ParlaBE corrige
