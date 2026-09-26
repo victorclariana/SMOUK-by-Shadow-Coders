@@ -186,6 +186,13 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   inferior. Valida la distribución completa, incluidos los solapamientos,
   antes de sustituir los subtítulos existentes.
 
+### 0.0.131
+
+- Descarta un eco terminal muy breve que repite el final de la palabra
+  anterior (por ejemplo, «Mediterrània. Nia.») al cortar un audio del timeline.
+  El filtro exige coincidencia del sufijo, continuidad temporal y proximidad
+  al OUT para conservar palabras reales.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era

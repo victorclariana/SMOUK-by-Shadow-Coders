@@ -1,0 +1,77 @@
+From 74f15474a020ab9a6be2b2cc43ba6bd95c9e8e2e Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 26 Sep 2026 15:31:41 +0200
+Subject: [PATCH] SMOUK 0.0.131 reject terminal word echoes
+
+---
+ src/tests/test_smouk_transcription.py | 40 +++++++++++++++++++++++++++
+ src/windows/main_window.py            |  2 +-
+ 2 files changed, 41 insertions(+), 1 deletion(-)
+
+diff --git a/src/tests/test_smouk_transcription.py b/src/tests/test_smouk_transcription.py
+index 32458c910..32f307b13 100644
+--- a/src/tests/test_smouk_transcription.py
++++ b/src/tests/test_smouk_transcription.py
+@@ -93,6 +93,46 @@ class SmoukTranscriptionTests(unittest.TestCase):
+         self.assertEqual(" ".join(lines), "i la crida feta pel president d'Omnium")
+         self.assertLessEqual(len(lines), 2)
+ 
++    def test_terminal_suffix_echo_is_removed_without_hiding_real_words(self):
++        previous = [{"word": "Mediterrània.", "start": 2.12, "end": 2.82}]
++        echo = [{"word": "Nia.", "start": 2.82, "end": 2.94}]
++        genuine = [{"word": "Avui.", "start": 2.82, "end": 2.94}]
++        self.assertTrue(worker._is_terminal_word_echo(echo, previous, 2.94, 2.96))
++        self.assertFalse(worker._is_terminal_word_echo(genuine, previous, 2.94, 2.96))
++        self.assertFalse(worker._is_terminal_word_echo(echo, previous, 2.94, 4.0))
++
++    def test_terminal_suffix_echo_never_reaches_transcript(self):
++        segments = [
++            types.SimpleNamespace(start=0.0, end=2.82,
++                                  text="Mediterrània.", words=[
++                                      types.SimpleNamespace(start=2.12, end=2.82,
++                                                            word="Mediterrània.")]),
++            types.SimpleNamespace(start=2.82, end=2.94,
++                                  text="Nia.", words=[
++                                      types.SimpleNamespace(start=2.82, end=2.94,
++                                                            word="Nia.")]),
++        ]
++
++        class FakeModel:
++            def __init__(self, *args, **kwargs):
++                pass
++
++            def transcribe(self, *args, **kwargs):
++                return iter(segments), types.SimpleNamespace(duration=2.96)
++
++        with mock.patch.dict(sys.modules, {
++                "faster_whisper": types.SimpleNamespace(WhisperModel=FakeModel)}), \
++                mock.patch.object(worker, "_media_duration", return_value=2.96), \
++                mock.patch.object(worker, "_run_media_command"), \
++                mock.patch.object(worker, "_tool_path", return_value="ffmpeg"), \
++                mock.patch.object(worker, "_emit"), \
++                mock.patch.object(os, "makedirs"), \
++                mock.patch.object(os, "remove"):
++            _duration, words, raw_segments, _range = worker.transcribe_bsc(
++                "audio.wav", "models", None, ".", 0.0, 2.96)
++        self.assertEqual([item["word"] for item in words], ["Mediterrània."])
++        self.assertEqual(len(raw_segments), 1)
++
+     def test_cues_are_clamped_to_exact_timeline_duration(self):
+         cues, changed = worker.clamp_cues_to_duration([
+             {"start": 109.56, "end": 110.56, "text": "final"},
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index b5324d2c4..63ec53a67 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -103,7 +103,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.130"
++SMOUK_VERSION = "0.0.131"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+-- 
+2.55.0.windows.3
+

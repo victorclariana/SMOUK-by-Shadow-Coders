@@ -66,6 +66,21 @@ def _trailing_hallucination_start(tokens):
     return None
 
 
+def _is_terminal_word_echo(segment_words, previous_words, segment_end, duration):
+    """Reject a tiny file-end segment repeating a suffix of the last word."""
+    if len(segment_words) != 1 or not previous_words:
+        return False
+    word = segment_words[0]
+    previous = previous_words[-1]
+    token = _normalized_token(word["word"])
+    prior = _normalized_token(previous["word"])
+    return (len(token) >= 3 and len(prior) >= len(token) + 3 and
+            prior.endswith(token) and
+            float(word["end"]) - float(word["start"]) <= 0.25 and
+            0.0 <= float(word["start"]) - float(previous["end"]) <= 0.15 and
+            float(duration) - float(segment_end) <= 0.25)
+
+
 def trim_hallucinated_tail(text):
     """Remove only a duplicated function-word tail ending in a stray letter."""
     tokens = str(text).split()
@@ -458,6 +473,10 @@ def transcribe_bsc(path, model_dir, ffmpeg_path, temp_root, source_start, source
                          len(set(lexical_tokens)) < len(lexical_tokens))
         if repeated_tail:
             _emit("trace", step="segment.discarded_terminal_micro_hallucination",
+                  start=raw["start"], end=raw["end"], text=raw["text"])
+            continue
+        if _is_terminal_word_echo(segment_words, words, raw["end"], duration):
+            _emit("trace", step="segment.discarded_terminal_word_echo",
                   start=raw["start"], end=raw["end"], text=raw["text"])
             continue
         words.extend(segment_words)
