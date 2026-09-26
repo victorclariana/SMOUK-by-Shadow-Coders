@@ -165,6 +165,16 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   crea la pista desde el PSD guardado cuando falta, y el ojo solo controla su
   visibilidad en visor y render.
 
+### 0.0.129
+
+- Añade `SUBTITLE SETTINGS` a la configuración general de Verticalization:
+  fuente instalada en Windows, tamaño, colores, borde, posición, separación y
+  alineación. Los valores se guardan en la configuración y solo se aplican al
+  generar subtítulos nuevos.
+- Recalcula la distribución de palabras por anchura real de la fuente para
+  mantener como máximo dos líneas dentro de la guía 9:16, sin compresión
+  horizontal ni desbordamientos.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era
