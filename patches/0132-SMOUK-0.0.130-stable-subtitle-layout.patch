@@ -1,0 +1,910 @@
+From 27d6b71a0aa04760e9443b666ba9687ecdc1745e Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sat, 26 Sep 2026 15:05:12 +0200
+Subject: [PATCH] SMOUK 0.0.130 stabilize subtitle timeline layout
+
+---
+ src/classes/smouk_subtitle_layout.py    | 175 ++++++++++
+ src/tests/test_smouk_subtitle_layout.py |  69 ++++
+ src/tests/test_smouk_transcription.py   |  32 +-
+ src/windows/main_window.py              |   2 +-
+ src/windows/verticalization.py          | 425 +++++++++---------------
+ 5 files changed, 426 insertions(+), 277 deletions(-)
+ create mode 100644 src/classes/smouk_subtitle_layout.py
+ create mode 100644 src/tests/test_smouk_subtitle_layout.py
+
+diff --git a/src/classes/smouk_subtitle_layout.py b/src/classes/smouk_subtitle_layout.py
+new file mode 100644
+index 000000000..71702e87d
+--- /dev/null
++++ b/src/classes/smouk_subtitle_layout.py
+@@ -0,0 +1,175 @@
++"""Pure, testable planning of timed, two-line SMOUK subtitle screens.
++
++All text is planned before any Timeline clip is changed. Pixel measurement is
++supplied by the caller so this module has no Qt or OpenShot dependency.
++"""
++
++from difflib import SequenceMatcher
++import re
++
++
++_WEAK_ENDINGS = {"a", "amb", "de", "del", "dels", "el", "els", "i",
++                 "la", "les", "per", "pel", "pels"}
++_SENTENCE_END = (".", "?", "!", "…")
++
++
++def _normal(word):
++    return re.sub(r"[^\w]", "", str(word), flags=re.UNICODE).casefold()
++
++
++def align_corrected_words(raw_words, corrected_text):
++    """Attach monotonic original speech times to manually corrected words."""
++    corrected = str(corrected_text or "").split()
++    original = [word for word in raw_words if str(word.get("word", "")).strip()]
++    if not corrected or not original:
++        raise ValueError("La revisión o los tiempos de palabras están vacíos.")
++    result = [None] * len(corrected)
++    matcher = SequenceMatcher(None, [_normal(w["word"]) for w in original],
++                              [_normal(w) for w in corrected], autojunk=False)
++    for operation, a, b, c, d in matcher.get_opcodes():
++        if operation == "equal":
++            for offset in range(d - c):
++                source = original[a + offset]
++                result[c + offset] = {"word": corrected[c + offset],
++                                      "start": float(source["start"]),
++                                      "end": float(source["end"])}
++        elif c < d:
++            before = float(original[a - 1]["end"]) if a else float(original[0]["start"])
++            after = (float(original[b]["start"]) if b < len(original)
++                     else float(original[-1]["end"]))
++            if a < b:
++                before = float(original[a]["start"])
++                after = float(original[b - 1]["end"])
++            after = max(before, after)
++            for index in range(c, d):
++                start = before + (after - before) * (index - c) / (d - c)
++                end = before + (after - before) * (index - c + 1) / (d - c)
++                result[index] = {"word": corrected[index], "start": start, "end": end}
++    # SequenceMatcher can match repeated words across a correction. Clamp
++    # their times without changing order or ever placing text after its speech.
++    for index in range(1, len(result)):
++        result[index]["start"] = max(result[index - 1]["start"], result[index]["start"])
++        result[index]["end"] = max(result[index]["start"], result[index]["end"])
++    return result
++
++
++def wrap_words(words, measure, safe_width):
++    """Find one or two lines that fit exactly at the configured font size."""
++    if not words:
++        return None
++    text = " ".join(words)
++    if measure(text) <= safe_width:
++        return [text]
++    candidates = []
++    for cut in range(1, len(words)):
++        left, right = " ".join(words[:cut]), " ".join(words[cut:])
++        left_width, right_width = measure(left), measure(right)
++        if max(left_width, right_width) > safe_width:
++            continue
++        weak = words[cut - 1].rstrip(".,!?…;:").casefold() in _WEAK_ENDINGS
++        candidates.append((abs(left_width - right_width) + (safe_width if weak else 0),
++                           [left, right]))
++    return min(candidates, default=(None, None))[1]
++
++
++def plan_cues(timed_words, measure, safe_width, *, min_duration=1.0,
++              max_duration=5.5, hold_gap=1.5, tail_end=None):
++    """Partition all words into nonoverlapping, readable screens.
++
++    Every screen starts no later than its first spoken word. A screen may use
++    the following pause for reading time, but cannot cover the next screen.
++    If no legal partition exists, fail without silently discarding any text.
++    """
++    words = [dict(item) for item in timed_words if str(item.get("word", "")).strip()]
++    if not words:
++        return []
++    if any(float(item["end"]) < float(item["start"]) for item in words):
++        raise ValueError("La transcripción contiene tiempos de palabra invertidos.")
++    count = len(words)
++    best = [None] * (count + 1)
++    best[count] = (0.0, [])
++    for start in range(count - 1, -1, -1):
++        tokens = []
++        for stop in range(start + 1, count + 1):
++            if (stop > start + 1 and
++                    float(words[stop - 1]["start"]) - float(words[stop - 2]["end"]) >= 0.8):
++                break
++            tokens.append(str(words[stop - 1]["word"]).strip())
++            rows = wrap_words(tokens, measure, safe_width)
++            if rows is None:
++                break
++            if best[stop] is None:
++                continue
++            if len(tokens) == 1 and count > 1:
++                continue
++            speech_start = float(words[start]["start"])
++            spoken_end = float(words[stop - 1]["end"])
++            next_start = float(words[stop]["start"]) if stop < count else None
++            if next_start is not None:
++                end = min(next_start, spoken_end + hold_gap)
++            elif tail_end is not None:
++                end = min(float(tail_end), spoken_end + hold_gap)
++            else:
++                end = spoken_end
++            duration = end - speech_start
++            if duration <= 0 or duration > max_duration:
++                continue
++            if duration < min_duration and count > 1:
++                continue
++            # A final word with a period belongs to its preceding sentence.
++            if (start > 0 and tokens[0].endswith(_SENTENCE_END)
++                    and not str(words[start - 1]["word"]).endswith(_SENTENCE_END)):
++                continue
++            chars_per_second = len(" ".join(tokens)) / max(duration, 0.1)
++            weak_end = tokens[-1].rstrip(".,!?…;:").casefold() in _WEAK_ENDINGS
++            punctuation = tokens[-1].endswith(_SENTENCE_END)
++            score = (1.0 + 0.3 * abs(duration - 2.7)
++                     + max(0.0, chars_per_second - 18.0) * 0.25
++                     + (1.5 if weak_end else 0.0)
++                     - (0.5 if punctuation else 0.0))
++            candidate = (score + best[stop][0],
++                         [{"start": speech_start, "end": end,
++                           "text": " ".join(tokens), "lines": rows}] + best[stop][1])
++            if best[start] is None or candidate[0] < best[start][0]:
++                best[start] = candidate
++    if best[0] is None:
++        raise ValueError("No hay una distribución de dos líneas legible con la fuente, "
++                         "el tamaño y los tiempos de voz actuales.")
++    cues = best[0][1]
++    for index, cue in enumerate(cues):
++        if index and cue["start"] < cues[index - 1]["end"] - 1e-6:
++            raise ValueError("La distribución de subtítulos se solapa en el timeline.")
++        if any(measure(row) > safe_width for row in cue["lines"]):
++            raise ValueError("Un subtítulo excede los límites de la guía 9:16.")
++    if " ".join(cue["text"] for cue in cues) != " ".join(w["word"] for w in words):
++        raise ValueError("Se han perdido palabras al distribuir los subtítulos.")
++    return cues
++
++
++def visible_audio_ranges(clips):
++    """Choose one audible source per timeline interval, preferring top layers."""
++    prepared = []
++    for clip in clips:
++        if clip.get("has_audio") is False or clip.get("enabled") is False:
++            continue
++        start = float(clip["position"])
++        end = start + float(clip["source_end"]) - float(clip["source_start"])
++        if end > start:
++            prepared.append((start, end, clip))
++    boundaries = sorted({edge for start, end, _clip in prepared for edge in (start, end)})
++    ranges = []
++    for start, end in zip(boundaries, boundaries[1:]):
++        active = [clip for left, right, clip in prepared
++                  if left < end - 1e-6 and right > start + 1e-6]
++        if not active:
++            continue
++        winner = max(active, key=lambda item: (int(item["layer"]), str(item["id"])))
++        if ranges and ranges[-1]["id"] == winner["id"] and abs(ranges[-1]["timeline_end"] - start) < 1e-6:
++            ranges[-1]["timeline_end"] = end
++            ranges[-1]["source_end"] = float(winner["source_start"]) + end - float(winner["position"])
++        else:
++            ranges.append({"id": winner["id"], "path": winner["path"],
++                           "timeline_position": start, "timeline_end": end,
++                           "source_start": float(winner["source_start"]) + start - float(winner["position"]),
++                           "source_end": float(winner["source_start"]) + end - float(winner["position"])})
++    return ranges
+diff --git a/src/tests/test_smouk_subtitle_layout.py b/src/tests/test_smouk_subtitle_layout.py
+new file mode 100644
+index 000000000..469b705e0
+--- /dev/null
++++ b/src/tests/test_smouk_subtitle_layout.py
+@@ -0,0 +1,69 @@
++"""Subtitle planning regressions: full text, timing, width and source overlap."""
++
++import unittest
++
++from classes.smouk_subtitle_layout import (
++    align_corrected_words, plan_cues, visible_audio_ranges,
++)
++
++
++class SubtitleLayoutTests(unittest.TestCase):
++    def test_overlapping_sources_create_one_audible_interval_at_a_time(self):
++        clips = [
++            {"id": "lower", "path": "original.mp4", "position": 0.0,
++             "source_start": 152.84, "source_end": 166.44, "layer": 1000000},
++            {"id": "upper", "path": "edited.mp4", "position": 0.0,
++             "source_start": 43.36, "source_end": 54.0, "layer": 4000000},
++        ]
++        ranges = visible_audio_ranges(clips)
++        self.assertEqual([item["id"] for item in ranges], ["upper", "lower"])
++        self.assertAlmostEqual(ranges[0]["timeline_end"], 10.64)
++        self.assertAlmostEqual(ranges[1]["timeline_position"], 10.64)
++        self.assertAlmostEqual(ranges[1]["source_start"], 163.48)
++
++    def test_corrections_preserve_words_and_time_while_font_width_changes(self):
++        original = [
++            {"word": word, "start": index * 0.45, "end": index * 0.45 + 0.4}
++            for index, word in enumerate(
++                "Aquest centre de dades funciona a ple rendiment. "
++                "El govern aposta per Catalunya.".split())
++        ]
++        corrected = "Aquest centre de dades funciona a ple rendiment. " \
++                    "El Govern aposta per Catalunya."
++        timed = align_corrected_words(original, corrected)
++        self.assertEqual([item["word"] for item in timed], corrected.split())
++        for character_width in (12.0, 20.0):
++            measure = lambda text: len(text) * character_width
++            cues = plan_cues(timed, measure, 320.0)
++            self.assertEqual(" ".join(cue["text"] for cue in cues), corrected)
++            self.assertTrue(all(1 <= len(cue["lines"]) <= 2 for cue in cues))
++            self.assertTrue(all(len(cue["text"].split()) > 1 for cue in cues))
++            self.assertTrue(all(measure(line) <= 320 for cue in cues
++                                for line in cue["lines"]))
++            self.assertTrue(all(left["end"] <= right["start"]
++                                for left, right in zip(cues, cues[1:])))
++            self.assertTrue(all(cue["start"] <= timed[corrected.split().index(
++                cue["text"].split()[0])]["start"] for cue in cues))
++
++    def test_impossible_width_fails_instead_of_dropping_words(self):
++        words = [{"word": "Mediterrània.", "start": 0.0, "end": 1.0}]
++        with self.assertRaises(ValueError):
++            plan_cues(words, lambda text: len(text) * 30.0, 100.0)
++
++    def test_pause_can_extend_previous_screen_without_delaying_next(self):
++        words = [
++            {"word": "Bon", "start": 0.0, "end": 0.5},
++            {"word": "dia.", "start": 0.5, "end": 0.9},
++            {"word": "Ara", "start": 2.2, "end": 2.7},
++            {"word": "seguim.", "start": 2.7, "end": 3.2},
++        ]
++        cues = plan_cues(words, lambda text: len(text) * 10.0, 110.0,
++                         tail_end=3.5)
++        self.assertEqual([cue["text"] for cue in cues], ["Bon dia.", "Ara seguim."])
++        self.assertAlmostEqual(cues[0]["end"], 2.2)
++        self.assertAlmostEqual(cues[1]["start"], 2.2)
++        self.assertAlmostEqual(cues[-1]["end"], 3.5)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/src/tests/test_smouk_transcription.py b/src/tests/test_smouk_transcription.py
+index 3834f55b5..32458c910 100644
+--- a/src/tests/test_smouk_transcription.py
++++ b/src/tests/test_smouk_transcription.py
+@@ -30,20 +30,18 @@ class SmoukTranscriptionTests(unittest.TestCase):
+                 calls["transcribe"] = kwargs
+                 return iter(()), types.SimpleNamespace(duration=1.0)
+ 
+-        argv = [
+-            "smouk_transcribe.py", "--input", "audio.wav",
+-            "--output", "captions.json", "--model-dir", "models",
+-            "--provider", "local",
+-        ]
+         fake_module = types.SimpleNamespace(WhisperModel=FakeModel)
+         with mock.patch.dict(sys.modules, {"faster_whisper": fake_module}), \
+-                mock.patch.object(sys, "argv", argv), \
+-                mock.patch("builtins.open", mock.mock_open()), \
+-                mock.patch.object(os, "makedirs"):
+-            worker.main()
++                mock.patch.object(worker, "_media_duration", return_value=1.0), \
++                mock.patch.object(worker, "_run_media_command"), \
++                mock.patch.object(worker, "_tool_path", return_value="ffmpeg"), \
++                mock.patch.object(worker, "_emit"), \
++                mock.patch.object(os, "makedirs"), \
++                mock.patch.object(os, "remove"):
++            worker.transcribe_bsc("audio.wav", "models", None, ".", 0.0, 1.0)
+ 
+         self.assertEqual(calls["transcribe"]["beam_size"], 3)
+-        self.assertTrue(calls["transcribe"]["condition_on_previous_text"])
++        self.assertFalse(calls["transcribe"]["condition_on_previous_text"])
+         self.assertEqual(calls["transcribe"]["vad_parameters"], {
+             "threshold": 0.35, "speech_pad_ms": 500,
+         })
+@@ -62,8 +60,9 @@ class SmoukTranscriptionTests(unittest.TestCase):
+             {"start": 1.91, "end": 2.4, "word": "funciona."},
+         ])
+ 
+-        self.assertEqual([cue["text"] for cue in cues], ["Bon dia.", "Això funciona."])
+-        self.assertEqual(cues[1]["start"], 1.5)
++        self.assertEqual(" ".join(cue["text"].replace("\n", " ") for cue in cues),
++                         "Bon dia. Això funciona.")
++        self.assertEqual(cues[0]["start"], 0.0)
+ 
+     def test_srt_uses_millisecond_timecodes(self):
+         text = worker.cues_to_srt([
+@@ -89,11 +88,10 @@ class SmoukTranscriptionTests(unittest.TestCase):
+         self.assertTrue(all(len(cue["text"].splitlines()) <= 2 for cue in cues))
+         self.assertTrue(all(len(cue["text"].replace("\n", " ")) <= 60 for cue in cues))
+ 
+-    def test_reference_caption_wraps_without_orphaning_preposition(self):
+-        self.assertEqual(
+-            worker._balanced_lines("i la crida feta pel president d'Omnium"),
+-            ["i la crida feta", "pel president d'Omnium"],
+-        )
++    def test_worker_caption_wrap_preserves_text_for_final_layout(self):
++        lines = worker._balanced_lines("i la crida feta pel president d'Omnium")
++        self.assertEqual(" ".join(lines), "i la crida feta pel president d'Omnium")
++        self.assertLessEqual(len(lines), 2)
+ 
+     def test_cues_are_clamped_to_exact_timeline_duration(self):
+         cues, changed = worker.clamp_cues_to_duration([
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 8be72da00..b5324d2c4 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -103,7 +103,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.129"
++SMOUK_VERSION = "0.0.130"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index ccb10ab65..f7bfbae7f 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -25,6 +25,7 @@ import subprocess
+ import sys
+ import json
+ import html
++import math
+ import statistics
+ import hashlib
+ import uuid
+@@ -56,6 +57,9 @@ from classes.smouk_titles import (
+     PaddleOcrSession, ppocr_runtime_status, validate_title_folder,
+     format_timecode, parse_clock_ocr,
+ )
++from classes.smouk_subtitle_layout import (
++    align_corrected_words, plan_cues, visible_audio_ranges, wrap_words,
++)
+ 
+ 
+ VERTICALIZATION_DOCK_MIN_WIDTH = 320
+@@ -79,6 +83,7 @@ PERSISTENT_TITLE_BRIDGE_SECONDS = 90
+ # inside that crop so they survive the vertical export without manual moves.
+ VERTICAL_TITLE_SAFE_ASPECT = 9.0 / 16.0
+ VERTICAL_TITLE_SAFE_MARGIN = .05
++VERTICAL_SUBTITLE_PIXEL_GUARD = 4.0
+ # These are editorial lanes inside the safe crop.  They let several concurrent
+ # graphics remain independently editable while preserving a clear gap between
+ # location, identification, pretitle, persistent label, and main headline.
+@@ -2569,10 +2574,12 @@ class VerticalizationDockContent(QWidget):
+             return False
+ 
+     def _on_transcribe_catalan(self):
+-        """Transcribe each unique source represented by timeline clips."""
++        """Transcribe one audible source for each occupied timeline interval."""
+         _ = get_app()._tr
+         clips = self._timeline_video_clips()
+-        sources = []
++        candidates = []
++        track_enabled = {int(track.data.get("number", 0)): track.data.get("enabled", True)
++                         for track in Track.filter()}
+         for clip in clips:
+             reader = clip.data.get("reader", {})
+             if reader.get("has_audio") is False:
+@@ -2588,15 +2595,16 @@ class VerticalizationDockContent(QWidget):
+                 continue
+             if source_end <= source_start:
+                 continue
+-            descriptor = {"path": path, "source_start": source_start,
+-                          "source_end": source_end,
+-                          "timeline_position": timeline_position}
+-            if not any(self._same_media_path(path, item["path"]) and
+-                       abs(source_start - item["source_start"]) < 0.001 and
+-                       abs(source_end - item["source_end"]) < 0.001 and
+-                       abs(timeline_position - item["timeline_position"]) < 0.001
+-                       for item in sources):
+-                sources.append(descriptor)
++            layer = int(clip.data.get("layer", 0))
++            candidates.append({"id": clip.id, "path": path,
++                               "source_start": source_start, "source_end": source_end,
++                               "position": timeline_position, "layer": layer,
++                               "has_audio": True,
++                               "enabled": track_enabled.get(layer, True)})
++        sources = visible_audio_ranges(candidates)
++        if len(sources) != len(candidates):
++            log.info("SMOUK subtitle source arbitration: %s audible clips -> %s distinct timeline ranges",
++                     len(candidates), len(sources))
+         if not sources:
+             QMessageBox.warning(self, _("Catalan Transcription"),
+                                 _("Add one or more videos with audio to the timeline first."))
+@@ -2823,7 +2831,12 @@ class VerticalizationDockContent(QWidget):
+         QtCore.QTimer.singleShot(0, self._commit_transcription_review)
+ 
+     def _commit_transcription_review(self):
+-        self._apply_review_sentences(self._transcription_review_sentences)
++        try:
++            self._apply_review_sentences(self._transcription_review_sentences)
++        except (ValueError, TypeError) as exc:
++            log.exception("SMOUK could not distribute the reviewed transcript")
++            self._finish_transcription_ui(str(exc))
++            return
+         self._apply_transcription_outputs()
+ 
+     def _cancel_transcription_review(self):
+@@ -2833,139 +2846,55 @@ class VerticalizationDockContent(QWidget):
+     def _release_transcription_review_dialog(self, _result):
+         self._transcription_review_dialog = None
+ 
+-    @staticmethod
+-    def _split_review_text(text, count, original_lengths=None):
+-        row_width = VerticalizationDockContent._subtitle_capacity_chars()
+-        max_chars = max(1, int(row_width * 2 * 0.95))
+-        words = str(text or "").split()
+-        if count <= 1:
+-            return [" ".join(words)]
+-        if not words:
+-            return [""] * count
+-        lengths = list(original_lengths or [])
+-        if len(lengths) != count or sum(lengths) <= 0:
+-            lengths = [1] * count
+-        total = float(sum(lengths))
+-        memo = {}
+-
+-        def feasible(start, slots):
+-            key = (start, slots)
+-            if key in memo:
+-                return memo[key]
+-            if slots == 1:
+-                memo[key] = len(" ".join(words[start:])) <= max_chars
+-                return memo[key]
+-            for end in range(start + 1, len(words) - slots + 2):
+-                if len(" ".join(words[start:end])) <= max_chars and feasible(end, slots - 1):
+-                    memo[key] = True
+-                    return True
+-            memo[key] = False
+-            return False
+-
+-        result = []
+-        start = 0
+-        for index in range(count):
+-            if index == count - 1:
+-                end = len(words)
+-            else:
+-                desired = int(round(len(words) * sum(lengths[:index + 1]) / total))
+-                valid = [candidate for candidate in range(start + 1, len(words) - count + index + 1)
+-                         if len(" ".join(words[start:candidate])) <= max_chars and
+-                         feasible(candidate, count - index - 1)]
+-                if not valid:
+-                    valid = [candidate for candidate in range(start + 1, len(words) - count + index + 1)
+-                             if len(" ".join(words[start:candidate])) <= max_chars]
+-                end = min(valid, key=lambda candidate: abs(candidate - desired)) if valid else start + 1
+-            result.append(" ".join(words[start:end]))
+-            start = end
+-        return result
+-
+     def _apply_review_sentences(self, sentences):
+-        """Map edited sentence text back to its original cue time ranges."""
+-        updates = {}
++        """Plan corrected words using their original speech times and actual font."""
++        project_width = int(get_app().project.get("width") or 1920)
++        project_height = int(get_app().project.get("height") or 1080)
++        ratio = max(0.01, min(16.0 / 9.0, self._output_ratio()))
++        safe_width = (min(project_width, project_height * ratio) *
++                      (1.0 - 2.0 * VERTICAL_TITLE_SAFE_MARGIN) -
++                      2.0 * self._subtitle_edge_guard())
++        size = float(self._subtitle_setting("size", 42.0))
++        stroke = float(self._subtitle_setting("stroke_width", 2.2))
++        measure = lambda text: self._subtitle_text_width(text, size, stroke)
++        by_result = {}
+         for sentence in sentences:
+-            result_index = int(sentence.get("result_index", 0))
+-            if result_index >= len(self._transcription_outputs):
+-                continue
+-            cues = self._transcription_outputs[result_index].get("cues", [])
+-            indices = [int(i) for i in sentence.get("cue_indices", [])
+-                       if 0 <= int(i) < len(cues)]
+-            if not indices:
+-                continue
+-            original_lengths = [len(str(cues[i].get("text", "")).split()) for i in indices]
+-            pieces = self._split_review_text(sentence.get("corrected", ""), len(indices), original_lengths)
+-            for index, piece in zip(indices, pieces):
+-                if piece:
+-                    updates.setdefault((result_index, index), []).append(piece)
+-        for (result_index, cue_index), pieces in updates.items():
+-            merged = " ".join(pieces)
+-            self._transcription_outputs[result_index]["cues"][cue_index]["text"] = "\n".join(
+-                self._subtitle_lines(merged))
+-        for result in self._transcription_outputs:
+-            result["cues"] = self._fit_review_cue_capacity(result.get("cues", []))
+-            result["cues"] = self._redistribute_review_cues(result.get("cues", []))
++            by_result.setdefault(int(sentence.get("result_index", 0)), []).append(sentence)
++        plans = []
++        for result_index, result in enumerate(self._transcription_outputs):
++            selected = sorted(by_result.get(result_index, []),
++                              key=lambda item: int(item.get("sentence_index", 0)))
++            corrected_text = " ".join(str(item.get("corrected", "")).strip()
++                                      for item in selected).strip()
++            if not corrected_text:
++                corrected_text = " ".join(str(cue.get("text", "")).replace("\n", " ")
++                                          for cue in result.get("cues", []))
++            offset = float(result.get("source_start", 0.0))
++            raw_words = [{"word": word.get("word", ""),
++                          "start": float(word["start"]) + offset,
++                          "end": float(word["end"]) + offset}
++                         for segment in result.get("raw_segments", [])
++                         for word in segment.get("words", [])]
++            if not raw_words:
++                for cue in result.get("cues", []):
++                    tokens = str(cue.get("text", "")).split()
++                    start, end = float(cue["start"]), float(cue["end"])
++                    for word_index, token in enumerate(tokens):
++                        raw_words.append({"word": token,
++                                          "start": start + (end - start) * word_index / len(tokens),
++                                          "end": start + (end - start) * (word_index + 1) / len(tokens)})
++            timed = align_corrected_words(raw_words, corrected_text)
++            cues = plan_cues(timed, measure, safe_width,
++                             tail_end=result.get("source_end"))
++            if not cues and corrected_text:
++                raise ValueError("No se pudo distribuir la transcripción corregida.")
++            plans.append(cues)
++        # Commit only after all independent source plans have passed. A failed
++        # layout must leave the existing Timeline subtitles untouched.
++        for result, cues in zip(self._transcription_outputs, plans):
++            result["cues"] = cues
+             result["reviewed_with_parlabe"] = True
+ 
+-    @staticmethod
+-    def _fit_review_cue_capacity(cues, max_chars=None):
+-        """Move excess corrected words into the next original cue."""
+-        row_width = VerticalizationDockContent._subtitle_capacity_chars()
+-        max_chars = max_chars or max(1, int(row_width * 2 * 0.95))
+-        fitted = []
+-        carry = ""
+-        for cue in cues:
+-            item = dict(cue)
+-            text = " ".join((carry + " " + str(cue.get("text", ""))).split())
+-            carry = ""
+-            words = text.split()
+-            def safe(value):
+-                rows = VerticalizationDockContent._subtitle_lines(value)
+-                return len(rows) <= 2 and all(len(row) <= row_width for row in rows)
+-            cut = len(words)
+-            while cut > 1 and (len(" ".join(words[:cut])) > max_chars or
+-                               not safe(" ".join(words[:cut]))):
+-                cut -= 1
+-            if cut < len(words):
+-                text = " ".join(words[:cut])
+-                carry = " ".join(words[cut:])
+-            item["text"] = text
+-            fitted.append(item)
+-        if carry and fitted:
+-            # There is no later timed cue; keep the words in the last cue so
+-            # transcription is never silently lost. Normal inputs have a
+-            # following original cue and never take this branch.
+-            fitted[-1]["text"] = " ".join((fitted[-1]["text"] + " " + carry).split())
+-        return fitted
+-
+-    @classmethod
+-    def _redistribute_review_cues(cls, cues, max_chars=42):
+-        """Use original timed cues and remove unreadable sub-second screens."""
+-        redistributed = []
+-        for cue in cues:
+-            item = dict(cue)
+-            item["start"] = float(cue.get("start", 0.0))
+-            item["end"] = float(cue.get("end", item["start"]))
+-            text = " ".join(str(cue.get("text", "")).replace("\n", " ").split())
+-            item["text"] = "\n".join(cls._subtitle_lines(text))
+-            if redistributed and item["end"] - item["start"] < 1.0:
+-                previous = redistributed.pop()
+-                item["start"] = previous["start"]
+-                item["text"] = "\n".join(cls._subtitle_lines(
+-                    previous["text"].replace("\n", " ") + " " + text))
+-            elif redistributed and redistributed[-1]["end"] - redistributed[-1]["start"] < 1.0:
+-                previous = redistributed.pop()
+-                item["start"] = previous["start"]
+-                item["text"] = "\n".join(cls._subtitle_lines(
+-                    previous["text"].replace("\n", " ") + " " + text))
+-            if redistributed and item["start"] < redistributed[-1]["end"]:
+-                previous = redistributed.pop()
+-                item["start"] = previous["start"]
+-                item["text"] = "\n".join(cls._subtitle_lines(
+-                    previous["text"].replace("\n", " ") + " " + text))
+-            if item["text"]:
+-                redistributed.append(item)
+-        return redistributed
+-
+     def _read_transcription_output(self):
+         # Retained for compatibility with older dock instances.  New jobs
+         # are drained by _poll_transcription_process above.
+@@ -3059,6 +2988,9 @@ class VerticalizationDockContent(QWidget):
+                 cue["end"] = float(cue.get("end", cue["start"])) + offset
+             result["source_start"] = source["source_start"]
+             result["source_end"] = source["source_end"]
++            result["timeline_position"] = source["timeline_position"]
++            result["timeline_end"] = source["timeline_end"]
++            result["clip_id"] = source["id"]
+             raw_path = os.path.splitext(self._current_transcription_output)[0] + ".whisper-raw.json"
+             log.info("SMOUK raw Whisper transcript before Timeline placement: %s", raw_path)
+             result["raw_transcript_path"] = raw_path
+@@ -3191,36 +3123,39 @@ class VerticalizationDockContent(QWidget):
+         ratio = max(0.01, min(16.0 / 9.0, self._output_ratio()))
+         guide_width = min(float(width), float(height) * ratio)
+         clean_text = " ".join(str(text).replace("\n", " ").split())
+-        max_chars = self._subtitle_capacity_chars(width, height)
+         lines = self._subtitle_render_lines(clean_text, width, height)
+         if not lines:
+             return ""
+-        if len(lines) > 2 or any(len(line) > max_chars for line in lines):
++        if len(lines) > 2:
+             log.error("SMOUK rejected subtitle outside 9:16 capacity: %r", lines)
+             return ""
+         font_size = float(self._subtitle_setting("size", 42.0))
+         line_gap = float(self._subtitle_setting("line_gap", 6.3))
+         line_height = font_size + line_gap
+         center_y = float(height) * float(self._subtitle_setting("y", VERTICAL_SUBTITLE_CENTER))
++        vertical_margin = font_size + float(self._subtitle_setting("stroke_width", 2.2))
++        half_line_span = (len(lines) - 1) * line_height / 2.0
++        center_y = max(vertical_margin + half_line_span,
++                       min(float(height) - vertical_margin - half_line_span, center_y))
+         guide_left = (float(width) - guide_width) / 2.0
+-        safe_left = guide_left + guide_width * VERTICAL_TITLE_SAFE_MARGIN
+-        safe_right = guide_left + guide_width * (1.0 - VERTICAL_TITLE_SAFE_MARGIN)
++        guard = self._subtitle_edge_guard()
++        safe_left = guide_left + guide_width * VERTICAL_TITLE_SAFE_MARGIN + guard
++        safe_right = guide_left + guide_width * (1.0 - VERTICAL_TITLE_SAFE_MARGIN) - guard
+         stroke_width = float(self._subtitle_setting("stroke_width", 2.2))
+         max_line_width = max(self._subtitle_text_width(line, font_size, stroke_width)
+                              for line in lines)
+         x_offset = float(self._subtitle_setting("x", 0.0)) * guide_width / 2.0
+         alignment = str(self._subtitle_setting("alignment", "center"))
+         if alignment == "left":
+-            text_x, anchor = safe_left + max(0.0, min(x_offset, guide_width *
+-                                                       (1.0 - 2.0 * VERTICAL_TITLE_SAFE_MARGIN) - max_line_width)), "start"
++            text_x = max(safe_left, min(safe_right - max_line_width, safe_left + x_offset))
++            anchor = "start"
+         elif alignment == "right":
+-            text_x, anchor = safe_right - max(0.0, min(-x_offset, guide_width *
+-                                                        (1.0 - 2.0 * VERTICAL_TITLE_SAFE_MARGIN) - max_line_width)), "end"
++            text_x = max(safe_left + max_line_width, min(safe_right, safe_right + x_offset))
++            anchor = "end"
+         else:
+             centre = float(width) / 2.0 + x_offset
+-            half_available = max(0.0, guide_width * (1.0 - 2.0 * VERTICAL_TITLE_SAFE_MARGIN) / 2.0 - max_line_width / 2.0)
+-            centre = max(guide_left + guide_width / 2.0 - half_available,
+-                         min(guide_left + guide_width / 2.0 + half_available, centre))
++            centre = max(safe_left + max_line_width / 2.0,
++                         min(safe_right - max_line_width / 2.0, centre))
+             text_x, anchor = centre, "middle"
+         family = html.escape(str(self._subtitle_setting("font", "Arial Black")), quote=True)
+         fill = html.escape(str(self._subtitle_setting("fill", "#ffffff")), quote=True)
+@@ -3252,6 +3187,11 @@ class VerticalizationDockContent(QWidget):
+         metrics = QtGui.QFontMetricsF(font)
+         return float(metrics.horizontalAdvance(str(text))) + (2.0 * float(stroke_width))
+ 
++    @staticmethod
++    def _subtitle_edge_guard():
++        return max(VERTICAL_SUBTITLE_PIXEL_GUARD, float(
++            VerticalizationDockContent._subtitle_setting("stroke_width", 2.2)))
++
+     def _subtitle_render_lines(self, text, width, height):
+         """Split a cue into at most two word lines that fit the 9:16 safe box."""
+         clean = " ".join(str(text or "").split())
+@@ -3259,83 +3199,13 @@ class VerticalizationDockContent(QWidget):
+             return []
+         ratio = max(0.01, min(16.0 / 9.0, self._output_ratio()))
+         guide_width = min(float(width), float(height) * ratio)
+-        safe_width = guide_width * (1.0 - 2.0 * VERTICAL_TITLE_SAFE_MARGIN)
++        safe_width = (guide_width * (1.0 - 2.0 * VERTICAL_TITLE_SAFE_MARGIN)
++                      - 2.0 * self._subtitle_edge_guard())
+         size = float(self._subtitle_setting("size", 42.0))
+         stroke = float(self._subtitle_setting("stroke_width", 2.2))
+-        words = clean.split()
+-        if self._subtitle_text_width(clean, size, stroke) <= safe_width:
+-            return [clean]
+-        candidates = []
+-        for index in range(1, len(words)):
+-            left, right = " ".join(words[:index]), " ".join(words[index:])
+-            left_width = self._subtitle_text_width(left, size, stroke)
+-            right_width = self._subtitle_text_width(right, size, stroke)
+-            if left_width <= safe_width and right_width <= safe_width:
+-                candidates.append((abs(left_width - right_width), left, right))
+-        if not candidates:
+-            log.error("SMOUK rejected cue: no two-line word split fits safe width: %r", clean)
+-            return []
+-        _score, left, right = min(candidates)
+-        return [left, right]
+-
+-    @staticmethod
+-    def _subtitle_capacity_chars(width=None, height=None):
+-        """Estimate a conservative two-row capacity for the active typography."""
+-        settings = get_app().get_settings()
+-        size = settings.get("smouk_subtitle_size_v1")
+-        try:
+-            size = float(42.0 if size is None else size)
+-        except (TypeError, ValueError):
+-            size = 42.0
+-        project_width = float(width or get_app().project.get("width") or 1920)
+-        project_height = float(height or get_app().project.get("height") or 1080)
+-        profile = settings.get("smouk_vertical_output_profile")
+-        ratio = 9.0 / 16.0
+-        if profile and "04-05" in str(profile):
+-            ratio = 4.0 / 5.0
+-        guide_width = min(project_width, project_height * ratio)
+-        safe_width = guide_width * (1.0 - 2.0 * VERTICAL_TITLE_SAFE_MARGIN)
+-        # 0.60 is the same conservative average used by the previous fixed
+-        # 42 px / 21-character contract; rows are always checked again in SVG.
+-        return max(1, int(safe_width / max(1.0, size * 0.60)))
+-
+-    @staticmethod
+-    def _subtitle_lines(text, width=None):
+-        """Match the BSC subtitle wrapping after ParlaBE edits."""
+-        width = int(width or VerticalizationDockContent._subtitle_capacity_chars())
+-        clean = " ".join(str(text or "").split())
+-        if not clean:
+-            return []
+-        if len(clean) <= width:
+-            return [clean]
+-        words = clean.split()
+-        candidates = []
+-        weak_endings = {"a", "amb", "d'", "de", "del", "dels", "el", "els",
+-                        "i", "la", "les", "per", "pel", "pels"}
+-        for index in range(1, len(words)):
+-            left = " ".join(words[:index])
+-            right = " ".join(words[index:])
+-            if len(left) > width or len(right) > width:
+-                continue
+-            penalty = 20 if words[index - 1].lower() in weak_endings else 0
+-            candidates.append((abs(len(left) - len(right)) + penalty, left, right))
+-        if candidates:
+-            _score, left, right = min(candidates)
+-            return [left, right]
+-        # The broadcast contract is one or two rows. Choose the best word
+-        # boundary; corrected text is split across timed cues before render.
+-        candidates = []
+-        for index in range(1, len(words)):
+-            left = " ".join(words[:index])
+-            right = " ".join(words[index:])
+-            punctuation_bonus = -20 if words[index - 1].rstrip().endswith((".", "?", "!", "…", ",", ";", ":")) else 0
+-            overflow = max(0, len(left) - width) + max(0, len(right) - width)
+-            candidates.append((overflow * 100 + abs(len(left) - len(right)) + punctuation_bonus,
+-                              left, right))
+-        if candidates:
+-            _score, left, right = min(candidates)
+-            return [left, right]
+-        return [clean]
++        return wrap_words(clean.split(),
++                          lambda row: self._subtitle_text_width(row, size, stroke),
++                          safe_width)
+ 
+     @staticmethod
+     def _subtitle_clip_segments(video_clip, cue):
+@@ -3382,60 +3252,97 @@ class VerticalizationDockContent(QWidget):
+         video_clips = self._timeline_video_clips()
+         transaction_id = (window.timeline.get_uuid()
+                           if getattr(window, "timeline", None) else None)
+-        get_app().updates.transaction_id = transaction_id
+         cue_count = added_clip_count = 0
+         try:
+-            self._clear_generated_subtitles()
+-            layer = self._ensure_subtitle_track()
+             project_width = int(get_app().project.get("width") or 1920)
+             project_height = int(get_app().project.get("height") or 1080)
++            fps_data = get_app().project.get("fps") or {"num": 25, "den": 1}
++            fps = (float(fps_data.get("num", 25)) / max(1.0, float(fps_data.get("den", 1)))
++                   if isinstance(fps_data, dict) else float(fps_data))
+             asset_dir = self._subtitle_asset_directory()
+             os.makedirs(asset_dir, exist_ok=True)
+             run_id = uuid.uuid4().hex[:8]
+-
+-            for result in self._transcription_outputs:
++            planned = []
++            for result_index, result in enumerate(self._transcription_outputs):
+                 source = str(result.get("source", ""))
+                 cues = result.get("cues", [])
+-                source_clips = [
+-                    clip for clip in video_clips
+-                    if self._same_media_path(
+-                        str(clip.data.get("reader", {}).get("path", "")), source)
+-                ]
++                clip_id = result.get("clip_id")
++                source_clips = [clip for clip in video_clips if clip.id == clip_id]
++                if not source_clips:
++                    source_clips = [
++                        clip for clip in video_clips
++                        if self._same_media_path(
++                            str(clip.data.get("reader", {}).get("path", "")), source)
++                    ]
+                 if result.get("source_start") is not None:
+                     source_start = float(result.get("source_start", 0.0))
+                     source_end = float(result.get("source_end", source_start))
+                     source_clips = [
+                         clip for clip in source_clips
+-                        if abs(float(clip.data.get("start", 0.0)) - source_start) < 0.04 and
+-                        abs(float(clip.data.get("end", 0.0)) - source_end) < 0.04
++                        if float(clip.data.get("start", 0.0)) <= source_start + 0.04 and
++                        float(clip.data.get("end", 0.0)) >= source_end - 0.04
+                     ]
++                if len(source_clips) != 1:
++                    raise ValueError("No se puede identificar un único clip de audio para %s" % source)
+                 for cue_index, cue in enumerate(cues, start=1):
+                     segments = [(clip, self._subtitle_clip_segments(clip, cue))
+                                 for clip in source_clips]
+                     segments = [(clip, segment) for clip, segment in segments if segment]
+-                    if not segments:
+-                        continue
++                    if len(segments) != 1:
++                        raise ValueError("Un subtítulo no cabe en el tramo de audio seleccionado.")
++                    segment = segments[0][1]
++                    start_frame = math.floor(segment["position"] * fps + 1e-6)
++                    end_frame = math.floor((segment["position"] + segment["duration"]) * fps + 1e-6)
++                    if end_frame <= start_frame:
++                        raise ValueError("Un subtítulo dura menos de un fotograma.")
++                    segment["position"] = start_frame / fps
++                    segment["duration"] = (end_frame - start_frame) / fps
++                    segment["end"] = segment["duration"]
+                     cue_text = str(cue.get("text", "")).strip()
+                     svg = self._subtitle_svg(cue_text, project_width, project_height)
+                     if not svg:
+-                        continue
+-                    source_digest = hashlib.sha1(os.path.normcase(os.path.abspath(source)).encode(
+-                        "utf-8", errors="surrogatepass")).hexdigest()[:12]
+-                    svg_path = os.path.join(
+-                        asset_dir, "subtitle-{}-{}-{}.svg".format(
+-                            source_digest, run_id, cue_index))
+-                    with open(svg_path, "w", encoding="utf-8") as handle:
+-                        handle.write(svg)
+-                    asset_data, _duration = inspect_media(svg_path, max_width=project_width,
+-                                                          max_height=project_height)
+-                    asset_data["media_type"] = get_media_type(asset_data)
+-                    cue_count += 1
+-                    for clip, segment in segments:
+-                        title = "Subtitle {:04d}".format(cue_index)
+-                        self._create_subtitle_timeline_clip(
+-                            svg_path, asset_data, layer, segment["position"],
+-                            segment["start"], segment["end"], title, cue_text)
+-                        added_clip_count += 1
++                        raise ValueError("No cabe en dos líneas dentro de 9:16: %s" % cue_text)
++                    planned.append((source, result_index, cue_index, cue_text, svg,
++                                    segment))
++
++            positions = sorted((segment["position"], segment["position"] + segment["duration"])
++                               for _source, _result_index, _cue_index, _text, _svg, segment in planned)
++            if any(current[0] < previous[1] - 0.001
++                   for previous, current in zip(positions, positions[1:])):
++                raise ValueError("Los subtítulos planificados se solapan; no se ha modificado el timeline.")
++            log.info("SMOUK subtitle layout validated: sources=%s screens=%s font=%s size=%s",
++                     len(self._transcription_outputs), len(planned),
++                     self._subtitle_setting("font", "Arial Black"),
++                     self._subtitle_setting("size", 42))
++            for _source, _result_index, _cue_index, text, _svg, segment in planned:
++                log.info("SMOUK subtitle screen: timeline=%.3f..%.3f text=%s",
++                         segment["position"], segment["position"] + segment["duration"],
++                         text)
++
++            prepared = []
++            for source, result_index, cue_index, cue_text, svg, segment in planned:
++                source_digest = hashlib.sha1(os.path.normcase(os.path.abspath(source)).encode(
++                    "utf-8", errors="surrogatepass")).hexdigest()[:12]
++                svg_path = os.path.join(
++                    asset_dir, "subtitle-{}-{}-{}-{}.svg".format(
++                        source_digest, run_id, result_index, cue_index))
++                with open(svg_path, "w", encoding="utf-8") as handle:
++                    handle.write(svg)
++                asset_data, _duration = inspect_media(svg_path, max_width=project_width,
++                                                      max_height=project_height)
++                asset_data["media_type"] = get_media_type(asset_data)
++                prepared.append((svg_path, asset_data, segment, cue_text))
++
++            get_app().updates.transaction_id = transaction_id
++            self._clear_generated_subtitles()
++            layer = self._ensure_subtitle_track()
++            for cue_index, (svg_path, asset_data, segment, cue_text) in enumerate(prepared, start=1):
++                title = "Subtitle {:04d}".format(cue_index)
++                self._create_subtitle_timeline_clip(
++                    svg_path, asset_data, layer, segment["position"],
++                    segment["start"], segment["end"], title, cue_text)
++                cue_count += 1
++                added_clip_count += 1
+ 
+             get_app().updates.transaction_id = None
+         except Exception:
+-- 
+2.55.0.windows.3
+

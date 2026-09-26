@@ -175,6 +175,17 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   mantener como máximo dos líneas dentro de la guía 9:16, sin compresión
   horizontal ni desbordamientos.
 
+### 0.0.130
+
+- Reconstruye las pantallas de subtitulado desde las palabras corregidas y
+  sus tiempos originales. Cada pantalla usa la anchura real de la fuente
+  configurada, tiene una o dos líneas, mantiene el orden de las palabras y
+  ocupa las pausas disponibles sin retrasarse respecto a la voz.
+- Cuando se solapan clips con audio en el timeline, transcribe una sola fuente
+  por intervalo (la pista superior) y conserva el tramo restante de la pista
+  inferior. Valida la distribución completa, incluidos los solapamientos,
+  antes de sustituir los subtítulos existentes.
+
 ### 0.0.108
 
 - Elimina la actualización de widget inmediatamente posterior a BSC, que era
