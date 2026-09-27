@@ -1,27 +1,28 @@
-From 228ad79f4ba4dfc0ae646b4a3e3a805e7052d218 Mon Sep 17 00:00:00 2001
+From e6d9805473bf9da55ebc8a14db6866a517d906fc Mon Sep 17 00:00:00 2001
 From: Shadow Coders <shadowcoders@users.noreply.github.com>
 Date: Sun, 27 Sep 2026 21:53:31 +0200
 Subject: [PATCH] SMOUK 0.0.136 defer and guard framing slider commits
 
 ---
- src/tests/test_smouk_reframe_slider.py | 79 ++++++++++++++++++++++++++
- src/windows/main_window.py             |  2 +-
- src/windows/verticalization.py         | 77 +++++++++++++++++++------
- 3 files changed, 139 insertions(+), 19 deletions(-)
+ src/tests/test_smouk_reframe_slider.py | 116 +++++++++++++++++++++++++
+ src/windows/main_window.py             |   2 +-
+ src/windows/verticalization.py         |  77 ++++++++++++----
+ 3 files changed, 176 insertions(+), 19 deletions(-)
  create mode 100644 src/tests/test_smouk_reframe_slider.py
 
 diff --git a/src/tests/test_smouk_reframe_slider.py b/src/tests/test_smouk_reframe_slider.py
 new file mode 100644
-index 000000000..c4c46cdee
+index 000000000..964b133e3
 --- /dev/null
 +++ b/src/tests/test_smouk_reframe_slider.py
-@@ -0,0 +1,79 @@
+@@ -0,0 +1,116 @@
 +"""Regression tests for safe interaction with the vertical framing slider."""
 +
 +from types import SimpleNamespace
 +from unittest import TestCase
 +from unittest.mock import Mock, patch
 +
++from qt_api import QApplication, Qt, QtCore, QSlider
 +from windows.verticalization import VerticalizationDockContent
 +
 +
@@ -94,6 +95,42 @@ index 000000000..c4c46cdee
 +        dock._apply_reframe_slider_value.assert_called_once_with(425)
 +        dock._sync_reframe_slider.assert_called_once_with()
 +        log_exception.assert_called_once()
++
++    def test_real_qt_slider_drag_commits_once_after_release(self):
++        app = QApplication.instance() or QApplication([])
++        slider = QSlider(Qt.Horizontal)
++        slider.setRange(-1000, 1000)
++        timer = QtCore.QTimer()
++        timer.setSingleShot(True)
++        timer.setInterval(0)
++        dock = self.make_dock_stub(dragging=False)
++        dock.reframe_slider = slider
++        dock._reframe_commit_timer = timer
++        dock._selected_clip = lambda: object()
++        dock._schedule_reframe_commit = lambda: \
++            VerticalizationDockContent._schedule_reframe_commit(dock)
++        timer.timeout.connect(
++            lambda: VerticalizationDockContent._commit_reframe_slider_value(dock))
++        slider.sliderPressed.connect(
++            lambda: VerticalizationDockContent._on_reframe_press(dock))
++        slider.valueChanged.connect(
++            lambda _value: VerticalizationDockContent._on_reframe_changed(dock))
++        slider.sliderReleased.connect(
++            lambda: VerticalizationDockContent._on_reframe_release(dock))
++
++        slider.sliderPressed.emit()
++        slider.setValue(475)
++        self.assertTrue(dock._reframe_dragging)
++        self.assertEqual(dock._reframe_pending_value, 475)
++        self.assertFalse(timer.isActive())
++        dock._apply_reframe_slider_value.assert_not_called()
++
++        slider.sliderReleased.emit()
++        app.processEvents()
++
++        dock._apply_reframe_slider_value.assert_called_once_with(475)
++        dock._sync_reframe_slider.assert_called_once_with()
++        self.assertIsNone(dock._reframe_pending_value)
 +
 diff --git a/src/windows/main_window.py b/src/windows/main_window.py
 index 0228b3b84..041f70de7 100644
