@@ -201,6 +201,16 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   mantiene pulsado el botón izquierdo, evitando invocar `QMainWindow.saveState()`
   durante una reorganización nativa del dock en Windows.
 
+### 0.0.134
+
+- Añade **TITLES MOV**: analiza rótulos estables de PROGRAM y de vídeos MOV con
+  transparencia en un hilo separado, presenta ambas tablas y empareja el texto
+  para crear la pista **TITLES AUTO**.
+- Alinea el intervalo legible de cada MOV con el rótulo quemado de PROGRAM y
+  conserva la duración completa del MOV para mantener sus animaciones de entrada
+  y salida. Un reanálisis solo sustituye clips anteriores si todas las nuevas
+  coincidencias se insertan correctamente.
+
 ### 0.0.131
 
 - Descarta un eco terminal muy breve que repite el final de la palabra

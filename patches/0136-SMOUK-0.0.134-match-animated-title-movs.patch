@@ -1,0 +1,546 @@
+From ca6a7c23dbb91ef99c4f80801d8b714ca8cc7380 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sun, 27 Sep 2026 21:01:53 +0200
+Subject: [PATCH] SMOUK 0.0.134 match animated title MOVs
+
+---
+ src/windows/main_window.py     |   2 +-
+ src/windows/verticalization.py | 474 +++++++++++++++++++++++++++++++++
+ 2 files changed, 475 insertions(+), 1 deletion(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index cdcbbf541..a845ae79b 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -103,7 +103,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.133"
++SMOUK_VERSION = "0.0.134"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 2c521427a..6b9721e46 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -34,6 +34,7 @@ import time
+ import threading
+ import queue
+ import glob
++import unicodedata
+ from difflib import SequenceMatcher
+ 
+ from qt_api import (
+@@ -44,6 +45,7 @@ from qt_api import (
+     QDialogButtonBox, QTextCursor, QTextCharFormat, QColor, QColorDialog,
+     QFontComboBox, QSpinBox, QDoubleSpinBox, QFont,
+ )
++from qt_api import QtWidgets
+ 
+ import openshot
+ from classes.app import get_app
+@@ -227,6 +229,39 @@ class SmoukChyronOcrWorker(QtCore.QThread):
+             self.completed.emit({"error": str(exc)})
+ 
+ 
++class SmoukTitlesMovWorker(QtCore.QThread):
++    """Sample PROGRAM and alpha MOVs sparsely, OCR stable title states off-UI."""
++    stage = QtCore.pyqtSignal(str)
++    completed = QtCore.pyqtSignal(object)
++
++    def __init__(self, dock, program_path, mov_folder):
++        super().__init__(dock)
++        self.dock = dock
++        self.program_path = program_path
++        self.mov_folder = mov_folder
++
++    def run(self):
++        try:
++            with PaddleOcrSession() as reader:
++                program = self.dock._scan_titles_mov_file(
++                    self.program_path, reader, alpha=False, stage=self.stage.emit)
++                assets = []
++                files = sorted(os.path.join(self.mov_folder, name)
++                               for name in os.listdir(self.mov_folder)
++                               if name.lower().endswith(".mov"))
++                if not files:
++                    raise RuntimeError("La carpeta no contiene ficheros .mov")
++                for index, path in enumerate(files, 1):
++                    self.stage.emit("OCR de MOV %d/%d: %s" %
++                                    (index, len(files), os.path.basename(path)))
++                    assets.extend(self.dock._scan_titles_mov_file(
++                        path, reader, alpha=True, stage=self.stage.emit))
++            self.completed.emit({"program": program, "assets": assets})
++        except Exception as exc:
++            log.exception("SMOUK TITLES MOV analysis failed")
++            self.completed.emit({"error": str(exc)})
++
++
+ class CollapsibleSection(QFrame):
+     """A collapsible panel with a header toggle and a content area."""
+ 
+@@ -523,6 +558,7 @@ class VerticalizationDockContent(QWidget):
+         ("shot_detection", "Shot Detection", "Detect and review scene cuts."),
+         ("automatic_reframing", "Automatic Reframing", "Auto reframe each shot to 9:16."),
+         ("titles", "Titles", "Add identifying titles."),
++        ("titles_mov", "TITLES MOV", "Match alpha title movies to the original programme."),
+         ("subtitles", "Subtitles", "Generate Catalan subtitles."),
+         ("logo", "Logo", "Add a company logo overlay."),
+         ("mask", "Mask", "Add a transparent PSD readability mask."),
+@@ -579,6 +615,7 @@ class VerticalizationDockContent(QWidget):
+         self._build_mask_controls(_)
+         self._build_source_import_controls(_)
+         self._build_title_import_controls(_)
++        self._build_titles_mov_controls(_)
+         self._connect_reframe_sync()
+ 
+         layout.addStretch(1)
+@@ -1187,6 +1224,443 @@ class VerticalizationDockContent(QWidget):
+         self._title_heartbeat.setInterval(1000)
+         self._title_heartbeat.timeout.connect(self._on_title_heartbeat)
+ 
++    def _build_titles_mov_controls(self, _):
++        """Add the separate OCR/matching workflow for animated alpha titles."""
++        self.titles_mov_program_path = ""
++        self.titles_mov_folder = ""
++        self.titles_mov_program_label = QLabel(_("No PROGRAM video selected."), self)
++        self.titles_mov_program_label.setWordWrap(True)
++        self.btn_titles_mov_program = QPushButton(_("Browse PROGRAM"), self)
++        self.btn_titles_mov_program.clicked.connect(self._browse_titles_mov_program)
++        self.titles_mov_folder_label = QLabel(_("No chyron folder selected."), self)
++        self.titles_mov_folder_label.setWordWrap(True)
++        self.btn_titles_mov_folder = QPushButton(_("Select Chyrons Folder"), self)
++        self.btn_titles_mov_folder.clicked.connect(self._browse_titles_mov_folder)
++        self.btn_titles_mov_analyze = QPushButton(_("Analyze and match titles"), self)
++        self.btn_titles_mov_analyze.clicked.connect(self._start_titles_mov_analysis)
++        self.btn_titles_mov_analyze.setEnabled(False)
++        self.titles_mov_status = QLabel(_("Select PROGRAM and the folder containing title MOVs."), self)
++        self.titles_mov_status.setWordWrap(True)
++        self.titles_mov_table_program = QtWidgets.QTableWidget(0, 4, self)
++        self.titles_mov_table_program.setHorizontalHeaderLabels(
++            [_("PROGRAM title"), _("Text"), _("In"), _("Out")])
++        self.titles_mov_table_assets = QtWidgets.QTableWidget(0, 3, self)
++        self.titles_mov_table_assets.setHorizontalHeaderLabels(
++            [_("MOV file"), _("Text"), _("In / Out")])
++        for table in (self.titles_mov_table_program, self.titles_mov_table_assets):
++            table.setObjectName("verticalizationTitlesMovTable")
++            table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
++            table.setMaximumHeight(190)
++            table.horizontalHeader().setStretchLastSection(True)
++            table.setWordWrap(True)
++        section = self.sections["titles_mov"]
++        for widget in (self.titles_mov_program_label, self.btn_titles_mov_program,
++                       self.titles_mov_folder_label, self.btn_titles_mov_folder,
++                       self.btn_titles_mov_analyze, self.titles_mov_status,
++                       QLabel(_("PROGRAM titles"), self), self.titles_mov_table_program,
++                       QLabel(_("Title MOV contents"), self), self.titles_mov_table_assets):
++            section.add_widget(widget)
++        self.titles_mov_program_events = []
++        self.titles_mov_asset_events = []
++        self._titles_mov_worker = None
++
++    def _browse_titles_mov_program(self, _checked=False):
++        _ = get_app()._tr
++        path, _selected = QFileDialog.getOpenFileName(
++            self, _("Choose PROGRAM video"), self.titles_mov_program_path,
++            _("Video files (*.mp4 *.mov *.mkv *.avi);;All files (*.*)"))
++        if path:
++            self.titles_mov_program_path = path
++            self.titles_mov_program_label.setText(os.path.basename(path))
++            self._sync_titles_mov_button()
++
++    def _browse_titles_mov_folder(self, _checked=False):
++        _ = get_app()._tr
++        folder = QFileDialog.getExistingDirectory(
++            self, _("Choose folder with title MOVs"), self.titles_mov_folder,
++            QFileDialog.ShowDirsOnly)
++        if folder:
++            self.titles_mov_folder = folder
++            self.titles_mov_folder_label.setText(folder)
++            self._sync_titles_mov_button()
++
++    def _sync_titles_mov_button(self):
++        self.btn_titles_mov_analyze.setEnabled(
++            bool(self.titles_mov_program_path and self.titles_mov_folder and
++                 not (self._titles_mov_worker and self._titles_mov_worker.isRunning())))
++
++    def _start_titles_mov_analysis(self, _checked=False):
++        if not self.titles_mov_program_path or not self.titles_mov_folder:
++            return
++        if self._titles_mov_worker and self._titles_mov_worker.isRunning():
++            return
++        self.titles_mov_status.setText("Preparando OCR local; todavía no se modifica el Timeline…")
++        self.titles_mov_table_program.setRowCount(0)
++        self.titles_mov_table_assets.setRowCount(0)
++        self.btn_titles_mov_analyze.setEnabled(False)
++        worker = SmoukTitlesMovWorker(self, self.titles_mov_program_path,
++                                      self.titles_mov_folder)
++        worker.stage.connect(self.titles_mov_status.setText)
++        worker.completed.connect(self._finish_titles_mov_analysis)
++        self._titles_mov_worker = worker
++        worker.start()
++
++    @staticmethod
++    def _titles_mov_normalize(text):
++        text = unicodedata.normalize("NFKD", str(text or "").casefold())
++        text = "".join(character for character in text
++                       if not unicodedata.combining(character))
++        text = re.sub(r"[^\wÀ-ÿ]+", " ", text, flags=re.UNICODE)
++        return " ".join(text.split())
++
++    def _scan_titles_mov_file(self, path, reader, alpha=False, stage=None):
++        """Find high-contrast title lines at 2 Hz and OCR only their tight crops."""
++        import cv2
++        import numpy
++        ffmpeg = self._ffmpeg_path()
++        if not ffmpeg:
++            raise RuntimeError("No se encuentra FFmpeg para analizar los títulos")
++        info, duration = inspect_media(path)
++        duration = float(duration or 0)
++        if duration <= 0:
++            raise RuntimeError("Duración no válida: %s" % os.path.basename(path))
++        # MOVs include short entrance/exit animations, so sample them more
++        # densely than PROGRAM while remaining far below frame-by-frame OCR.
++        fps = 4 if alpha else 2
++        # Keep native detail. Halving the supplied 1920x1080 media made fine
++        # white title text unreadable and degraded otherwise clean OCR results.
++        width = int(info.get("width") or 1920)
++        height = int(info.get("height") or 1080)
++        width += width % 2
++        height += height % 2
++        sample_count = max(1, int(math.ceil(duration * fps)))
++        pix_fmt = "rgba" if alpha else "rgb24"
++        command = [ffmpeg, "-v", "error", "-i", path, "-vf", "fps=%d" % fps,
++                   "-an", "-frames:v", str(sample_count), "-f", "rawvideo",
++                   "-pix_fmt", pix_fmt, "pipe:1"]
++        process = subprocess.Popen(command, stdout=subprocess.PIPE,
++                                   stderr=subprocess.DEVNULL)
++        channels = 4 if alpha else 3
++        frame_size = width * height * channels
++        active = {}
++        events = []
++
++        def flush(key, state):
++            if state["count"] >= 2 and state["text"]:
++                events.append({"path": path, "filename": os.path.basename(path),
++                               "text": state["text"], "lane": key[0],
++                               "in": state["start"], "out": state["end"],
++                               "confidence": state["confidence"],
++                               "media_duration": duration})
++
++        def title_lines(crop):
++            """Find dark-on-light or light-on-dark title text, grouped by line."""
++            gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
++            boxes = []
++            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (17, 1))
++            for polarity, mask in (("light", cv2.threshold(
++                    gray, 185, 255, cv2.THRESH_BINARY)[1]),
++                    ("dark", cv2.threshold(
++                        gray, 105, 255, cv2.THRESH_BINARY_INV)[1])):
++                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
++                count, _labels, stats, _centres = cv2.connectedComponentsWithStats(mask)
++                for x, y, box_width, box_height, area in stats[1:count]:
++                    density = area / float(max(1, box_width * box_height))
++                    if (box_width < 24 or box_height < 8 or box_height > 90 or
++                            box_width / float(max(1, box_height)) < 1.35 or area < 70 or
++                            (polarity == "dark" and box_width > 80 and density > .72)):
++                        continue
++                    candidate = (int(x), int(y), int(box_width), int(box_height))
++                    if not any(abs(candidate[0] - prior[0]) < 8 and
++                               abs(candidate[1] - prior[1]) < 8 and
++                               abs(candidate[2] - prior[2]) < 12 and
++                               abs(candidate[3] - prior[3]) < 12 for prior in boxes):
++                        boxes.append(candidate)
++            lines = []
++            for box in sorted(boxes, key=lambda item: (item[1], item[0])):
++                x, y, box_width, box_height = box
++                centre = y + box_height / 2.0
++                match = next((line for line in lines
++                              if abs(line["centre"] - centre) <=
++                              max(12, min(box_height, line["height"]) * .5) and
++                              x <= line["right"] + 110 and
++                              x + box_width >= line["left"] - 110), None)
++                if match is None:
++                    lines.append({"left": x, "top": y, "right": x + box_width,
++                                  "bottom": y + box_height, "centre": centre,
++                                  "height": box_height})
++                else:
++                    match["left"] = min(match["left"], x)
++                    match["top"] = min(match["top"], y)
++                    match["right"] = max(match["right"], x + box_width)
++                    match["bottom"] = max(match["bottom"], y + box_height)
++                    match["centre"] = (match["top"] + match["bottom"]) / 2.0
++                    match["height"] = match["bottom"] - match["top"]
++            results = []
++            for line in lines:
++                if line["right"] - line["left"] < 48:
++                    continue
++                pad_x, pad_y = 22, 14
++                x1 = max(0, line["left"] - pad_x)
++                y1 = max(0, line["top"] - pad_y)
++                x2 = min(crop.shape[1], line["right"] + pad_x)
++                y2 = min(crop.shape[0], line["bottom"] + pad_y)
++                results.append(crop[y1:y2, x1:x2])
++            return results
++
++        try:
++            for index in range(sample_count):
++                watchdog = threading.Timer(30, process.kill)
++                watchdog.daemon = True
++                watchdog.start()
++                try:
++                    raw = process.stdout.read(frame_size)
++                finally:
++                    watchdog.cancel()
++                if len(raw) != frame_size:
++                    break
++                frame = numpy.frombuffer(raw, dtype=numpy.uint8).reshape(
++                    (height, width, channels))
++                # FFmpeg's raw RGB(A) output must be converted to BGR for CV/OCR.
++                bgr = cv2.cvtColor(frame[:, :, :3], cv2.COLOR_RGB2BGR)
++                if alpha:
++                    alpha_plane = frame[:, :, 3]
++                    # qtrle alpha is preserved. Ignore fully transparent samples.
++                    if int(numpy.count_nonzero(alpha_plane > 16)) < 80:
++                        for key, state in list(active.items()):
++                            state["missed"] += 1
++                            if state["missed"] >= 2:
++                                flush(key, state)
++                                active.pop(key, None)
++                        continue
++                    # Decode the MOV at 4 Hz to locate animation changes, but
++                    # invoke OCR only twice a second; animated graphics need
++                    # more temporal precision than a PROGRAM while staying sparse.
++                    if index % 2:
++                        continue
++                if alpha:
++                    # These MOV compositions place their actual titles in the
++                    # phone-shaped vertical canvas; exclude repeated 3Cat
++                    # wallpaper lettering at the sides of that canvas.
++                    left, right = int(width * .30), int(width * .70)
++                    lane_regions = ((left, 0, right, int(height * .40)),
++                                    (left, int(height * .58), right, height))
++                else:
++                    # PROGRAM is 16:9: broadcast upper straps and lower thirds
++                    # can occupy different horizontal positions.
++                    lane_regions = ((0, 0, width, int(height * .42)),
++                                    (0, int(height * .62), width, height))
++                observed = {}
++                for lane, (x1, y1, x2, y2) in enumerate(lane_regions):
++                    lane_crop = bgr[y1:y2, x1:x2]
++                    for crop in title_lines(lane_crop):
++                        reading = reader.read(crop, mode="line")
++                        text = " ".join(str(reading.get("text", "")).split()).strip()
++                        normalized = self._titles_mov_normalize(text)
++                        confidence = float(reading.get("confidence", 0.0) or 0.0)
++                        letters = re.sub(r"[^A-Za-zÀ-ÖØ-öø-ÿ]", "", text)
++                        if len(letters) < 4 or confidence < .65:
++                            continue
++                        observed[(lane, normalized)] = (text, confidence)
++                sample_time = index / float(fps)
++                sample_period = (2.0 if alpha else 1.0) / fps
++                sample_end = min(duration, sample_time + sample_period)
++                for key, state in list(active.items()):
++                    if key in observed:
++                        text, confidence = observed[key]
++                        state["count"] += 1
++                        state["missed"] = 0
++                        state["end"] = sample_end
++                        if confidence > state["confidence"]:
++                            state.update({"text": text, "confidence": confidence})
++                    else:
++                        state["missed"] += 1
++                        if state["missed"] >= 2:
++                            flush(key, state)
++                            active.pop(key, None)
++                for key, (text, confidence) in observed.items():
++                    if key not in active:
++                        active[key] = {"text": text, "confidence": confidence,
++                                       "start": sample_time, "end": sample_end,
++                                       "count": 1, "missed": 0}
++                if stage and index % 4 == 0:
++                    stage("PP-OCRv5: %s, muestra %d/%d" %
++                          (os.path.basename(path), index + 1, sample_count))
++        finally:
++            if process.poll() is None:
++                process.kill()
++            process.wait(timeout=10)
++            process.stdout.close()
++        for key, state in active.items():
++            flush(key, state)
++        return sorted(events, key=lambda event: (event["in"], event["lane"]))
++
++    def _finish_titles_mov_analysis(self, payload):
++        _ = get_app()._tr
++        self._sync_titles_mov_button()
++        if payload.get("error"):
++            self.titles_mov_status.setText("Error de análisis: %s" % payload["error"])
++            return
++        program = payload.get("program") or []
++        assets = payload.get("assets") or []
++        self.titles_mov_program_events = program
++        self.titles_mov_asset_events = assets
++        self._fill_titles_mov_tables()
++        matches = []
++        seen_placements = set()
++        for event in program:
++            normalized = self._titles_mov_normalize(event["text"])
++            candidates = []
++            for asset in assets:
++                candidate = self._titles_mov_normalize(asset["text"])
++                score = SequenceMatcher(None, normalized, candidate).ratio()
++                if score >= .78:
++                    program_duration = max(.25, float(event["out"]) - float(event["in"]))
++                    asset_duration = max(.25, float(asset["out"]) - float(asset["in"]))
++                    duration_similarity = min(program_duration, asset_duration) / max(
++                        program_duration, asset_duration)
++                    candidates.append((score, duration_similarity, asset))
++            if candidates:
++                score, _duration_similarity, asset = max(
++                    candidates, key=lambda value: (value[0], value[1]))
++                placement_key = (asset["path"], round(float(event["in"]), 2),
++                                 round(float(event["out"]), 2))
++                if placement_key not in seen_placements:
++                    seen_placements.add(placement_key)
++                    matches.append((event, asset, score))
++        if not matches:
++            self.titles_mov_status.setText(
++                "OCR terminó: %d rótulos en PROGRAM y %d en MOV; no hubo coincidencias fiables. "
++                "El Timeline no se ha modificado." % (len(program), len(assets)))
++            return
++        try:
++            placed = self._place_titles_mov_matches(matches)
++        except Exception as exc:
++            log.exception("Could not apply TITLES AUTO matches")
++            self.titles_mov_status.setText(
++                "No se sustituyó la pista anterior: %s" % exc)
++            return
++        self.titles_mov_status.setText(
++            "OCR: %d rótulos PROGRAM, %d títulos MOV; %d coincidencias colocadas en TITLES AUTO."
++            % (len(program), len(assets), placed))
++
++    def _fill_titles_mov_tables(self):
++        for table, events, asset_table in (
++                (self.titles_mov_table_program, self.titles_mov_program_events, False),
++                (self.titles_mov_table_assets, self.titles_mov_asset_events, True)):
++            table.setRowCount(len(events))
++            for row, event in enumerate(events):
++                values = ([event["filename"], event["text"],
++                           "%s – %s" % (self._format_timecode(event["in"]),
++                                         self._format_timecode(event["out"]))]
++                          if asset_table else
++                          ["Title %d" % (row + 1), event["text"],
++                           self._format_timecode(event["in"]),
++                           self._format_timecode(event["out"])])
++                for column, value in enumerate(values):
++                    table.setItem(row, column, QtWidgets.QTableWidgetItem(str(value)))
++            table.resizeColumnsToContents()
++
++    def _place_titles_mov_matches(self, matches):
++        """Place each alpha MOV so its stable readable interval aligns to PROGRAM."""
++        window = get_app().window
++        for _program_event, asset, _score in matches:
++            if not os.path.isfile(asset.get("path", "")):
++                raise RuntimeError("Falta el título MOV: %s" % asset.get("filename", ""))
++            if float(asset.get("media_duration", 0.0) or 0.0) <= 0:
++                raise RuntimeError("El título MOV no tiene duración válida: %s" %
++                                   asset.get("filename", ""))
++        video_layers = []
++        for track in Track.filter():
++            for clip in Clip.filter(layer=track.data.get("number")):
++                if clip.data.get("reader", {}).get("has_video"):
++                    video_layers.append(int(track.data.get("number", 0)))
++                    break
++        low = max(video_layers or [0])
++        higher_generated = [int(track.data.get("number", 0)) for track in Track.filter()
++                            if track.data.get("smouk_subtitle_track") or
++                            track.data.get("smouk_chyron_track") or
++                            track.data.get("smouk_logo_track")]
++        high = min([number for number in higher_generated if number > low] or [low + 1000000])
++        layer = low + max(1, (high - low) // 2)
++        track = next((item for item in Track.filter()
++                      if item.data.get("smouk_titles_auto_track")), None)
++        if track is None:
++            track = Track()
++            track.data = {"number": layer, "y": 0, "label": "TITLES AUTO", "lock": False,
++                          "smouk_titles_auto_track": True}
++            track.save()
++        else:
++            layer = int(track.data.get("number", layer))
++        ensure = getattr(window, "ensure_tracks_for_layers", None)
++        if callable(ensure):
++            ensure([layer])
++        placed = 0
++        created = []
++        try:
++            for program_event, asset, _score in matches:
++                path = asset["path"]
++                file_obj = File.get(path=path)
++                if not file_obj:
++                    data, _duration = inspect_media(path)
++                    data["media_type"] = get_media_type(data)
++                    file_obj = File()
++                    file_obj.data = data
++                    file_obj.save()
++                clip_data = window.timeline.addClip(
++                    file_obj.id, QtCore.QPoint(0, 0), layer,
++                    ignore_refresh=False, call_manual_move=False)
++                if not clip_data:
++                    raise RuntimeError("OpenShot no pudo añadir %s" % os.path.basename(path))
++                clip = Clip.get(id=clip_data.get("id"))
++                if clip is None:
++                    raise RuntimeError("OpenShot no devolvió el clip añadido: %s" %
++                                       os.path.basename(path))
++                created.append(clip)
++                media_duration = float(file_obj.data.get("duration", 0.0) or 0.0)
++                if not media_duration:
++                    _info, media_duration = inspect_media(path)
++                    media_duration = float(media_duration or 0.0)
++                media_duration = media_duration or float(asset.get("media_duration", 0.0))
++                stable_in = float(asset["in"])
++                position = float(program_event["in"]) - stable_in
++                source_start = max(0.0, -position)
++                position = max(0.0, position)
++                # Keep the complete media interval so its outgoing animation is not cut.
++                source_end = media_duration
++                if source_end <= source_start:
++                    raise RuntimeError("Duración inválida en %s" % os.path.basename(path))
++                clip.data.update({"position": position, "start": source_start,
++                                  "end": source_end, "duration": source_end - source_start,
++                                  "layer": layer, "file_id": file_obj.id,
++                                  "reader": file_obj.data,
++                                  "title": "TITLES AUTO - %s" % asset["text"][:48],
++                                  "smouk_titles_auto_clip": True,
++                                  "smouk_titles_auto_text": asset["text"],
++                                  "smouk_titles_auto_program_in": program_event["in"],
++                                  "smouk_titles_auto_program_out": program_event["out"],
++                                  "smouk_titles_auto_match_score": _score})
++                clip.save()
++                placed += 1
++        except Exception:
++            for clip in created:
++                try:
++                    clip.delete()
++                except Exception:
++                    log.exception("Could not roll back partial TITLES AUTO clip")
++            raise
++        if placed != len(matches):
++            for clip in created:
++                clip.delete()
++            raise RuntimeError("Solo se pudieron insertar %d de %d rótulos; "
++                               "se conservaron los títulos anteriores." %
++                               (placed, len(matches)))
++        created_ids = {clip.id for clip in created}
++        for clip in Clip.filter():
++            if clip.data.get("smouk_titles_auto_clip") and clip.id not in created_ids:
++                clip.delete()
++        return placed
++
+     @title_pipeline_guard
+     def _on_browse_title_folder(self, _checked=False):
+         """Validate a source folder and import only its CLEAN interval."""
+-- 
+2.55.0.windows.3
+

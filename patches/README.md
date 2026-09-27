@@ -148,3 +148,4 @@ git am /path/to/patches/0001-FFmpeg-9-*.patch
 | `0133-SMOUK-0.0.131-terminal-word-echo.patch` | **scripts / openshot-qt** | Filters a narrowly identified terminal suffix echo from the BSC worker and adds a regression check while incrementing the application version. |
 | `0134-SMOUK-0.0.132-safe-reframe-slider.patch` | **openshot-qt** | Disables clip reframing without exactly one selected video and throttles live Timeline writes/refreshes while dragging. |
 | `0135-SMOUK-0.0.133-defer-layout-checkpoint-during-dock-drag.patch` | **openshot-qt** | Defers the periodic `saveState()` layout checkpoint while a dock is being rearranged, with a regression test for the active-drag guard. |
+| `0136-SMOUK-0.0.134-match-animated-title-movs.patch` | **openshot-qt** | Adds sparse stable-text OCR for PROGRAM and alpha MOV titles, review tables, text matching, and a transactional TITLES AUTO track that preserves each MOV's entrance and exit animation. |
