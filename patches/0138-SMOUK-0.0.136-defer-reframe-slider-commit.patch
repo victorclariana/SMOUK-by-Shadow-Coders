@@ -1,0 +1,245 @@
+From 228ad79f4ba4dfc0ae646b4a3e3a805e7052d218 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sun, 27 Sep 2026 21:53:31 +0200
+Subject: [PATCH] SMOUK 0.0.136 defer and guard framing slider commits
+
+---
+ src/tests/test_smouk_reframe_slider.py | 79 ++++++++++++++++++++++++++
+ src/windows/main_window.py             |  2 +-
+ src/windows/verticalization.py         | 77 +++++++++++++++++++------
+ 3 files changed, 139 insertions(+), 19 deletions(-)
+ create mode 100644 src/tests/test_smouk_reframe_slider.py
+
+diff --git a/src/tests/test_smouk_reframe_slider.py b/src/tests/test_smouk_reframe_slider.py
+new file mode 100644
+index 000000000..c4c46cdee
+--- /dev/null
++++ b/src/tests/test_smouk_reframe_slider.py
+@@ -0,0 +1,79 @@
++"""Regression tests for safe interaction with the vertical framing slider."""
++
++from types import SimpleNamespace
++from unittest import TestCase
++from unittest.mock import Mock, patch
++
++from windows.verticalization import VerticalizationDockContent
++
++
++class _Timer:
++    def __init__(self):
++        self.active = False
++        self.starts = 0
++
++    def isActive(self):
++        return self.active
++
++    def start(self):
++        self.active = True
++        self.starts += 1
++
++
++class ReframeSliderTests(TestCase):
++    def make_dock_stub(self, dragging):
++        dock = SimpleNamespace(
++            _reframe_dragging=dragging,
++            _reframe_pending_value=None,
++            _reframe_commit_timer=_Timer(),
++            reframe_slider=SimpleNamespace(value=lambda: 425),
++            _sync_reframe_slider=Mock(),
++            _apply_reframe_slider_value=Mock(),
++            reframe_results=SimpleNamespace(setText=Mock()),
++        )
++        dock._schedule_reframe_commit = Mock(
++            side_effect=dock._reframe_commit_timer.start)
++        return dock
++
++    def test_drag_only_records_latest_value_until_release(self):
++        dock = self.make_dock_stub(dragging=True)
++
++        VerticalizationDockContent._on_reframe_changed(dock)
++
++        self.assertEqual(dock._reframe_pending_value, 425)
++        self.assertEqual(dock._reframe_commit_timer.starts, 0)
++        dock._apply_reframe_slider_value.assert_not_called()
++
++    def test_non_drag_value_change_is_queued_outside_slider_event(self):
++        dock = self.make_dock_stub(dragging=False)
++
++        VerticalizationDockContent._on_reframe_changed(dock)
++
++        self.assertEqual(dock._reframe_pending_value, 425)
++        dock._schedule_reframe_commit.assert_called_once_with()
++        dock._apply_reframe_slider_value.assert_not_called()
++
++    def test_release_schedules_single_deferred_commit(self):
++        dock = self.make_dock_stub(dragging=True)
++        dock._reframe_pending_value = 425
++
++        VerticalizationDockContent._on_reframe_release(dock)
++
++        self.assertFalse(dock._reframe_dragging)
++        dock._schedule_reframe_commit.assert_called_once_with()
++        self.assertEqual(dock._reframe_commit_timer.starts, 1)
++        dock._sync_reframe_slider.assert_not_called()
++
++    def test_commit_contains_python_errors_and_still_resynchronizes(self):
++        dock = self.make_dock_stub(dragging=False)
++        dock._reframe_pending_value = 425
++        dock._apply_reframe_slider_value.side_effect = ValueError("invalid clip")
++
++        with patch("windows.verticalization.log.exception") as log_exception:
++            VerticalizationDockContent._commit_reframe_slider_value(dock)
++
++        self.assertIsNone(dock._reframe_pending_value)
++        dock._apply_reframe_slider_value.assert_called_once_with(425)
++        dock._sync_reframe_slider.assert_called_once_with()
++        log_exception.assert_called_once()
++
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 0228b3b84..041f70de7 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -103,7 +103,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.135"
++SMOUK_VERSION = "0.0.136"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 3e63060ea..f83fa8f72 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -594,6 +594,7 @@ class VerticalizationDockContent(QWidget):
+         # Verticalization controls (output + viewer guide + clip reframing)
+         self._build_controls(layout, _)
+         self._reframe_dragging = False
++        self._reframe_pending_value = None
+         self._logo_opacity_dragging = False
+ 
+         self.sections = {}
+@@ -675,10 +676,10 @@ class VerticalizationDockContent(QWidget):
+         self.reframe_slider.sliderPressed.connect(self._on_reframe_press)
+         self.reframe_slider.sliderReleased.connect(self._on_reframe_release)
+         self.reframe_slider.valueChanged.connect(self._on_reframe_changed)
+-        self._reframe_update_timer = QtCore.QTimer(self)
+-        self._reframe_update_timer.setSingleShot(True)
+-        self._reframe_update_timer.setInterval(80)
+-        self._reframe_update_timer.timeout.connect(self._apply_reframe_slider_value)
++        self._reframe_commit_timer = QtCore.QTimer(self)
++        self._reframe_commit_timer.setSingleShot(True)
++        self._reframe_commit_timer.setInterval(0)
++        self._reframe_commit_timer.timeout.connect(self._commit_reframe_slider_value)
+         self.sections["automatic_reframing"].add_widget(self.reframe_slider)
+ 
+         self.chk_keyframes = QCheckBox(_("Keyframes"), self)
+@@ -4446,14 +4447,22 @@ class VerticalizationDockContent(QWidget):
+         self._sync_reframe_slider()
+ 
+     def _on_reframe_press(self):
+-        self._reframe_dragging = self._selected_clip() is not None
++        try:
++            self._reframe_dragging = self._selected_clip() is not None
++        except Exception:
++            self._reframe_dragging = False
++            log.exception("SMOUK reframe slider press failed")
+ 
+     def _on_reframe_release(self):
+-        if self._reframe_update_timer.isActive():
+-            self._reframe_update_timer.stop()
+-            self._apply_reframe_slider_value()
+-        self._reframe_dragging = False
+-        self._sync_reframe_slider()
++        try:
++            was_dragging = self._reframe_dragging
++            self._reframe_dragging = False
++            if was_dragging and self._reframe_pending_value is not None:
++                self._schedule_reframe_commit()
++            elif self._reframe_pending_value is None:
++                self._sync_reframe_slider()
++        except Exception:
++            log.exception("SMOUK reframe slider release failed")
+ 
+     def _reframe_max_offset(self):
+         return (1.0 - (self._output_ratio() / (16.0 / 9.0))) / 2.0
+@@ -4540,14 +4549,40 @@ class VerticalizationDockContent(QWidget):
+         return max(start_frame, int(round(float(end) * fps_value)))
+ 
+     def _on_reframe_changed(self):
+-        """Coalesce slider movement to at most one timeline update per 80 ms."""
+-        if self._reframe_dragging:
+-            if not self._reframe_update_timer.isActive():
+-                self._reframe_update_timer.start()
+-        else:
+-            self._apply_reframe_slider_value()
++        """Defer model and preview mutations until Qt has finished the slider event."""
++        try:
++            self._reframe_pending_value = self.reframe_slider.value()
++            if not self._reframe_dragging:
++                self._schedule_reframe_commit()
++        except Exception:
++            log.exception("SMOUK reframe slider value-change handler failed")
++
++    def _schedule_reframe_commit(self):
++        if not self._reframe_commit_timer.isActive():
++            self._reframe_commit_timer.start()
++
++    def _commit_reframe_slider_value(self):
++        if self._reframe_dragging or self._reframe_pending_value is None:
++            return
++        slider_value = self._reframe_pending_value
++        self._reframe_pending_value = None
++        try:
++            self._apply_reframe_slider_value(slider_value)
++        except Exception as exc:
++            # An exception escaping a Python slot connected to Qt's mouse/slider
++            # event path terminates this PyQt build inside Qt5Core. Keep it
++            # contained here and persist its traceback for diagnosis.
++            log.exception("SMOUK reframe slider commit failed")
++            try:
++                self.reframe_results.setText("Framing update failed: %s" % exc)
++            except Exception:
++                log.exception("SMOUK could not display the reframe error")
++        try:
++            self._sync_reframe_slider()
++        except Exception:
++            log.exception("SMOUK reframe slider resynchronization failed")
+ 
+-    def _apply_reframe_slider_value(self):
++    def _apply_reframe_slider_value(self, slider_value):
+         """Store a fixed reframe, or a keyframe at the current playhead position."""
+         window = get_app().window
+         clip = self._selected_clip()
+@@ -4556,13 +4591,17 @@ class VerticalizationDockContent(QWidget):
+ 
+         # Keep the selected output crop entirely inside a 16:9 source frame.
+         value = self._clamp_reframe_value(
+-            (self.reframe_slider.value() / 1000.0) * self._reframe_max_offset())
++            (slider_value / 1000.0) * self._reframe_max_offset())
+         fps = get_app().project.get("fps")
+         fps_value = float(fps["num"]) / float(fps["den"])
+         frame = self._clip_frame(clip, window)
++        log.info("SMOUK reframe commit start: clip=%s slider=%s keyframes=%s",
++                 clip.id, slider_value, self.chk_keyframes.isChecked())
+ 
+         if self.chk_keyframes.isChecked():
+             window.videoPreview.updateClipProperty(clip.id, frame, "location_x", value)
++            log.info("SMOUK reframe commit finished: clip=%s frame=%s",
++                     clip.id, frame)
+             return
+ 
+         start_frame = max(1, int(round(float(clip.data.get("start", 0.0)) * fps_value)) + 1)
+@@ -4575,6 +4614,8 @@ class VerticalizationDockContent(QWidget):
+         }
+         clip.save()
+         window.refreshFrameSignal.emit()
++        log.info("SMOUK reframe commit finished: clip=%s",
++                 clip.id)
+ 
+     def _on_export_vertical(self):
+         """Open Export with an explicit SMOUK crop-render configuration."""
+-- 
+2.55.0.windows.3
+

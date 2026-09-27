@@ -217,6 +217,15 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   pesados durante el scroll. Los eventos OCR de PROGRAM y MOV, y las
   coincidencias, permanecen en memoria para el emparejamiento automático.
 
+### 0.0.136
+
+- El slider de encuadre ya no guarda el clip ni refresca el visor durante el
+  arrastre. Guarda una sola vez al soltar, fuera del evento del ratón; los
+  errores de Python quedan capturados y registrados con traceback.
+- Los volcados de Windows de dos cierres anteriores mostraron la misma
+  terminación fail-fast de Qt desde el camino de eventos del slider y PyQt.
+  Se añaden pruebas para garantizar el aplazamiento y la captura de errores.
+
 ### 0.0.131
 
 - Descarta un eco terminal muy breve que repite el final de la palabra
