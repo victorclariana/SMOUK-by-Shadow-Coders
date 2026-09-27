@@ -147,3 +147,4 @@ git am /path/to/patches/0001-FFmpeg-9-*.patch
 | `0132-SMOUK-0.0.130-stable-subtitle-layout.patch` | **openshot-qt** | Plans corrected timed words into measured two-line cues, resolves overlapping audio sources, validates the entire timeline layout before replacing subtitle clips, and adds regression tests. |
 | `0133-SMOUK-0.0.131-terminal-word-echo.patch` | **scripts / openshot-qt** | Filters a narrowly identified terminal suffix echo from the BSC worker and adds a regression check while incrementing the application version. |
 | `0134-SMOUK-0.0.132-safe-reframe-slider.patch` | **openshot-qt** | Disables clip reframing without exactly one selected video and throttles live Timeline writes/refreshes while dragging. |
+| `0135-SMOUK-0.0.133-defer-layout-checkpoint-during-dock-drag.patch` | **openshot-qt** | Defers the periodic `saveState()` layout checkpoint while a dock is being rearranged, with a regression test for the active-drag guard. |

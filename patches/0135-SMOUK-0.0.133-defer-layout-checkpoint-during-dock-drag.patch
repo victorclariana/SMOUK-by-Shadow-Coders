@@ -1,0 +1,81 @@
+From e9134294f7f2cc754c56f2a1deff79c9e24ac77e Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sun, 27 Sep 2026 17:11:21 +0200
+Subject: [PATCH] SMOUK 0.0.133 defer dock layout checkpoints
+
+---
+ src/tests/test_main_window.py | 29 +++++++++++++++++++++++++++++
+ src/windows/main_window.py    | 10 +++++++++-
+ 2 files changed, 38 insertions(+), 1 deletion(-)
+
+diff --git a/src/tests/test_main_window.py b/src/tests/test_main_window.py
+index c64874cd1..9c8645596 100644
+--- a/src/tests/test_main_window.py
++++ b/src/tests/test_main_window.py
+@@ -242,6 +242,35 @@ class MainWindowTests(unittest.TestCase):
+         self.assertEqual(tracks, [2000000, 1000000, 500000])
+         self.assertNotIn(1, tracks)
+ 
++    def test_layout_checkpoint_defers_while_a_dock_is_being_dragged(self):
++        module = self.main_window_module
++        fake_window = types.SimpleNamespace(
++            initialized=True,
++            _dock_interaction_active=True,
++            _schedule_layout_checkpoint=MagicMock(),
++            saveState=MagicMock(),
++        )
++
++        module.MainWindow._save_layout_checkpoint(fake_window)
++
++        fake_window._schedule_layout_checkpoint.assert_called_once_with()
++        fake_window.saveState.assert_not_called()
++
++    def test_layout_checkpoint_defers_while_left_mouse_button_is_held(self):
++        module = self.main_window_module
++        fake_window = types.SimpleNamespace(
++            initialized=True,
++            _dock_interaction_active=False,
++            _schedule_layout_checkpoint=MagicMock(),
++            saveState=MagicMock(),
++        )
++
++        with patch.object(module.QApplication, "mouseButtons", return_value=Qt.LeftButton):
++            module.MainWindow._save_layout_checkpoint(fake_window)
++
++        fake_window._schedule_layout_checkpoint.assert_called_once_with()
++        fake_window.saveState.assert_not_called()
++
+     def test_cosmic_play_toggle_uses_hidpi_svg_renderer_for_both_states(self):
+         from themes.cosmic.theme import CosmicTheme
+ 
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index aa47be94a..cdcbbf541 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -103,7 +103,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.132"
++SMOUK_VERSION = "0.0.133"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+@@ -4025,6 +4025,14 @@ class MainWindow(updates.UpdateWatcher, QMainWindow):
+         """
+         if not getattr(self, "initialized", False):
+             return
++        # QMainWindow.saveState() can stall/crash Qt5 on Windows while a dock is
++        # being dragged or while its layout is still being recalculated. The
++        # periodic checkpoint is independent of dock signals, so it must defer
++        # itself when it happens to fire during that native interaction.
++        if (getattr(self, "_dock_interaction_active", False) or
++                QApplication.mouseButtons() & Qt.LeftButton):
++            self._schedule_layout_checkpoint()
++            return
+         try:
+             state = qt_types.bytes_to_str(self.saveState())
+             geometry = qt_types.bytes_to_str(self.saveGeometry())
+-- 
+2.55.0.windows.3
+

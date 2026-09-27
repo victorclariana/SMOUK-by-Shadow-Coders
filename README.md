@@ -195,6 +195,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - Descarta un microfragmento de varias palabras que Whisper inventa en el
   último instante del audio, sin afectar al habla que termina antes del OUT.
 
+### 0.0.133
+
+- Posponen los checkpoints de geometría mientras se arrastra un dock o Qt
+  mantiene pulsado el botón izquierdo, evitando invocar `QMainWindow.saveState()`
+  durante una reorganización nativa del dock en Windows.
+
 ### 0.0.131
 
 - Descarta un eco terminal muy breve que repite el final de la palabra
