@@ -226,6 +226,13 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   terminación fail-fast de Qt desde el camino de eventos del slider y PyQt.
   Se añaden pruebas para garantizar el aplazamiento y la captura de errores.
 
+### 0.0.137
+
+- El `.bat` inicia SMOUK en un terminal minimizado para que la ventana de la
+  aplicación quede visible y la consola siga disponible para diagnósticos.
+- Convierte en raw el docstring del lanzador para eliminar el `SyntaxWarning`
+  causado por las barras invertidas de la ruta de Windows.
+
 ### 0.0.131
 
 - Descarta un eco terminal muy breve que repite el final de la palabra

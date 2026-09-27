@@ -5,7 +5,7 @@ Runs openshot-qt using the locally-built libopenshot bindings and the MSYS2
 MinGW64 Python + PyQt5 toolchain.
 
 Usage:
-    C:\msys64\mingw64\bin\python.exe scripts\run_smouk.py
+    C:\\msys64\\mingw64\\bin\\python.exe scripts\\run_smouk.py
     (or double-click scripts\run_smouk.bat)
 """
 

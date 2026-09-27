@@ -1,0 +1,38 @@
+diff --git a/scripts/run_smouk.bat b/scripts/run_smouk.bat
+index 7e04770..dfb2fac 100644
+--- a/scripts/run_smouk.bat
++++ b/scripts/run_smouk.bat
+@@ -7,4 +7,6 @@ if not exist "%SMOUK_PYTHON%" (
+     echo SMOUK cannot start: no verified MSYS2 Python interpreter was found.
+     exit /b 1
+ )
+-"%SMOUK_PYTHON%" "%~dp0run_smouk.py" %*
++rem Keep the Python console minimized for diagnostics, but let the Qt GUI
++rem remain a normal foreground window. pythonw.exe exits during SMOUK startup.
++start "SMOUK diagnostics" /min "%SMOUK_PYTHON%" "%~dp0run_smouk.py" %*
+diff --git a/scripts/run_smouk.py b/scripts/run_smouk.py
+index a974913..3c3e2b2 100644
+--- a/scripts/run_smouk.py
++++ b/scripts/run_smouk.py
+@@ -5,7 +5,7 @@ Runs openshot-qt using the locally-built libopenshot bindings and the MSYS2
+ MinGW64 Python + PyQt5 toolchain.
+ 
+ Usage:
+-    C:\msys64\mingw64\bin\python.exe scripts\run_smouk.py
++    C:\\msys64\\mingw64\\bin\\python.exe scripts\\run_smouk.py
+     (or double-click scripts\run_smouk.bat)
+ """
+ 
+diff --git a/openshot-qt/src/windows/main_window.py b/openshot-qt/src/windows/main_window.py
+index 041f70de7..b48444f50 100644
+--- a/openshot-qt/src/windows/main_window.py
++++ b/openshot-qt/src/windows/main_window.py
+@@ -103,7 +103,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.136"
++SMOUK_VERSION = "0.0.137"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
