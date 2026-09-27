@@ -149,3 +149,4 @@ git am /path/to/patches/0001-FFmpeg-9-*.patch
 | `0134-SMOUK-0.0.132-safe-reframe-slider.patch` | **openshot-qt** | Disables clip reframing without exactly one selected video and throttles live Timeline writes/refreshes while dragging. |
 | `0135-SMOUK-0.0.133-defer-layout-checkpoint-during-dock-drag.patch` | **openshot-qt** | Defers the periodic `saveState()` layout checkpoint while a dock is being rearranged, with a regression test for the active-drag guard. |
 | `0136-SMOUK-0.0.134-match-animated-title-movs.patch` | **openshot-qt** | Adds sparse stable-text OCR for PROGRAM and alpha MOV titles, review tables, text matching, and a transactional TITLES AUTO track that preserves each MOV's entrance and exit animation. |
+| `0137-SMOUK-0.0.135-memory-only-title-match.patch` | **openshot-qt** | Removes the TITLES MOV result tables from the dock; OCR events and matches remain in memory for automatic matching and placement. |

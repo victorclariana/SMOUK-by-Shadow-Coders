@@ -211,6 +211,12 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   y salida. Un reanálisis solo sustituye clips anteriores si todas las nuevas
   coincidencias se insertan correctamente.
 
+### 0.0.135
+
+- Quita del dock las tablas de resultados de TITLES MOV para evitar controles
+  pesados durante el scroll. Los eventos OCR de PROGRAM y MOV, y las
+  coincidencias, permanecen en memoria para el emparejamiento automático.
+
 ### 0.0.131
 
 - Descarta un eco terminal muy breve que repite el final de la palabra

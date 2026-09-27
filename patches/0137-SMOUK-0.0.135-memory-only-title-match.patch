@@ -1,0 +1,120 @@
+From 07c5901d9edd34eab710106be36cf13edda86723 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sun, 27 Sep 2026 21:30:40 +0200
+Subject: [PATCH] SMOUK 0.0.135 keep title match results in memory
+
+---
+ src/windows/main_window.py     |  2 +-
+ src/windows/verticalization.py | 42 +++++-----------------------------
+ 2 files changed, 7 insertions(+), 37 deletions(-)
+
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index a845ae79b..0228b3b84 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -103,7 +103,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.134"
++SMOUK_VERSION = "0.0.135"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index 6b9721e46..3e63060ea 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -45,7 +45,6 @@ from qt_api import (
+     QDialogButtonBox, QTextCursor, QTextCharFormat, QColor, QColorDialog,
+     QFontComboBox, QSpinBox, QDoubleSpinBox, QFont,
+ )
+-from qt_api import QtWidgets
+ 
+ import openshot
+ from classes.app import get_app
+@@ -1241,27 +1240,14 @@ class VerticalizationDockContent(QWidget):
+         self.btn_titles_mov_analyze.setEnabled(False)
+         self.titles_mov_status = QLabel(_("Select PROGRAM and the folder containing title MOVs."), self)
+         self.titles_mov_status.setWordWrap(True)
+-        self.titles_mov_table_program = QtWidgets.QTableWidget(0, 4, self)
+-        self.titles_mov_table_program.setHorizontalHeaderLabels(
+-            [_("PROGRAM title"), _("Text"), _("In"), _("Out")])
+-        self.titles_mov_table_assets = QtWidgets.QTableWidget(0, 3, self)
+-        self.titles_mov_table_assets.setHorizontalHeaderLabels(
+-            [_("MOV file"), _("Text"), _("In / Out")])
+-        for table in (self.titles_mov_table_program, self.titles_mov_table_assets):
+-            table.setObjectName("verticalizationTitlesMovTable")
+-            table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+-            table.setMaximumHeight(190)
+-            table.horizontalHeader().setStretchLastSection(True)
+-            table.setWordWrap(True)
+         section = self.sections["titles_mov"]
+         for widget in (self.titles_mov_program_label, self.btn_titles_mov_program,
+                        self.titles_mov_folder_label, self.btn_titles_mov_folder,
+-                       self.btn_titles_mov_analyze, self.titles_mov_status,
+-                       QLabel(_("PROGRAM titles"), self), self.titles_mov_table_program,
+-                       QLabel(_("Title MOV contents"), self), self.titles_mov_table_assets):
++                       self.btn_titles_mov_analyze, self.titles_mov_status):
+             section.add_widget(widget)
+         self.titles_mov_program_events = []
+         self.titles_mov_asset_events = []
++        self.titles_mov_matches = []
+         self._titles_mov_worker = None
+ 
+     def _browse_titles_mov_program(self, _checked=False):
+@@ -1295,8 +1281,9 @@ class VerticalizationDockContent(QWidget):
+         if self._titles_mov_worker and self._titles_mov_worker.isRunning():
+             return
+         self.titles_mov_status.setText("Preparando OCR local; todavía no se modifica el Timeline…")
+-        self.titles_mov_table_program.setRowCount(0)
+-        self.titles_mov_table_assets.setRowCount(0)
++        self.titles_mov_program_events = []
++        self.titles_mov_asset_events = []
++        self.titles_mov_matches = []
+         self.btn_titles_mov_analyze.setEnabled(False)
+         worker = SmoukTitlesMovWorker(self, self.titles_mov_program_path,
+                                       self.titles_mov_folder)
+@@ -1505,7 +1492,6 @@ class VerticalizationDockContent(QWidget):
+         assets = payload.get("assets") or []
+         self.titles_mov_program_events = program
+         self.titles_mov_asset_events = assets
+-        self._fill_titles_mov_tables()
+         matches = []
+         seen_placements = set()
+         for event in program:
+@@ -1528,6 +1514,7 @@ class VerticalizationDockContent(QWidget):
+                 if placement_key not in seen_placements:
+                     seen_placements.add(placement_key)
+                     matches.append((event, asset, score))
++        self.titles_mov_matches = matches
+         if not matches:
+             self.titles_mov_status.setText(
+                 "OCR terminó: %d rótulos en PROGRAM y %d en MOV; no hubo coincidencias fiables. "
+@@ -1544,23 +1531,6 @@ class VerticalizationDockContent(QWidget):
+             "OCR: %d rótulos PROGRAM, %d títulos MOV; %d coincidencias colocadas en TITLES AUTO."
+             % (len(program), len(assets), placed))
+ 
+-    def _fill_titles_mov_tables(self):
+-        for table, events, asset_table in (
+-                (self.titles_mov_table_program, self.titles_mov_program_events, False),
+-                (self.titles_mov_table_assets, self.titles_mov_asset_events, True)):
+-            table.setRowCount(len(events))
+-            for row, event in enumerate(events):
+-                values = ([event["filename"], event["text"],
+-                           "%s – %s" % (self._format_timecode(event["in"]),
+-                                         self._format_timecode(event["out"]))]
+-                          if asset_table else
+-                          ["Title %d" % (row + 1), event["text"],
+-                           self._format_timecode(event["in"]),
+-                           self._format_timecode(event["out"])])
+-                for column, value in enumerate(values):
+-                    table.setItem(row, column, QtWidgets.QTableWidgetItem(str(value)))
+-            table.resizeColumnsToContents()
+-
+     def _place_titles_mov_matches(self, matches):
+         """Place each alpha MOV so its stable readable interval aligns to PROGRAM."""
+         window = get_app().window
+-- 
+2.55.0.windows.3
+
