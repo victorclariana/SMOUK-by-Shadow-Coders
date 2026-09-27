@@ -152,3 +152,4 @@ git am /path/to/patches/0001-FFmpeg-9-*.patch
 | `0137-SMOUK-0.0.135-memory-only-title-match.patch` | **openshot-qt** | Removes the TITLES MOV result tables from the dock; OCR events and matches remain in memory for automatic matching and placement. |
 | `0138-SMOUK-0.0.136-defer-reframe-slider-commit.patch` | **openshot-qt** | Defers framing changes until the slider gesture finishes, commits outside the mouse event, and catches/logs callback errors; includes regression tests. |
 | `0139-SMOUK-0.0.137-visible-batch-launcher.patch` | **scripts / openshot-qt** | Starts the GUI from a minimized Python console, leaving the Qt window visible and diagnostics available; removes the Windows-path SyntaxWarning. |
+| `0140-SMOUK-0.0.138-trace-verticalization-touchpad-scroll.patch` | **openshot-qt** | Logs trackpad Wheel deltas, scrollbar transitions, native scroll-handler boundaries, and fatal Qt messages to a dedicated persistent trace file for crash forensics. |

@@ -1,0 +1,297 @@
+From cbca40e9f60f31809e68941427843e5f9e0a8cf7 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sun, 27 Sep 2026 22:25:44 +0200
+Subject: [PATCH] SMOUK 0.0.138 trace verticalization touchpad scroll
+
+---
+ ...test_smouk_verticalization_scroll_trace.py |  55 ++++++
+ src/windows/main_window.py                    |   2 +-
+ src/windows/verticalization.py                | 176 +++++++++++++++++-
+ 3 files changed, 231 insertions(+), 2 deletions(-)
+ create mode 100644 src/tests/test_smouk_verticalization_scroll_trace.py
+
+diff --git a/src/tests/test_smouk_verticalization_scroll_trace.py b/src/tests/test_smouk_verticalization_scroll_trace.py
+new file mode 100644
+index 000000000..da34c9dc3
+--- /dev/null
++++ b/src/tests/test_smouk_verticalization_scroll_trace.py
+@@ -0,0 +1,55 @@
++"""Regression tests for persistent dock trackpad diagnostics."""
++
++import os
++from unittest import TestCase
++from unittest.mock import patch
++
++from qt_api import QApplication, Qt, QtCore, QtGui, QWidget, QVBoxLayout, QLabel
++from windows.verticalization import (
++    _TracingVerticalizationScrollArea,
++    _VerticalizationScrollTrace,
++)
++
++
++class VerticalizationScrollTraceTests(TestCase):
++    def test_wheel_event_records_deltas_and_scrollbar_transition(self):
++        app = QApplication.instance() or QApplication([])
++        workspace_root = os.path.abspath(os.path.join(
++            os.path.dirname(__file__), "..", "..", ".."))
++        trace_path = os.path.join(workspace_root, ".smouk-scroll-trace-test.log")
++        area = _TracingVerticalizationScrollArea()
++        content = QWidget()
++        layout = QVBoxLayout(content)
++        for index in range(40):
++            layout.addWidget(QLabel("Dock row %s" % index))
++        area.setWidget(content)
++        area.resize(320, 200)
++        try:
++            with patch("windows.verticalization._SMOUK_SCROLL_TRACE_PATH", trace_path), \
++                    patch("windows.verticalization.info.USER_PATH", workspace_root), \
++                    patch("windows.verticalization._install_smouk_qt_scroll_message_handler"):
++                trace = _VerticalizationScrollTrace(area, area)
++                area._smouk_scroll_trace = trace
++                area.show()
++                app.processEvents()
++
++                event = QtGui.QWheelEvent(
++                    QtCore.QPointF(20, 20), QtCore.QPointF(20, 20),
++                    QtCore.QPoint(0, -60), QtCore.QPoint(0, -120),
++                    Qt.NoButton, Qt.NoModifier, Qt.ScrollUpdate, False)
++                QApplication.sendEvent(area.viewport(), event)
++                app.processEvents()
++                area.close()
++
++                with open(trace_path, encoding="utf-8") as trace_file:
++                    output = trace_file.read()
++        finally:
++            if os.path.exists(trace_path):
++                os.remove(trace_path)
++
++        self.assertIn("WHEEL-EVENT", output)
++        self.assertIn("pixel=0,-60", output)
++        self.assertIn("angle=0,-120", output)
++        self.assertIn("WHEEL-HANDLER-BEGIN", output)
++        self.assertIn("WHEEL-HANDLER-END", output)
++        self.assertIn("SCROLLBAR-VALUE", output)
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index b48444f50..0643d5b6c 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -103,7 +103,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.137"
++SMOUK_VERSION = "0.0.138"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index f83fa8f72..780c03670 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -49,6 +49,7 @@ from qt_api import (
+ import openshot
+ from classes.app import get_app
+ from classes.logger import log
++from classes import info
+ from classes.query import Clip, File, Track
+ from classes.assets import get_assets_path
+ from classes.image_types import get_media_type
+@@ -105,6 +106,177 @@ CHYRON_VERTICAL_SLOT_PREFERENCES = {
+ VERTICAL_SUBTITLE_CENTER = .685
+ VERTICAL_CAPTION_TOP = .44
+ VERTICAL_CAPTION_BOTTOM = .43
++
++# Qt's wheel-scroll path has failed fast inside QAbstractSlider on some
++# Windows/MSYS2 Qt builds. Keep a low-level trace outside the rotating app log
++# so the final Wheel event and any Qt fatal message survive the crash.
++_SMOUK_SCROLL_TRACE_PATH = os.path.join(
++    info.USER_PATH, "smouk_verticalization_scroll.log")
++_SMOUK_SCROLL_TRACE_LOCK = threading.RLock()
++_SMOUK_SCROLL_TRACE_PREVIOUS_QT_HANDLER = None
++_SMOUK_SCROLL_TRACE_QT_HANDLER_INSTALLED = False
++
++
++def _write_verticalization_scroll_trace(stage, details=""):
++    """Append one flushed diagnostic line; never let tracing break the UI."""
++    try:
++        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
++        line = "%s.%03d pid=%s thread=%s %s %s\n" % (
++            stamp, int((time.time() % 1) * 1000), os.getpid(),
++            threading.get_ident(), stage, str(details).replace("\n", " "))
++        with _SMOUK_SCROLL_TRACE_LOCK:
++            os.makedirs(info.USER_PATH, exist_ok=True)
++            with open(_SMOUK_SCROLL_TRACE_PATH, "a", encoding="utf-8") as trace:
++                trace.write(line)
++                trace.flush()
++    except Exception:
++        # This trace is diagnostic only and must not interfere with Qt events.
++        pass
++
++
++def _smouk_qt_scroll_message_handler(message_type, context, message):
++    """Persist Qt warnings/fatal text before Qt's fail-fast terminates Python."""
++    try:
++        kind = int(message_type)
++    except Exception:
++        kind = -1
++    # Qt 5: warning=1, critical=2, fatal=3. Ignore routine debug/info traffic.
++    if kind in (1, 2, 3):
++        try:
++            source = "%s:%s %s" % (
++                getattr(context, "file", "") or "",
++                getattr(context, "line", "") or "",
++                getattr(context, "function", "") or "")
++        except Exception:
++            source = ""
++        _write_verticalization_scroll_trace(
++            "QT-MESSAGE type=%s source=%s" % (message_type, source), message)
++    previous = _SMOUK_SCROLL_TRACE_PREVIOUS_QT_HANDLER
++    if previous:
++        try:
++            previous(message_type, context, message)
++        except Exception:
++            pass
++
++
++def _install_smouk_qt_scroll_message_handler():
++    """Install one process-wide Qt message tap, retaining the prior handler."""
++    global _SMOUK_SCROLL_TRACE_PREVIOUS_QT_HANDLER
++    global _SMOUK_SCROLL_TRACE_QT_HANDLER_INSTALLED
++    if _SMOUK_SCROLL_TRACE_QT_HANDLER_INSTALLED:
++        return
++    try:
++        _SMOUK_SCROLL_TRACE_PREVIOUS_QT_HANDLER = QtCore.qInstallMessageHandler(
++            _smouk_qt_scroll_message_handler)
++        _SMOUK_SCROLL_TRACE_QT_HANDLER_INSTALLED = True
++        _write_verticalization_scroll_trace("QT-HANDLER-INSTALLED")
++    except Exception:
++        log.exception("Could not install SMOUK Qt scroll diagnostics")
++
++
++class _VerticalizationScrollTrace(QtCore.QObject):
++    """Trace touchpad wheel events and native scroll-bar transitions."""
++
++    def __init__(self, owner, scroll_area):
++        super().__init__(owner)
++        self.owner = owner
++        self.scroll_area = scroll_area
++        self.scroll_bar = scroll_area.verticalScrollBar()
++        self._targets = [scroll_area, scroll_area.viewport(), self.scroll_bar]
++        for target in self._targets:
++            target.installEventFilter(self)
++        self.scroll_bar.valueChanged.connect(self._on_scroll_value_changed)
++        self.scroll_bar.rangeChanged.connect(self._on_scroll_range_changed)
++        _install_smouk_qt_scroll_message_handler()
++        _write_verticalization_scroll_trace(
++            "DOCK-TRACE-START",
++            "area=%s viewport=%s scrollbar=%s value=%s range=%s..%s" % (
++                hex(id(scroll_area)), hex(id(scroll_area.viewport())),
++                hex(id(self.scroll_bar)), self.scroll_bar.value(),
++                self.scroll_bar.minimum(), self.scroll_bar.maximum()))
++
++    @staticmethod
++    def _object_name(obj):
++        try:
++            return "%s:%s" % (obj.metaObject().className(), obj.objectName())
++        except Exception:
++            return type(obj).__name__
++
++    def _scroll_state(self):
++        try:
++            return "value=%s range=%s..%s page=%s" % (
++                self.scroll_bar.value(), self.scroll_bar.minimum(),
++                self.scroll_bar.maximum(), self.scroll_bar.pageStep())
++        except Exception as exc:
++            return "scroll-state-error=%s" % exc
++
++    def _on_scroll_value_changed(self, value):
++        _write_verticalization_scroll_trace(
++            "SCROLLBAR-VALUE", "value=%s %s" % (value, self._scroll_state()))
++
++    def _on_scroll_range_changed(self, minimum, maximum):
++        _write_verticalization_scroll_trace(
++            "SCROLLBAR-RANGE", "range=%s..%s %s" % (
++                minimum, maximum, self._scroll_state()))
++
++    def eventFilter(self, watched, event):
++        try:
++            event_type = event.type()
++            wheel_type = getattr(QtCore.QEvent, "Wheel", None)
++            native_gesture_type = getattr(QtCore.QEvent, "NativeGesture", None)
++            if event_type == wheel_type or (
++                    native_gesture_type is not None and event_type == native_gesture_type):
++                details = ["target=%s" % self._object_name(watched), self._scroll_state()]
++                if hasattr(event, "pixelDelta"):
++                    pixel = event.pixelDelta()
++                    angle = event.angleDelta()
++                    details.append("pixel=%s,%s" % (pixel.x(), pixel.y()))
++                    details.append("angle=%s,%s" % (angle.x(), angle.y()))
++                    if hasattr(event, "phase"):
++                        details.append("phase=%s" % event.phase())
++                    if hasattr(event, "inverted"):
++                        details.append("inverted=%s" % event.inverted())
++                    if hasattr(event, "source"):
++                        details.append("source=%s" % event.source())
++                elif hasattr(event, "gestureType"):
++                    details.append("gesture=%s" % event.gestureType())
++                    details.append("value=%s" % getattr(event, "value", lambda: "")())
++                _write_verticalization_scroll_trace(
++                    "WHEEL-EVENT type=%s" % event_type, " ".join(details))
++        except Exception:
++            log.exception("SMOUK scroll event trace failed")
++        return False
++
++    def wheel_finished(self, event, stage):
++        """Record the native QScrollArea handler boundary and result."""
++        try:
++            delta = event.pixelDelta() if hasattr(event, "pixelDelta") else None
++            angle = event.angleDelta() if hasattr(event, "angleDelta") else None
++            detail = "pixel=%s angle=%s accepted=%s %s" % (
++                (delta.x(), delta.y()) if delta else None,
++                (angle.x(), angle.y()) if angle else None,
++                event.isAccepted(), self._scroll_state())
++        except Exception as exc:
++            detail = "state-error=%s" % exc
++        _write_verticalization_scroll_trace(stage, detail)
++
++
++class _TracingVerticalizationScrollArea(QScrollArea):
++    """Preserve before/after evidence around Qt's native wheel handler."""
++
++    def __init__(self, parent=None):
++        super().__init__(parent)
++        self._smouk_scroll_trace = None
++
++    def wheelEvent(self, event):
++        trace = self._smouk_scroll_trace
++        if trace:
++            trace.wheel_finished(event, "WHEEL-HANDLER-BEGIN")
++        try:
++            return super().wheelEvent(event)
++        finally:
++            if trace:
++                trace.wheel_finished(event, "WHEEL-HANDLER-END")
+ # A recognition score describes text quality.  It must survive duration
+ # refinement unchanged so a visually well-bounded but unreadable banner never
+ # becomes an apparently reliable chyron.
+@@ -577,7 +749,7 @@ class VerticalizationDockContent(QWidget):
+         outer.setContentsMargins(0, 0, 0, 0)
+         outer.setSpacing(0)
+ 
+-        self.scroll_area = QScrollArea(self)
++        self.scroll_area = _TracingVerticalizationScrollArea(self)
+         self.scroll_area.setWidgetResizable(True)
+         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+         self.scroll_area.setFrameShape(QScrollArea.NoFrame)
+@@ -587,6 +759,8 @@ class VerticalizationDockContent(QWidget):
+ 
+         self.scroll_content = QWidget()
+         self.scroll_area.setWidget(self.scroll_content)
++        self._scroll_trace = _VerticalizationScrollTrace(self, self.scroll_area)
++        self.scroll_area._smouk_scroll_trace = self._scroll_trace
+         layout = QVBoxLayout(self.scroll_content)
+         layout.setContentsMargins(8, 8, 8, 8)
+         layout.setSpacing(6)
+-- 
+2.55.0.windows.3
+

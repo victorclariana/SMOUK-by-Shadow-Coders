@@ -233,6 +233,14 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
 - Convierte en raw el docstring del lanzador para eliminar el `SyntaxWarning`
   causado por las barras invertidas de la ruta de Windows.
 
+### 0.0.138
+
+- Añade trazas persistentes para los eventos Wheel del trackpad sobre el dock
+  Verticalization, incluidos los deltas de píxel/rueda y cada cambio de rango o
+  posición de su scrollbar.
+- Captura y conserva el mensaje exacto de Qt si vuelve a entrar en fail-fast,
+  además del estado anterior y posterior al manejador nativo del QScrollArea.
+
 ### 0.0.131
 
 - Descarta un eco terminal muy breve que repite el final de la palabra
