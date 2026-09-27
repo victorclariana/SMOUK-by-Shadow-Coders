@@ -186,6 +186,15 @@ de interfaz de SMOUK incrementa `x` y debe añadirse a este historial.
   inferior. Valida la distribución completa, incluidos los solapamientos,
   antes de sustituir los subtítulos existentes.
 
+### 0.0.132
+
+- El control Horizontal framing solo se activa al seleccionar exactamente un
+  clip de vídeo. Agrupa las actualizaciones del arrastre para evitar guardar y
+  refrescar el Timeline a cada cambio del ratón; al soltar aplica la posición
+  final.
+- Descarta un microfragmento de varias palabras que Whisper inventa en el
+  último instante del audio, sin afectar al habla que termina antes del OUT.
+
 ### 0.0.131
 
 - Descarta un eco terminal muy breve que repite el final de la palabra

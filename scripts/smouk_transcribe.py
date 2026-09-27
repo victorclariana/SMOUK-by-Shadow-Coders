@@ -81,6 +81,14 @@ def _is_terminal_word_echo(segment_words, previous_words, segment_end, duration)
             float(duration) - float(segment_end) <= 0.25)
 
 
+def _is_terminal_micro_burst(segment_words, segment_start, segment_end, duration):
+    """Reject an impossible burst of invented words at the exact audio OUT."""
+    span = max(0.001, float(segment_end) - float(segment_start))
+    return (len(segment_words) >= 3 and span <= 0.3 and
+            len(segment_words) / span >= 15.0 and
+            float(duration) - float(segment_end) <= 0.25)
+
+
 def trim_hallucinated_tail(text):
     """Remove only a duplicated function-word tail ending in a stray letter."""
     tokens = str(text).split()
@@ -473,6 +481,10 @@ def transcribe_bsc(path, model_dir, ffmpeg_path, temp_root, source_start, source
                          len(set(lexical_tokens)) < len(lexical_tokens))
         if repeated_tail:
             _emit("trace", step="segment.discarded_terminal_micro_hallucination",
+                  start=raw["start"], end=raw["end"], text=raw["text"])
+            continue
+        if _is_terminal_micro_burst(segment_words, raw["start"], raw["end"], duration):
+            _emit("trace", step="segment.discarded_terminal_micro_burst",
                   start=raw["start"], end=raw["end"], text=raw["text"])
             continue
         if _is_terminal_word_echo(segment_words, words, raw["end"], duration):

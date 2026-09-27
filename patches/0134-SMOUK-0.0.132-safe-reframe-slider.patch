@@ -1,0 +1,124 @@
+From 0776a76ce11c39e31eaecb4a0a4e7d8000b31188 Mon Sep 17 00:00:00 2001
+From: Shadow Coders <shadowcoders@users.noreply.github.com>
+Date: Sun, 27 Sep 2026 14:52:14 +0200
+Subject: [PATCH] SMOUK 0.0.132 throttle vertical framing slider
+
+---
+ src/tests/test_smouk_transcription.py |  7 +++++++
+ src/windows/main_window.py            |  2 +-
+ src/windows/verticalization.py        | 30 +++++++++++++++++++++++----
+ 3 files changed, 34 insertions(+), 5 deletions(-)
+
+diff --git a/src/tests/test_smouk_transcription.py b/src/tests/test_smouk_transcription.py
+index 32f307b13..466dc361c 100644
+--- a/src/tests/test_smouk_transcription.py
++++ b/src/tests/test_smouk_transcription.py
+@@ -133,6 +133,13 @@ class SmoukTranscriptionTests(unittest.TestCase):
+         self.assertEqual([item["word"] for item in words], ["Mediterrània."])
+         self.assertEqual(len(raw_segments), 1)
+ 
++    def test_terminal_micro_burst_is_rejected_but_normal_speech_remains(self):
++        burst = [{"word": word, "start": 2.82, "end": 2.94}
++                 for word in "Mèdiques de la Generalitat.".split()]
++        self.assertTrue(worker._is_terminal_micro_burst(burst, 2.82, 2.94, 2.96))
++        self.assertFalse(worker._is_terminal_micro_burst(burst, 2.82, 2.94, 4.0))
++        self.assertFalse(worker._is_terminal_micro_burst(burst, 2.0, 2.94, 2.96))
++
+     def test_cues_are_clamped_to_exact_timeline_duration(self):
+         cues, changed = worker.clamp_cues_to_duration([
+             {"start": 109.56, "end": 110.56, "text": "final"},
+diff --git a/src/windows/main_window.py b/src/windows/main_window.py
+index 63ec53a67..aa47be94a 100644
+--- a/src/windows/main_window.py
++++ b/src/windows/main_window.py
+@@ -103,7 +103,7 @@ from windows.views.tutorial import TutorialManager
+ 
+ # SMOUK application version. Increment this patch number for every SMOUK UI
+ # or workflow change released from this codebase.
+-SMOUK_VERSION = "0.0.131"
++SMOUK_VERSION = "0.0.132"
+ SMOUK_COMPACT_TIMELINE_LAYOUT_VERSION = "smouk-compact-timeline-v2"
+ SMOUK_NEW_PROJECT_MARKER = os.path.join(info.USER_PATH, "smouk-new-project.marker")
+ 
+diff --git a/src/windows/verticalization.py b/src/windows/verticalization.py
+index f7bfbae7f..2c521427a 100644
+--- a/src/windows/verticalization.py
++++ b/src/windows/verticalization.py
+@@ -639,6 +639,10 @@ class VerticalizationDockContent(QWidget):
+         self.reframe_slider.sliderPressed.connect(self._on_reframe_press)
+         self.reframe_slider.sliderReleased.connect(self._on_reframe_release)
+         self.reframe_slider.valueChanged.connect(self._on_reframe_changed)
++        self._reframe_update_timer = QtCore.QTimer(self)
++        self._reframe_update_timer.setSingleShot(True)
++        self._reframe_update_timer.setInterval(80)
++        self._reframe_update_timer.timeout.connect(self._apply_reframe_slider_value)
+         self.sections["automatic_reframing"].add_widget(self.reframe_slider)
+ 
+         self.chk_keyframes = QCheckBox(_("Keyframes"), self)
+@@ -3978,9 +3982,14 @@ class VerticalizationDockContent(QWidget):
+         clip_ids = getattr(window, "selected_clips", []) if window else []
+         if callable(clip_ids):
+             clip_ids = clip_ids()
+-        if not clip_ids:
++        if len(clip_ids or []) != 1:
+             return None
+-        return Clip.get(id=clip_ids[0])
++        clip = Clip.get(id=clip_ids[0])
++        path = str(clip.data.get("reader", {}).get("path", "")) if clip else ""
++        video_extensions = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".webm"}
++        if not path or os.path.splitext(path)[1].lower() not in video_extensions:
++            return None
++        return clip
+ 
+     def _connect_reframe_sync(self):
+         """Keep the slider aligned with timeline selection and playhead state."""
+@@ -3990,12 +3999,17 @@ class VerticalizationDockContent(QWidget):
+             self.window.SelectionRemoved.connect(lambda *_args: self._sync_reframe_slider())
+         if hasattr(self.window, "SeekSignal"):
+             self.window.SeekSignal.connect(lambda *_args: self._sync_reframe_slider())
++        self._sync_reframe_slider()
+ 
+     def _on_reframe_press(self):
+-        self._reframe_dragging = True
++        self._reframe_dragging = self._selected_clip() is not None
+ 
+     def _on_reframe_release(self):
++        if self._reframe_update_timer.isActive():
++            self._reframe_update_timer.stop()
++            self._apply_reframe_slider_value()
+         self._reframe_dragging = False
++        self._sync_reframe_slider()
+ 
+     def _reframe_max_offset(self):
+         return (1.0 - (self._output_ratio() / (16.0 / 9.0))) / 2.0
+@@ -4046,6 +4060,7 @@ class VerticalizationDockContent(QWidget):
+             return
+         window = get_app().window
+         clip = self._selected_clip()
++        self.reframe_slider.setEnabled(clip is not None)
+         if clip is not None and clip.data.get("smouk_chyron_clip"):
+             # Chyrons are full-canvas SVG overlays. They cannot be reframed,
+             # and forcing their image-reader keyframes through the 16:9 crop
+@@ -4081,11 +4096,18 @@ class VerticalizationDockContent(QWidget):
+         return max(start_frame, int(round(float(end) * fps_value)))
+ 
+     def _on_reframe_changed(self):
++        """Coalesce slider movement to at most one timeline update per 80 ms."""
++        if self._reframe_dragging:
++            if not self._reframe_update_timer.isActive():
++                self._reframe_update_timer.start()
++        else:
++            self._apply_reframe_slider_value()
++
++    def _apply_reframe_slider_value(self):
+         """Store a fixed reframe, or a keyframe at the current playhead position."""
+         window = get_app().window
+         clip = self._selected_clip()
+         if window is None or clip is None:
+-            log.info("SMOUK: select one timeline clip before reframing")
+             return
+ 
+         # Keep the selected output crop entirely inside a 16:9 source frame.
+-- 
+2.55.0.windows.3
+
